@@ -42,6 +42,26 @@ function exposeConsoleApi() {
       if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
       return data;
     },
+    reconcileCurrentChat: async () => {
+      const chatId = resolveActiveChatId();
+      if (!chatId) throw new Error("No active chat detected.");
+      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/reconcile`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+      return data;
+    },
+    reconcileCurrentChatSummaries: async () => {
+      const chatId = resolveActiveChatId();
+      if (!chatId) throw new Error("No active chat detected.");
+      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/summaries/reconcile`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+      return data;
+    },
   };
 }
 
