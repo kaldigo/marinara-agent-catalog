@@ -439,26 +439,15 @@ function ensureAboveInputHost(root) {
 }
 
 function ensureQuickActionsHost(context) {
-  const shell = context.shell || context.root;
-  const root = context.root;
-  const sendButton = context.sendButton;
-  let host = shell.querySelector(":scope [data-mari-bridge-slot='composer:quick-actions']");
-  if (!(host instanceof HTMLElement) && root !== shell) {
-    host = root.querySelector(":scope [data-mari-bridge-slot='composer:quick-actions']");
-  }
+  const menu = findOpenQuickActionsMenu(context);
+  if (!menu) return null;
+  let host = menu.querySelector(":scope > [data-mari-bridge-slot='composer:quick-actions']");
   if (!(host instanceof HTMLElement)) {
     host = document.createElement("span");
     host.dataset.mariBridgeSlot = COMPOSER_SLOT_QUICK_ACTIONS;
     host.className = "mari-bridge-slot mari-bridge-slot-quick-actions";
   }
-  const anchor = findQuickActionsAnchor(shell, sendButton);
-  const targetParent = anchor?.parentElement || shell;
-  const before = anchor || null;
-  if (host.parentElement !== targetParent) {
-    targetParent.insertBefore(host, before);
-  } else if (before && host.nextElementSibling !== before) {
-    targetParent.insertBefore(host, before);
-  }
+  if (host.parentElement !== menu) menu.appendChild(host);
   return host;
 }
 
@@ -555,12 +544,16 @@ function findComposerSendButton(scope) {
   );
 }
 
-function findQuickActionsAnchor(shell, sendButton) {
-  const quickReplyTrigger = shell.querySelector("button[aria-label='Quick replies'], button[title='Quick replies']");
-  if (quickReplyTrigger) {
-    return quickReplyTrigger.closest(".relative, .hidden, .sm\\:block") || quickReplyTrigger;
-  }
-  return sendButton;
+function findOpenQuickActionsMenu(context) {
+  const shell = context.shell || context.root;
+  const menus = Array.from(document.querySelectorAll('[role="menu"][aria-label="Quick replies"]'));
+  return (
+    menus.find((menu) => {
+      if (!(menu instanceof HTMLElement) || !isVisibleElement(menu)) return false;
+      const triggerRoot = menu.closest(".relative, .hidden, .sm\\:block") || menu.parentElement;
+      return Boolean(triggerRoot && shell?.contains(triggerRoot));
+    }) || null
+  );
 }
 
 function patchHistoryMethod(method) {
@@ -893,7 +886,7 @@ function errorMessage(error) {
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.7";
+  const RUNTIME_VERSION = "1.0.8";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
