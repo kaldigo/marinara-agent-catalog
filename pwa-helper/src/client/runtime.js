@@ -50,6 +50,7 @@ function createRuntime() {
   const generationMonitor = createGenerationMonitor({
     wakeLock,
     setGenerationStatus: status.setGenerationStatus,
+    warn,
   });
   const iosIcon = createIosIconInstaller({
     setIosIconStatus: status.setIosIconStatus,

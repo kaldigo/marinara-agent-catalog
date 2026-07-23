@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { createSlashCommandRouter, matchSlashCommand } from "../../_mari-bridge/src/commands.js";
 import { diffSummaryEntries } from "../../_mari-bridge/src/summary-tracking.js";
 import { buildPresenceExtraPatch, readPresenceState } from "../src/shared/presence-state.js";
@@ -22,6 +23,12 @@ router.register({
   handler: ({ context }) => context.chatId,
 });
 assert((await router.run("/presence test", { chatId: "chat-1" })).result === "chat-1", "router passes context");
+
+const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import.meta.url), "utf8");
+assert(clientRuntime.includes("registerBridgeSlashCommand"), "client registers commands through the bridge");
+assert(!clientRuntime.includes('document.addEventListener("keydown"'), "client does not own keydown command capture");
+assert(!clientRuntime.includes('document.addEventListener("submit"'), "client does not own submit command capture");
+assert(!clientRuntime.includes("function matchSlashCommand"), "client does not own slash command matching");
 
 const events = diffSummaryEntries([], [{ id: "s1", content: "Summary", enabled: true }], { source: "generation" });
 assert(events[0]?.type === "generated", "summary generation event");

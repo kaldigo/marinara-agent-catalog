@@ -1,9 +1,9 @@
 {
-  "name": "marinara-pwa-helper-package",
-  "version": "1.0.1",
+  "name": "marinara-impersonate-button-package",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "description": "Package-era PWA Helper for Marinara.",
+  "description": "Package-era Marinara impersonate button source.",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "npm run build && node --check dist/package/client.js && node scripts/validate-dist.mjs"

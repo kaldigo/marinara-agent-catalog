@@ -1,66 +1,32 @@
-function isVisibleElement(element) {
-  if (!element || !(element instanceof Element)) return false;
-  if (!element.getClientRects().length) return false;
-  const style = window.getComputedStyle(element);
-  return style.visibility !== "hidden" && style.display !== "none";
+import {
+  ensureGenerationLifecycleBridge,
+  GENERATING_AGENT_EVENT,
+  GENERATING_MAIN_EVENT,
+  GENERATION_STATE_EVENT,
+  getBridgeGenerationSnapshot,
+} from "../../../_mari-bridge/src/generation-lifecycle.js";
+
+function snapshotHasActiveGeneration(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return false;
+  if (snapshot.mainActive || snapshot.agentActive) return true;
+  return Array.isArray(snapshot.active) && snapshot.active.length > 0;
 }
 
-function buttonLabel(button) {
-  return [
-    button.getAttribute("title"),
-    button.getAttribute("aria-label"),
-    button.textContent,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+function eventSnapshot(detail) {
+  if (detail?.snapshot && typeof detail.snapshot === "object") return detail.snapshot;
+  try {
+    return getBridgeGenerationSnapshot();
+  } catch {
+    return null;
+  }
 }
 
-function hasStopIcon(button) {
-  const svg = button.querySelector("svg");
-  if (!svg) return false;
-
-  const className = svg.getAttribute("class") || "";
-  if (/\b(lucide-)?(circle-stop|stop-circle)\b/i.test(className)) return true;
-
-  return Boolean(svg.querySelector("circle") && svg.querySelector("rect"));
-}
-
-function isGenerationStopButton(button) {
-  if (!(button instanceof HTMLButtonElement) || !isVisibleElement(button)) return false;
-
-  const label = buttonLabel(button);
-  if (/\bstop\s+generat(?:e|ing|ion)\b/i.test(label)) return true;
-
-  const inChatInput = Boolean(button.closest(".mari-chat-input, .chat-input-container"));
-  if (!inChatInput && !button.classList.contains("mari-chat-send-btn")) return false;
-
-  return hasStopIcon(button);
-}
-
-function collectCandidateButtons() {
-  const buttons = new Set();
-  document
-    .querySelectorAll(".mari-chat-input button, .chat-input-container button, button.mari-chat-send-btn")
-    .forEach((button) => buttons.add(button));
-  document
-    .querySelectorAll("button[title*='Stop' i], button[aria-label*='Stop' i]")
-    .forEach((button) => buttons.add(button));
-  return Array.from(buttons);
-}
-
-function detectGenerationActive() {
-  return collectCandidateButtons().some(isGenerationStopButton);
-}
-
-function createGenerationMonitor({ wakeLock, setGenerationStatus }) {
+function createGenerationMonitor({ wakeLock, setGenerationStatus, warn }) {
   const state = {
     active: false,
     lease: null,
-    syncTimer: null,
-    pollTimer: null,
-    observer: null,
     cleanups: [],
+    bridgeStarted: false,
   };
 
   function releaseGenerationLease() {
@@ -75,9 +41,9 @@ function createGenerationMonitor({ wakeLock, setGenerationStatus }) {
   function holdGenerationLease() {
     if (state.lease) return;
     state.lease = wakeLock.hold({
-      id: `${PACKAGE_ID}:native-generation`,
+      id: `${PACKAGE_ID}:bridge-generation`,
       source: PACKAGE_NAME,
-      reason: "native-generation",
+      reason: "bridge-generation",
     });
   }
 
@@ -93,19 +59,16 @@ function createGenerationMonitor({ wakeLock, setGenerationStatus }) {
     else releaseGenerationLease();
   }
 
-  function sync() {
-    state.syncTimer = null;
-    setActive(detectGenerationActive());
+  function reconcileFromSnapshot(snapshot) {
+    setActive(snapshotHasActiveGeneration(snapshot));
   }
 
-  function scheduleSync(delay = SYNC_DELAY_MS) {
-    if (state.syncTimer) return;
-    state.syncTimer = window.setTimeout(sync, delay);
+  function reconcileCurrentSnapshot() {
+    reconcileFromSnapshot(getBridgeGenerationSnapshot());
   }
 
-  function onGenerationEndEvent() {
-    if (!detectGenerationActive()) setActive(false);
-    scheduleSync(GENERATION_END_RESYNC_MS);
+  function onGenerationEvent(event) {
+    reconcileFromSnapshot(eventSnapshot(event.detail));
   }
 
   function addListener(target, type, listener, options) {
@@ -113,50 +76,41 @@ function createGenerationMonitor({ wakeLock, setGenerationStatus }) {
     state.cleanups.push(() => target.removeEventListener(type, listener, options));
   }
 
-  function observeBody() {
-    if (!document.body || state.observer) return;
-    state.observer = new MutationObserver(() => scheduleSync());
-    state.observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["aria-label", "title", "class", "disabled"],
-    });
-  }
-
   function start() {
-    if (state.pollTimer) return;
+    if (state.bridgeStarted) return;
+    state.bridgeStarted = true;
 
+    try {
+      ensureGenerationLifecycleBridge();
+    } catch (error) {
+      setGenerationStatus("bridge-error");
+      warn("generation lifecycle bridge could not start", error);
+      return;
+    }
+
+    addListener(window, GENERATION_STATE_EVENT, onGenerationEvent);
+    addListener(window, GENERATING_MAIN_EVENT, onGenerationEvent);
+    addListener(window, GENERATING_AGENT_EVENT, onGenerationEvent);
     addListener(document, "visibilitychange", () => {
       void wakeLock.reconcile();
-      if (document.visibilityState === "visible") scheduleSync();
+      reconcileCurrentSnapshot();
     });
-    addListener(window, "pageshow", () => scheduleSync());
-    addListener(window, "focus", () => scheduleSync());
-    addListener(document, "click", () => scheduleSync(), true);
-    addListener(window, "marinara:generation-complete", onGenerationEndEvent);
-    addListener(window, "marinara:generation-error", onGenerationEndEvent);
+    addListener(window, "pageshow", reconcileCurrentSnapshot);
+    addListener(window, "focus", reconcileCurrentSnapshot);
 
-    state.pollTimer = window.setInterval(() => scheduleSync(), POLL_INTERVAL_MS);
-    observeBody();
-    scheduleSync();
+    reconcileCurrentSnapshot();
   }
 
   function stop() {
-    if (state.syncTimer) window.clearTimeout(state.syncTimer);
-    if (state.pollTimer) window.clearInterval(state.pollTimer);
-    state.syncTimer = null;
-    state.pollTimer = null;
     state.cleanups.splice(0).forEach((cleanup) => cleanup());
-    state.observer?.disconnect();
-    state.observer = null;
     setActive(false);
     setGenerationStatus("");
+    state.bridgeStarted = false;
   }
 
   return {
     start,
     stop,
-    detectGenerationActive,
+    detectGenerationActive: () => state.active,
   };
 }

@@ -8,23 +8,23 @@ const projectRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(projectRoot, "dist");
 const packageRoot = path.join(distRoot, "package");
 const bridgeRoot = path.resolve(projectRoot, "..", "_mari-bridge", "src");
-
-const packageJson = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8"));
-const version = packageJson.version;
+const pkg = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8"));
 
 const bridgeSources = [
   "composer-dom.js",
   "generation-stream.js",
   "ui-slots.js",
   "generation-lifecycle.js",
+  "fetch-intercept.js",
 ];
-
 const clientSources = [
   "constants.js",
-  "status.js",
-  "wake-lock.js",
-  "ios-icon.js",
-  "generation-monitor.js",
+  "styles.js",
+  "icons.js",
+  "api.js",
+  "prompts.js",
+  "regex.js",
+  "generation.js",
   "runtime.js",
 ];
 
@@ -40,63 +40,51 @@ await fs.writeFile(path.join(packageRoot, "agents.json"), `${JSON.stringify(agen
 await fs.writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify(manifest(), null, 2)}\n`);
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
-console.log(`Built PWA Helper prepared package: ${path.relative(projectRoot, packageRoot)}`);
+console.log(`Built Impersonate Button prepared package: ${path.relative(projectRoot, packageRoot)}`);
 
 async function buildClientSource() {
   const chunks = [];
   for (const file of bridgeSources) {
-    const sourcePath = path.join(bridgeRoot, file);
-    const source = stripBrowserModuleSyntax(await fs.readFile(sourcePath, "utf8"));
-    chunks.push(`// bridge/${file}\n${source.trim()}\n`);
+    const source = await fs.readFile(path.join(bridgeRoot, file), "utf8");
+    chunks.push(`// bridge/${file}\n${stripExports(source).trim()}\n`);
   }
   for (const file of clientSources) {
-    const sourcePath = path.join(projectRoot, "src", "client", file);
-    const source = stripBrowserModuleSyntax(await fs.readFile(sourcePath, "utf8"));
-    chunks.push(`// src/client/${file}\n${source.trim()}\n`);
+    const source = await fs.readFile(path.join(projectRoot, "src", "client", file), "utf8");
+    chunks.push(`// src/client/${file}\n${stripExports(source).trim()}\n`);
   }
 
   return [
     "(() => {",
     "  \"use strict\";",
     indent(chunks.join("\n")),
-    "  startPwaHelper();",
+    "  startImpersonateButtonPackage();",
     "})();",
     "",
   ].join("\n");
 }
 
-function stripBrowserModuleSyntax(content) {
-  return content
+function stripExports(source) {
+  return source
     .replace(/^import\s+[\s\S]*?\s+from\s+["'][^"']+["'];\r?\n/gm, "")
     .replace(/^import .*?;\r?\n/gm, "")
-    .replace(/^export async function /gm, "async function ")
-    .replace(/^export function /gm, "function ")
-    .replace(/^export const /gm, "const ")
-    .replace(/^export let /gm, "let ")
-    .replace(/^export var /gm, "var ")
-    .replace(/^export class /gm, "class ")
-    .replace(/^export \{[^}]*\};?\r?\n/gm, "");
+    .replace(/^export\s+/gm, "");
 }
 
 function manifest() {
   return {
     schemaVersion: 1,
-    id: "pwa-helper",
-    name: "PWA Helper",
-    version,
-    description:
-      "Keeps mobile and tablet screens awake while Marinara generation is running and improves iOS home-screen metadata.",
+    id: "impersonate-button",
+    name: "Impersonate Button",
+    version: pkg.version,
+    description: "Adds package-era composer quick actions for dry-run persona generation helpers.",
     engine: { min: "2.3.3", maxExclusive: "3.0.0" },
     kind: ["agent"],
     entrypoints: {
       client: "client.js",
       agents: "agents.json",
     },
-    files: [
-      { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
-      { path: "agents.json", sha256: "0".repeat(64), bytes: 0 },
-    ],
-    permissions: ["ui"],
+    files: [{ path: "client.js", sha256: "0".repeat(64), bytes: 0 }],
+    permissions: ["chat-read", "chat-write", "network", "storage", "ui"],
     restartRequired: false,
   };
 }
@@ -104,16 +92,16 @@ function manifest() {
 function agentDefinitions() {
   return [
     {
-      id: "pwa-helper",
-      name: "PWA Helper",
-      description: "Feature marker for PWA Helper client wake-lock and iOS home-screen behavior.",
+      id: "impersonate-button",
+      name: "Impersonate Button",
+      description: "Feature marker for package-era dry-run persona generation composer actions.",
       category: "misc",
       phase: "pre_generation",
       execution: "feature",
       enabledByDefault: false,
       libraryHidden: true,
       runtimeDisabled: true,
-      modeAllowlist: ["conversation", "roleplay", "visual_novel", "game"],
+      modeAllowlist: ["roleplay", "visual_novel"],
       defaultTools: [],
       defaultSettings: {},
       defaultPromptTemplate: "",

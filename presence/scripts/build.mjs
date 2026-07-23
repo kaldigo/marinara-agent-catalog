@@ -21,7 +21,7 @@ await copyTree(bridgeRoot, path.join(packageRoot, "bridge"));
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
 await writeFile(path.join(packageRoot, "server.mjs"), `export { activate, selfCheck } from "./src/server/index.js";\n`);
-await writeFile(path.join(packageRoot, "client.js"), await fs.readFile(path.join(projectRoot, "src/client/runtime.js"), "utf8"));
+await writeFile(path.join(packageRoot, "client.js"), await buildClientEntrypoint());
 await writeFile(path.join(packageRoot, "agents.json"), `${JSON.stringify(agentDefinitions(), null, 2)}\n`);
 await writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify(manifest(), null, 2)}\n`);
 
@@ -82,6 +82,32 @@ async function copyTree(from, to, transform = (content) => content) {
 
 function rewriteSourceImports(content) {
   return content.replaceAll("../../../_mari-bridge/src/", "../../bridge/");
+}
+
+async function buildClientEntrypoint() {
+  const files = [
+    path.join(bridgeRoot, "ranges.js"),
+    path.join(bridgeRoot, "composer-dom.js"),
+    path.join(bridgeRoot, "commands.js"),
+    path.join(projectRoot, "src/client/runtime.js"),
+  ];
+  const modules = [];
+  for (const file of files) {
+    modules.push(stripBrowserModuleSyntax(await fs.readFile(file, "utf8")));
+  }
+  return `${modules.join("\n\n")}\n`;
+}
+
+function stripBrowserModuleSyntax(content) {
+  return content
+    .replace(/^import .*?;\r?\n/gm, "")
+    .replace(/^export async function /gm, "async function ")
+    .replace(/^export function /gm, "function ")
+    .replace(/^export const /gm, "const ")
+    .replace(/^export let /gm, "let ")
+    .replace(/^export var /gm, "var ")
+    .replace(/^export class /gm, "class ")
+    .replace(/^export \{[^}]*\};?\r?\n/gm, "");
 }
 
 async function writeFile(file, content) {

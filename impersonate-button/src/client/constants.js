@@ -1,0 +1,10 @@
+const PACKAGE_ID = "impersonate-button";
+const PACKAGE_NAME = "Impersonate Button";
+const PACKAGE_VERSION = "0.1.1";
+const RUNTIME_KEY = "__marinaraImpersonateButtonPackageRuntime";
+const PUBLIC_API_KEY = "__marinaraImpersonateButton";
+const STYLE_ID = "marinara-impersonate-button-style";
+const ROOT_CLASS = "mari-ib-root";
+const BUTTON_CLASS = "mari-ib-button";
+const STORAGE_PREFIX = "mari-ib-guidance:";
+const TRIM_ONLY_PROMPT_RE = /^\{\{\s*trim\s*\}\}$/iu;

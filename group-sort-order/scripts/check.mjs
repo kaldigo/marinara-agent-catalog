@@ -121,13 +121,20 @@ assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
 assert(clientSource.includes("capabilityProps"), "client reads capability props");
-assert(clientSource.includes("findInputContainer"), "client anchors to visible chat input container");
+assert(clientSource.includes("registerComposerSlotContribution"), "client uses bridge composer slot contribution");
+assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
+assert(clientSource.includes("declarePackageGeneration"), "client declares bridge generation activity for refresh");
+assert(clientSource.includes("GENERATION_KIND_AGENT"), "client marks refresh as agent generation activity");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.6"'), "client runtime version matches package version");
+assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
+assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
 assert(!clientSource.includes('type="checkbox"'), "persona control is not a checkbox");
 assert(clientSource.includes('aria-label="Refresh next speaker"'), "refresh control is icon-labeled");
 assert(clientSource.includes("options.body !== undefined"), "client only sends JSON content-type when a body exists");
 const buildSource = await fs.readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8");
 assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-runtime slot");
+assert(buildSource.includes("stripBrowserModuleSyntax"), "client entrypoint bundles browser-safe bridge modules");
 assert(buildSource.includes("runtimeDisabled: true"), "feature marker is runtime-disabled");
 
 await selfCheck({
