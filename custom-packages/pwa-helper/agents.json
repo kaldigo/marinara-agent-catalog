@@ -1,0 +1,22 @@
+[
+  {
+    "id": "pwa-helper",
+    "name": "PWA Helper",
+    "description": "Feature marker for PWA Helper client wake-lock and iOS home-screen behavior.",
+    "category": "misc",
+    "phase": "pre_generation",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "libraryHidden": true,
+    "runtimeDisabled": true,
+    "modeAllowlist": [
+      "conversation",
+      "roleplay",
+      "visual_novel",
+      "game"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]
