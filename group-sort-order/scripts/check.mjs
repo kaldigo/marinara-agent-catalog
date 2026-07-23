@@ -125,7 +125,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(clientSource.includes("declarePackageGeneration"), "client declares bridge generation activity for refresh");
 assert(clientSource.includes("GENERATION_KIND_AGENT"), "client marks refresh as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.6"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.7"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
@@ -136,6 +136,7 @@ const buildSource = await fs.readFile(new URL("../scripts/build.mjs", import.met
 assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-runtime slot");
 assert(buildSource.includes("stripBrowserModuleSyntax"), "client entrypoint bundles browser-safe bridge modules");
 assert(buildSource.includes("runtimeDisabled: true"), "feature marker is runtime-disabled");
+assert(buildSource.includes('"ui-slots.js"'), "client entrypoint bundles bridge UI slot placement");
 
 await selfCheck({
   app: { db: fakeDb() },
