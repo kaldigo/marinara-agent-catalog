@@ -96,7 +96,13 @@ async function buildClientEntrypoint() {
   for (const file of files) {
     modules.push(stripBrowserModuleSyntax(await fs.readFile(file, "utf8")));
   }
-  return `${modules.join("\n\n")}\n`;
+  return [
+    "(() => {",
+    "  \"use strict\";",
+    indent(modules.join("\n\n")),
+    "})();",
+    "",
+  ].join("\n");
 }
 
 function stripBrowserModuleSyntax(content) {
@@ -114,6 +120,13 @@ function stripBrowserModuleSyntax(content) {
 async function writeFile(file, content) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content);
+}
+
+function indent(content) {
+  return content
+    .split("\n")
+    .map((line) => (line ? `  ${line}` : line))
+    .join("\n");
 }
 
 export function sha256File(file) {

@@ -105,7 +105,13 @@ async function buildClientEntrypoint() {
   }
   const runtimeSource = await fs.readFile(path.join(projectRoot, "src/client/runtime.js"), "utf8");
   chunks.push(`// src/client/runtime.js\n${stripBrowserModuleSyntax(runtimeSource).trim()}\n`);
-  return `${chunks.join("\n")}\n`;
+  return [
+    "(() => {",
+    "  \"use strict\";",
+    indent(chunks.join("\n")),
+    "})();",
+    "",
+  ].join("\n");
 }
 
 function stripBrowserModuleSyntax(content) {
@@ -124,4 +130,11 @@ function stripBrowserModuleSyntax(content) {
 async function writeFile(file, content) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content);
+}
+
+function indent(content) {
+  return content
+    .split("\n")
+    .map((line) => (line ? `  ${line}` : line))
+    .join("\n");
 }

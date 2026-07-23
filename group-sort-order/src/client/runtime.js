@@ -12,7 +12,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../../_mari-
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.9";
+  const RUNTIME_VERSION = "1.0.10";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
