@@ -56,7 +56,7 @@ function agentDefinitions() {
       id: "group-sort-order",
       name: "Group Sort Order",
       description: "Feature runtime for group next-speaker ordering and prompt marker instructions.",
-      category: "tracker",
+      category: "misc",
       phase: "pre_generation",
       execution: "feature",
       enabledByDefault: false,

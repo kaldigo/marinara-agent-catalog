@@ -9,14 +9,17 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "group-sort-order", "manifest id is group-sort-order");
-assert(manifest.version === "1.0.0", "manifest version is 1.0.0");
+assert(manifest.version === "1.0.1", "manifest version is 1.0.1");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint declared");
 assert(agents[0]?.id === "group-sort-order", "feature agent id matches package");
 assert(agents[0]?.execution === "feature", "agent is feature execution");
-assert(!fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("import "), "client entrypoint is self-contained");
+assert(agents[0]?.category === "misc", "feature agent category is misc");
+const clientSource = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
+assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers capability element");
+assert(!clientSource.includes("import "), "client entrypoint is self-contained");
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);

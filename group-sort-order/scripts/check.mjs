@@ -117,6 +117,8 @@ assert(hooks.some((hook) => hook.name === "onResponse"), "onResponse hook regist
 const routesSource = await fs.readFile(new URL("../src/server/routes.js", import.meta.url), "utf8");
 assert(routesSource.includes("/api/generate/raw"), "refresh uses raw generation selector route");
 assert(routesSource.includes("statePersona?.name"), "refresh transcript can name persona outside candidate list");
+const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
+assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
 
 await selfCheck({
   app: { db: fakeDb() },
