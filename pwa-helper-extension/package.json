@@ -1,6 +1,6 @@
 {
   "name": "marinara-pwa-helper",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Marinara PWA helper extension build project.",

@@ -7,7 +7,7 @@
     "buildCommand": ["npm", "run", "build"]
   },
   "package": {
-    "id": "pwa-helper",
+    "id": "pwa-helper-extension",
     "name": "PWA Helper (Extension)",
     "description": "Keeps mobile and tablet screens awake while Marinara generation is running.",
     "engine": {

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package"
+  },
+  "package": {
+    "id": "pwa-helper",
+    "name": "PWA Helper",
+    "description": "Keeps mobile and tablet screens awake while Marinara generation is running and improves iOS home-screen metadata.",
+    "engine": {
+      "min": "2.3.3",
+      "maxExclusive": "3.0.0"
+    },
+    "kind": ["agent"],
+    "permissions": ["ui"],
+    "restartRequired": false
+  }
+}

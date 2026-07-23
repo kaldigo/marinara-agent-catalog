@@ -234,7 +234,7 @@
   state.registration = factory()?.registerExtension?.({
     id: "pwa-helper",
     name: "PWA Helper",
-    version: "0.1.0",
+    version: "1.0.0",
     capabilities: ["wake-lock"],
   }) || null;
 
