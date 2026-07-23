@@ -7,6 +7,7 @@
     "phase": "pre_generation",
     "execution": "feature",
     "enabledByDefault": false,
+    "runtimeDisabled": true,
     "modeAllowlist": [
       "roleplay",
       "visual_novel"
