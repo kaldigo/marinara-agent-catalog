@@ -1,4 +1,4 @@
-// Generated from agents/extensions source by the catalog rebuild workflow.
+// Generated from packages branch source by the catalog rebuild workflow.
 const PACKAGE_ID = "pwa-helper";
 const TAG_NAME = "marinara-capability-pwa-helper";
 const LEGACY_CSS = "";

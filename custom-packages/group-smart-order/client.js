@@ -1,4 +1,4 @@
-// Generated from agents/extensions source by the catalog rebuild workflow.
+// Generated from packages branch source by the catalog rebuild workflow.
 const PACKAGE_ID = "group-smart-order";
 const TAG_NAME = "marinara-capability-group-smart-order";
 const LEGACY_CSS = "";
