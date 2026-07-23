@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "group-smart-order",
-  "name": "Group Smart Order",
+  "name": "Group Smart Order (Extension)",
   "version": "0.1.0",
   "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
   "engine": {

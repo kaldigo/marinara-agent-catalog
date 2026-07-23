@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "presence",
-  "name": "Presence",
+  "name": "Presence (Extension)",
   "version": "0.1.0",
   "description": "Tracks per-message character presence and temporarily filters prompt history during generation.",
   "engine": {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-23T04:21:08.998Z",
+  "generatedAt": "2026-07-23T04:24:15.441Z",
   "packages": [
     {
       "manifest": {
@@ -1444,7 +1444,7 @@
       "manifest": {
         "schemaVersion": 1,
         "id": "group-smart-order",
-        "name": "Group Smart Order",
+        "name": "Group Smart Order (Extension)",
         "version": "0.1.0",
         "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
         "engine": {
@@ -1476,8 +1476,8 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-smart-order-0.1.0.zip",
-        "sha256": "26006ce4d3cae4601cd8a76be34b82438e4889438b984762800569c0b7e52333",
-        "bytes": 31835
+        "sha256": "1261b8b4e806bb64bc260fe130d8b0e3f0ae2ca895894268d563d926f473bdbb",
+        "bytes": 31846
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-smart-order"
     },
@@ -1485,7 +1485,7 @@
       "manifest": {
         "schemaVersion": 1,
         "id": "impersonate-button",
-        "name": "Impersonate Button",
+        "name": "Impersonate Button (Extension)",
         "version": "0.1.0",
         "description": "Adds a scoped dry-run impersonate button with continue, restore, stop, settings sync, and external-generation disabled state.",
         "engine": {
@@ -1517,8 +1517,8 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-0.1.0.zip",
-        "sha256": "d295f77a8bb8ce0684f7ace5b2c5ae62bd579e4b0d9e671495de7c11ddbdfa0f",
-        "bytes": 27335
+        "sha256": "c44e9113d58d7f2ec00a28bbffd4e9f414c205d664f78729bb04b46fffe09410",
+        "bytes": 27346
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
     },
@@ -1526,7 +1526,7 @@
       "manifest": {
         "schemaVersion": 1,
         "id": "presence",
-        "name": "Presence",
+        "name": "Presence (Extension)",
         "version": "0.1.0",
         "description": "Tracks per-message character presence and temporarily filters prompt history during generation.",
         "engine": {
@@ -1558,8 +1558,8 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-0.1.0.zip",
-        "sha256": "de13a9b6f3e02147df3c84945f2d22c206d38024749f5334c531426b19cb5852",
-        "bytes": 25804
+        "sha256": "a9b2dc58ae4cb3c931ecc0d10839999ff5c68d11b56e06441d8af79d41ebd79b",
+        "bytes": 25815
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     },
@@ -1567,7 +1567,7 @@
       "manifest": {
         "schemaVersion": 1,
         "id": "pwa-helper",
-        "name": "PWA Helper",
+        "name": "PWA Helper (Extension)",
         "version": "0.1.0",
         "description": "Keeps mobile and tablet screens awake while Marinara generation is running.",
         "engine": {
@@ -1595,8 +1595,8 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-0.1.0.zip",
-        "sha256": "2d42ede6a73d37c448c2fd8c27ab92ee20ae48426eb831066a2b4d258895842e",
-        "bytes": 16135
+        "sha256": "089c200eb2cd45694677fcee9dd10b771c6bd8f775eb0196a5f284c5fee59ef7",
+        "bytes": 16146
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
     }

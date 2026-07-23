@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "pwa-helper",
-  "name": "PWA Helper",
+  "name": "PWA Helper (Extension)",
   "version": "0.1.0",
   "description": "Keeps mobile and tablet screens awake while Marinara generation is running.",
   "engine": {
