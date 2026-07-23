@@ -1,10 +1,10 @@
 {
   "name": "marinara-mari-bridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "Shared package-era compatibility helpers for Marinara capability packages.",
   "scripts": {
-    "check": "node --check src/index.js && node --check src/runtime.js && node --check src/commands.js && node --check src/ranges.js && node --check src/summary-tracking.js && node --check src/prompt-contribution.js && node --check src/composer-dom.js && node --check src/composer-actions.js && node --check src/fetch-intercept.js && node --check src/generation-stream.js && node --check src/generation-lifecycle.js && node --check src/host-routes.js && node --check src/ui-slots.js"
+    "check": "node --check src/index.js && node --check src/runtime.js && node --check src/commands.js && node --check src/ranges.js && node --check src/summary-tracking.js && node --check src/prompt-contribution.js && node --check src/composer-dom.js && node --check src/composer-actions.js && node --check src/fetch-intercept.js && node --check src/generation-stream.js && node --check src/generation-lifecycle.js && node --check src/host-routes.js && node --check src/ui-slots.js && node scripts/check-runtime.mjs"
   }
 }
