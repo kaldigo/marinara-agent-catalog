@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
@@ -24,13 +24,43 @@
     },
     {
       "path": "bridge/commands.js",
-      "sha256": "a2e19c5f7393f85776b4a9395f3e83377947096c80b887535fc0735c98a1b8b1",
-      "bytes": 3117
+      "sha256": "e75187ae5141e3777b1d2fb8d1eb6bf95a455c02037bcc03ef9b54b15ec7c665",
+      "bytes": 8267
+    },
+    {
+      "path": "bridge/composer-actions.js",
+      "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
+      "bytes": 3635
+    },
+    {
+      "path": "bridge/composer-dom.js",
+      "sha256": "2fc31bf7b8f61880263035ad80a5fe0a155905d25e20f26d70a7a5c18155fade",
+      "bytes": 6429
+    },
+    {
+      "path": "bridge/fetch-intercept.js",
+      "sha256": "094d06962dae754dddaa7afffc2ce013608b053a1a63e5e669f281b4d8bdae36",
+      "bytes": 4889
+    },
+    {
+      "path": "bridge/generation-lifecycle.js",
+      "sha256": "eb57b8e673c6104136724b610b46ddbf143984a29c6fd3d6a4656818283c1f15",
+      "bytes": 11220
+    },
+    {
+      "path": "bridge/generation-stream.js",
+      "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
+      "bytes": 2807
+    },
+    {
+      "path": "bridge/host-routes.js",
+      "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
+      "bytes": 1847
     },
     {
       "path": "bridge/index.js",
-      "sha256": "a6da8c1ce576b6d48ade64101ae4d88fca46f232e0cdbfdf5f7bb1f92ea991f7",
-      "bytes": 141
+      "sha256": "c412889a03fabdeb63825459f7e281e476476a29fbacd6477cbd42f1bab57619",
+      "bytes": 401
     },
     {
       "path": "bridge/prompt-contribution.js",
@@ -48,9 +78,14 @@
       "bytes": 2620
     },
     {
+      "path": "bridge/ui-slots.js",
+      "sha256": "038398909eb60d2b298bdbfc960b31b08b4f048fa66dd72c83dce46e9be98377",
+      "bytes": 9092
+    },
+    {
       "path": "client.js",
-      "sha256": "1b4c8341e756b8b302877cd716bc0abcf74125e35dfddd44ebc7819a87fea97c",
-      "bytes": 10373
+      "sha256": "007cfd82777e5922874c1dd1bb54ac1212a8c9c72bfd8aed3225ce24554cd507",
+      "bytes": 20577
     },
     {
       "path": "server.mjs",
@@ -58,19 +93,14 @@
       "bytes": 61
     },
     {
-      "path": "src/client/command-handler.js",
-      "sha256": "01723e1180168fc3118bb36906f59fce903188956f19ca686c614cd45be2e1b7",
-      "bytes": 737
-    },
-    {
-      "path": "src/client/index.js",
-      "sha256": "0548b2ddcfe1de4eb40098e769dd568018ebf4cc7e6720667dce73a62b9917e3",
-      "bytes": 98
-    },
-    {
       "path": "src/client/runtime.js",
-      "sha256": "1b4c8341e756b8b302877cd716bc0abcf74125e35dfddd44ebc7819a87fea97c",
-      "bytes": 10373
+      "sha256": "875abb7cb9b6662ce2ab10303277a6b79121c7d948603bb8eb375df3fa8ca76c",
+      "bytes": 4358
+    },
+    {
+      "path": "src/server/command-router.js",
+      "sha256": "35f8e5ee5bdfff0d739a5cbc5a3ab2e7fdfaa42d022b8dba31e97c1b282c8039",
+      "bytes": 737
     },
     {
       "path": "src/server/index.js",
@@ -79,8 +109,8 @@
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "48f894aa62f0c845c49fee3f9742ad7840a818ab3cbd8b310fb20f335f50ac2f",
-      "bytes": 24153
+      "sha256": "7b793c3b005234dae989553af46c6e72688026adede10209b5150208ff621870",
+      "bytes": 23609
     },
     {
       "path": "src/server/summary-mirror.js",

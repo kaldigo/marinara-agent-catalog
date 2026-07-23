@@ -1,0 +1,20 @@
+[
+  {
+    "id": "impersonate-button",
+    "name": "Impersonate Button",
+    "description": "Feature marker for package-era dry-run persona generation composer actions.",
+    "category": "misc",
+    "phase": "pre_generation",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "libraryHidden": true,
+    "runtimeDisabled": true,
+    "modeAllowlist": [
+      "roleplay",
+      "visual_novel"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]

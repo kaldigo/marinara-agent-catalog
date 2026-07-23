@@ -6,6 +6,7 @@ import {
   registerPromptContributor,
   setPromptContribution,
 } from "../../bridge/prompt-contribution.js";
+import { injectHostJson } from "../../bridge/host-routes.js";
 import {
   GROUP_SORT_ORDER_AGENT_TYPE,
   buildCandidateHash,
@@ -421,17 +422,7 @@ async function patchChatState(runtime, chat, statePatch) {
 }
 
 async function injectJson(app, method, url, payload) {
-  const response = await app.inject({
-    method,
-    url,
-    headers: { [INTERNAL_HEADER]: "1" },
-    ...(payload === undefined ? {} : { payload }),
-  });
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(response.payload || `${response.statusCode} ${response.statusMessage}`);
-  }
-  if (!response.payload || response.statusCode === 204) return {};
-  return JSON.parse(response.payload);
+  return injectHostJson(app, method, url, payload, { internalHeader: INTERNAL_HEADER });
 }
 
 function isInternalRequest(request) {

@@ -1,4 +1,9 @@
 import { looksLikeNativeMessageRange, tokenizeCommandTail } from "./ranges.js";
+import { getActiveChatIdFromClient, setTextControlValue } from "./composer-dom.js";
+
+// Upstream gap MB-001: packages cannot register Roleplay/Conversation slash commands.
+
+const COMMAND_BRIDGE_STATE_KEY = "__mariBridgeSlashCommandState";
 
 export function createSlashCommandRouter() {
   const registrations = new Map();
@@ -18,6 +23,38 @@ export function createSlashCommandRouter() {
       return { handled: true, result };
     },
   };
+}
+
+// Registers a browser-side package slash command or native-command augment.
+export function registerBridgeSlashCommand(registration) {
+  const normalized = normalizeBridgeCommandRegistration(registration);
+  const state = getCommandBridgeState();
+  state.registrations.set(normalized.key, normalized);
+  ensureSlashCommandBridge();
+  return () => {
+    const current = state.registrations.get(normalized.key);
+    if (current === normalized) state.registrations.delete(normalized.key);
+  };
+}
+
+// Installs the bridge-owned composer interception runtime.
+export function ensureSlashCommandBridge(options = {}) {
+  const state = getCommandBridgeState();
+  if (typeof options.resolveContext === "function") state.resolveContext = options.resolveContext;
+  if (typeof options.onFeedback === "function") state.onFeedback = options.onFeedback;
+  if (state.started) return state;
+  state.started = true;
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installSlashCommandListeners, { once: true });
+  } else {
+    installSlashCommandListeners();
+  }
+  return state;
+}
+
+// Pure helper for tests and packages that want to inspect registered commands.
+export function listBridgeSlashCommands() {
+  return sortedBridgeRegistrations(getCommandBridgeState());
 }
 
 export function matchSlashCommand(rawText, registrations) {
@@ -79,5 +116,109 @@ export function createHideHijackOwner() {
   return ({ tokens }) => {
     const first = tokens[0] || "";
     return Boolean(first) && !looksLikeNativeMessageRange(first);
+  };
+}
+
+function getCommandBridgeState() {
+  if (!window[COMMAND_BRIDGE_STATE_KEY]) {
+    window[COMMAND_BRIDGE_STATE_KEY] = {
+      started: false,
+      registrations: new Map(),
+      resolveContext: null,
+      onFeedback: null,
+    };
+  }
+  return window[COMMAND_BRIDGE_STATE_KEY];
+}
+
+function installSlashCommandListeners() {
+  document.addEventListener("keydown", onComposerKeyDownCapture, true);
+  document.addEventListener("submit", onComposerSubmitCapture, true);
+}
+
+async function onComposerKeyDownCapture(event) {
+  if (event.defaultPrevented || event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  }
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement) && !(target instanceof HTMLInputElement)) return;
+  await maybeHandleBridgeSlashCommand(event, target);
+}
+
+async function onComposerSubmitCapture(event) {
+  if (event.defaultPrevented) return;
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
+  const field = form.querySelector("textarea, input[type='text']");
+  if (field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement) {
+    await maybeHandleBridgeSlashCommand(event, field);
+  }
+}
+
+async function maybeHandleBridgeSlashCommand(event, field) {
+  const raw = String(field.value || "").trim();
+  if (!raw.startsWith("/")) return;
+  const state = getCommandBridgeState();
+  const match = matchSlashCommand(raw, sortedBridgeRegistrations(state));
+  if (!match) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+
+  const context = await resolveCommandContext(state, { raw, field, match });
+  try {
+    const result = await match.registration.handler({ ...match, context });
+    if (result?.clearInput !== false) setTextControlValue(field, "");
+    publishCommandFeedback(state, {
+      ok: true,
+      packageId: match.registration.packageId,
+      id: match.registration.id,
+      command: match.command,
+      result,
+    });
+  } catch (error) {
+    publishCommandFeedback(state, {
+      ok: false,
+      packageId: match.registration.packageId,
+      id: match.registration.id,
+      command: match.command,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function resolveCommandContext(state, base) {
+  const context = {
+    chatId: getActiveChatIdFromClient(),
+    field: base.field,
+    raw: base.raw,
+    match: base.match,
+  };
+  if (typeof state.resolveContext !== "function") return context;
+  const extra = await state.resolveContext(context);
+  return extra && typeof extra === "object" ? { ...context, ...extra } : context;
+}
+
+function publishCommandFeedback(state, detail) {
+  state.onFeedback?.(detail);
+  window.dispatchEvent(new CustomEvent("mari-bridge:slash-command-feedback", { detail }));
+}
+
+function sortedBridgeRegistrations(state) {
+  return [...state.registrations.values()].sort((a, b) => a.priority - b.priority || a.key.localeCompare(b.key));
+}
+
+function normalizeBridgeCommandRegistration(registration) {
+  const packageId = String(registration?.packageId || "").trim();
+  if (!packageId) throw new Error("Bridge slash command registration requires packageId.");
+  const normalized = normalizeRegistration(registration);
+  const localId = String(registration.id || normalized.id).trim();
+  return {
+    ...normalized,
+    id: localId,
+    key: `${packageId}:${localId}`,
+    packageId,
+    kind: registration.kind === "augment" ? "augment" : "command",
+    priority: Number.isFinite(Number(registration.priority)) ? Number(registration.priority) : 100,
   };
 }

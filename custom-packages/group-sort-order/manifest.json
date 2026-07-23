@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "group-sort-order",
   "name": "Group Sort Order",
-  "version": "1.0.3",
+  "version": "1.0.6",
   "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
   "engine": {
     "min": "2.3.3",
@@ -29,13 +29,43 @@
     },
     {
       "path": "bridge/commands.js",
-      "sha256": "a2e19c5f7393f85776b4a9395f3e83377947096c80b887535fc0735c98a1b8b1",
-      "bytes": 3117
+      "sha256": "e75187ae5141e3777b1d2fb8d1eb6bf95a455c02037bcc03ef9b54b15ec7c665",
+      "bytes": 8267
+    },
+    {
+      "path": "bridge/composer-actions.js",
+      "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
+      "bytes": 3635
+    },
+    {
+      "path": "bridge/composer-dom.js",
+      "sha256": "2fc31bf7b8f61880263035ad80a5fe0a155905d25e20f26d70a7a5c18155fade",
+      "bytes": 6429
+    },
+    {
+      "path": "bridge/fetch-intercept.js",
+      "sha256": "094d06962dae754dddaa7afffc2ce013608b053a1a63e5e669f281b4d8bdae36",
+      "bytes": 4889
+    },
+    {
+      "path": "bridge/generation-lifecycle.js",
+      "sha256": "eb57b8e673c6104136724b610b46ddbf143984a29c6fd3d6a4656818283c1f15",
+      "bytes": 11220
+    },
+    {
+      "path": "bridge/generation-stream.js",
+      "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
+      "bytes": 2807
+    },
+    {
+      "path": "bridge/host-routes.js",
+      "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
+      "bytes": 1847
     },
     {
       "path": "bridge/index.js",
-      "sha256": "a6da8c1ce576b6d48ade64101ae4d88fca46f232e0cdbfdf5f7bb1f92ea991f7",
-      "bytes": 141
+      "sha256": "c412889a03fabdeb63825459f7e281e476476a29fbacd6477cbd42f1bab57619",
+      "bytes": 401
     },
     {
       "path": "bridge/prompt-contribution.js",
@@ -53,9 +83,14 @@
       "bytes": 2620
     },
     {
+      "path": "bridge/ui-slots.js",
+      "sha256": "038398909eb60d2b298bdbfc960b31b08b4f048fa66dd72c83dce46e9be98377",
+      "bytes": 9092
+    },
+    {
       "path": "client.js",
-      "sha256": "d910695b33d4402cc73a04d5b87d221ff80ad80e24c2e1d873188268e60776be",
-      "bytes": 14739
+      "sha256": "37e6779e07ef2571ff52a738f2996892a05236e87dba3077746e9fb05f7b4ad8",
+      "bytes": 42040
     },
     {
       "path": "server.mjs",
@@ -64,8 +99,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "d910695b33d4402cc73a04d5b87d221ff80ad80e24c2e1d873188268e60776be",
-      "bytes": 14739
+      "sha256": "ca6174f7eca2d56a23db2c529d20b7337a9f201c97ab06fe3b061150fbee8b32",
+      "bytes": 13068
     },
     {
       "path": "src/server/index.js",
@@ -74,8 +109,8 @@
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "b2bd3fc815157f32754ed079d46222e3971ea15b48b904da9777f30d81d53ffa",
-      "bytes": 18385
+      "sha256": "2623be3d6c12b1c1db3b6278a58d75d9d3d2e778246cd1683dd16cca6493cde3",
+      "bytes": 18111
     },
     {
       "path": "src/shared/state.js",

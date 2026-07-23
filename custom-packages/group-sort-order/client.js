@@ -1,17 +1,857 @@
+// bridge/composer-dom.js
+// Upstream gap MB-010: packages do not yet have stable client DOM lifecycle,
+// style injection, or text-control helpers for package-owned UI surfaces.
+
+function createDomScope() {
+  const cleanups = [];
+  const timers = new Set();
+
+  function cleanup(fn) {
+    if (typeof fn === "function") cleanups.push(fn);
+    return fn;
+  }
+
+  function on(target, type, handler, options) {
+    if (!target || typeof target.addEventListener !== "function") return () => {};
+    target.addEventListener(type, handler, options);
+    return cleanup(() => target.removeEventListener(type, handler, options));
+  }
+
+  function observe(target, handler, options) {
+    if (!target || typeof MutationObserver !== "function") return null;
+    const observer = new MutationObserver(handler);
+    observer.observe(target, options);
+    cleanup(() => observer.disconnect());
+    return observer;
+  }
+
+  function timeout(handler, ms) {
+    const id = window.setTimeout(() => {
+      timers.delete(id);
+      handler();
+    }, ms);
+    timers.add(id);
+    return id;
+  }
+
+  function clearTimer(id) {
+    if (!id) return;
+    timers.delete(id);
+    window.clearTimeout(id);
+  }
+
+  function destroy() {
+    for (const id of timers) window.clearTimeout(id);
+    timers.clear();
+    while (cleanups.length) {
+      try {
+        cleanups.pop()?.();
+      } catch {}
+    }
+  }
+
+  return { cleanup, on, observe, timeout, clearTimer, destroy };
+}
+
+// Injects or updates package-owned CSS with a stable style element ID.
+function injectStyle(id, cssText) {
+  const existing = document.getElementById(id);
+  if (existing) {
+    existing.textContent = cssText;
+    return existing;
+  }
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = cssText;
+  document.head.appendChild(style);
+  return style;
+}
+
+// Checks whether a DOM element is currently visible in layout.
+function isVisibleElement(el) {
+  if (!el || typeof el.getBoundingClientRect !== "function") return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+// Updates a text input/textarea through native setters so React-like listeners fire.
+function setTextControlValue(control, value) {
+  if (!control) return;
+  const proto = control instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter) setter.call(control, value);
+  else control.value = value;
+  control.dispatchEvent(new Event("input", { bubbles: true }));
+  control.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+// Resolves Marinara's active chat ID from URL, DOM markers, local storage, or known stores.
+function getActiveChatIdFromClient() {
+  const fromUrl = readChatIdFromLocation();
+  if (fromUrl) return fromUrl;
+  const selected = document.querySelector('[data-chat-id][class*="sidebar-accent"], [data-chat-id][aria-current="true"]');
+  if (selected) return selected.getAttribute("data-chat-id") || "";
+  const firstDataChat = document.querySelector("[data-chat-id]");
+  if (firstDataChat) return firstDataChat.getAttribute("data-chat-id") || "";
+  const fromStore = localStorage.getItem("marinara-active-chat-id");
+  if (fromStore) return fromStore;
+  const stores = [
+    window.useChatStore?.getState?.(),
+    window.__MARINARA_CHAT_STORE__?.getState?.(),
+    window.__marinara?.chatStore?.getState?.(),
+  ];
+  for (const store of stores) {
+    const id = store?.activeChatId || store?.currentChatId || store?.chatId;
+    if (typeof id === "string" && id.trim()) return id.trim();
+  }
+  return "";
+}
+
+// Watches active chat changes caused by routing, focus/visibility, DOM, or store updates.
+function watchActiveChatId(callback, options = {}) {
+  if (typeof callback !== "function") throw new Error("watchActiveChatId requires a callback.");
+  const scope = createDomScope();
+  const intervalMs = Number.isFinite(Number(options.intervalMs)) ? Number(options.intervalMs) : 2_000;
+  const debounceMs = Number.isFinite(Number(options.debounceMs)) ? Number(options.debounceMs) : 150;
+  let activeChatId = "";
+  let timer = 0;
+
+  function emitIfChanged() {
+    timer = 0;
+    const chatId = getActiveChatIdFromClient();
+    if (chatId === activeChatId) return;
+    activeChatId = chatId;
+    callback(chatId);
+  }
+
+  function schedule(delayMs = debounceMs) {
+    if (timer) scope.clearTimer(timer);
+    timer = scope.timeout(emitIfChanged, delayMs);
+  }
+
+  scope.cleanup(subscribeHistoryForChatWatcher("pushState", schedule));
+  scope.cleanup(subscribeHistoryForChatWatcher("replaceState", schedule));
+  scope.on(window, "popstate", () => schedule(0));
+  scope.on(window, "focus", () => schedule());
+  scope.on(document, "visibilitychange", () => {
+    if (!document.hidden) schedule();
+  });
+  if (document.body) {
+    scope.observe(document.body, () => schedule(), {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-chat-id", "aria-current", "class"],
+    });
+  }
+  if (intervalMs > 0) {
+    const intervalId = window.setInterval(() => schedule(), intervalMs);
+    scope.cleanup(() => window.clearInterval(intervalId));
+  }
+  if (options.emitInitial !== false) schedule(0);
+  return () => scope.destroy();
+}
+
+function readChatIdFromLocation() {
+  try {
+    const url = new URL(window.location.href);
+    return url.searchParams.get("chatId") || url.pathname.match(/\/chats?\/([^/?#]+)/)?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+function subscribeHistoryForChatWatcher(method, schedule) {
+  const state = getChatWatcherHistoryState();
+  state.watchers[method].add(schedule);
+  const original = history[method];
+  if (original && !state.patched[method]) {
+    state.original[method] = original;
+    history[method] = function patchedHistoryMethod(...args) {
+      const result = state.original[method].apply(this, args);
+      for (const watcher of [...state.watchers[method]]) watcher();
+      return result;
+    };
+    state.patched[method] = true;
+  }
+  return () => state.watchers[method].delete(schedule);
+}
+
+function getChatWatcherHistoryState() {
+  const key = "__mariBridgeChatWatcherHistoryState";
+  if (!window[key]) {
+    window[key] = {
+      original: {},
+      patched: {},
+      watchers: {
+        pushState: new Set(),
+        replaceState: new Set(),
+      },
+    };
+  }
+  return window[key];
+}
+
+// bridge/generation-stream.js
+function parseSsePayloads(text, final = false) {
+  const parts = String(text || "").split(/\n\n/u);
+  const rest = final ? "" : parts.pop() || "";
+  return {
+    rest,
+    payloads: parts
+      .map((frame) =>
+        frame
+          .split(/\r?\n/u)
+          .map((line) => (line.startsWith("data:") ? line.slice(5).trimStart() : ""))
+          .filter(Boolean)
+          .join("\n"),
+      )
+      .filter(Boolean),
+  };
+}
+
+function parseSseEventPayload(payload) {
+  if (!payload) return null;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+async function apiRequest(path, options = {}) {
+  const response = await fetch(path.startsWith("/api/") ? path : `/api${path.startsWith("/") ? path : `/${path}`}`, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  if (!response.ok) {
+    const message = typeof data === "object" && data?.error ? data.error : text || `${response.status} ${response.statusText}`;
+    throw new Error(message);
+  }
+  return data;
+}
+
+async function streamJsonSse(path, body, handlers = {}, options = {}) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    body: JSON.stringify(body || {}),
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    let text = "";
+    try {
+      text = await response.text();
+    } catch {}
+    throw new Error(text || `Streaming request failed (${response.status})`);
+  }
+  if (!response.body) throw new Error("Streaming request returned no response body.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let carry = "";
+
+  while (true) {
+    const next = await reader.read();
+    if (next.done) {
+      const parsed = parseSsePayloads(carry, true);
+      for (const payload of parsed.payloads) emitSsePayload(payload, handlers);
+      handlers.onDone?.();
+      return;
+    }
+
+    const decoded = decoder.decode(next.value, { stream: true });
+    const parsed = parseSsePayloads(`${carry}${decoded}`, false);
+    carry = parsed.rest;
+    for (const payload of parsed.payloads) emitSsePayload(payload, handlers);
+  }
+}
+
+function emitSsePayload(payload, handlers) {
+  const event = parseSseEventPayload(payload);
+  handlers.onPayload?.(payload, event);
+  if (!event || !event.type) return;
+  handlers.onEvent?.(event);
+  if (event.type === "error") handlers.onErrorEvent?.(event);
+  if (event.type === "done") handlers.onDoneEvent?.(event);
+  if (event.type === "aborted") handlers.onAbortEvent?.(event);
+}
+
+// bridge/ui-slots.js
+// Upstream gap MB-010: packages do not yet have stable composer UI slots.
+
+const UI_SLOT_STATE_KEY = "__mariBridgeUiSlotState";
+
+const COMPOSER_SLOT_ABOVE_INPUT = "composer:above-input";
+const COMPOSER_SLOT_QUICK_ACTIONS = "composer:quick-actions";
+
+const KNOWN_COMPOSER_SLOTS = new Set([COMPOSER_SLOT_ABOVE_INPUT, COMPOSER_SLOT_QUICK_ACTIONS]);
+
+// Registers package-owned UI with a bridge-managed composer slot.
+function registerComposerSlotContribution(contribution) {
+  const normalized = normalizeSlotContribution(contribution);
+  const state = getUiSlotState();
+  state.contributions.set(normalized.key, normalized);
+  ensureComposerSlotBridge();
+  scheduleComposerSlotRender();
+  return () => {
+    const current = state.contributions.get(normalized.key);
+    if (current !== normalized) return;
+    state.contributions.delete(normalized.key);
+    unmountContribution(state, normalized.key);
+    scheduleComposerSlotRender();
+  };
+}
+
+// Starts DOM observation for composer slots. Registration calls this automatically.
+function ensureComposerSlotBridge(options = {}) {
+  const state = getUiSlotState();
+  if (state.started) return state;
+  state.started = true;
+  state.scope = createDomScope();
+  state.renderDelayMs = Number.isFinite(Number(options.renderDelayMs)) ? Number(options.renderDelayMs) : 80;
+  if (document.readyState === "loading") {
+    state.scope.on(document, "DOMContentLoaded", () => startComposerSlotObservation(state), { once: true });
+  } else {
+    startComposerSlotObservation(state);
+  }
+  return state;
+}
+
+// Forces a bridge slot render pass after a package changes its own state.
+function scheduleComposerSlotRender(delayMs) {
+  const state = getUiSlotState();
+  if (state.renderTimer) state.scope?.clearTimer?.(state.renderTimer);
+  const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : state.renderDelayMs;
+  state.renderTimer = (state.scope || createDomScope()).timeout(() => {
+    state.renderTimer = 0;
+    renderComposerSlots(state);
+  }, delay);
+}
+
+// Returns the active composer pieces that bridge slot renderers receive.
+function findActiveComposerContext() {
+  const root = findActiveChatComposer();
+  const textarea = root?.querySelector("textarea.mari-chat-input-textarea, textarea") || null;
+  const sendButton = root?.querySelector("button.mari-chat-send-btn, button[title='Send'], button[aria-label='Send']") || null;
+  return {
+    root,
+    textarea,
+    sendButton,
+    chatId: getActiveChatIdFromClient(),
+  };
+}
+
+function getUiSlotState() {
+  if (!window[UI_SLOT_STATE_KEY]) {
+    window[UI_SLOT_STATE_KEY] = {
+      started: false,
+      scope: null,
+      observer: null,
+      renderTimer: 0,
+      renderDelayMs: 80,
+      activeRoot: null,
+      contributions: new Map(),
+      mounted: new Map(),
+    };
+  }
+  return window[UI_SLOT_STATE_KEY];
+}
+
+function startComposerSlotObservation(state) {
+  state.scope.on(window, "focus", () => scheduleComposerSlotRender(0));
+  state.scope.on(window, "resize", () => scheduleComposerSlotRender());
+  state.scope.on(window, "popstate", () => scheduleComposerSlotRender(0));
+  state.scope.on(window, "mari-bridge:generation-state", () => scheduleComposerSlotRender());
+  patchHistoryMethod("pushState");
+  patchHistoryMethod("replaceState");
+  if (document.body) {
+    state.observer = state.scope.observe(
+      document.body,
+      () => scheduleComposerSlotRender(),
+      { childList: true, subtree: true },
+    );
+  }
+  scheduleComposerSlotRender(0);
+}
+
+function renderComposerSlots(state) {
+  const context = findActiveComposerContext();
+  if (!context.root) {
+    unmountAll(state);
+    state.activeRoot = null;
+    return;
+  }
+  if (state.activeRoot && state.activeRoot !== context.root) unmountAll(state);
+  state.activeRoot = context.root;
+
+  const slotHosts = ensureSlotHosts(context);
+  const contributions = [...state.contributions.values()]
+    .filter((entry) => KNOWN_COMPOSER_SLOTS.has(entry.slot))
+    .sort((a, b) => a.priority - b.priority || a.key.localeCompare(b.key));
+  const visibleKeys = new Set();
+
+  for (const contribution of contributions) {
+    const slotHost = slotHosts[contribution.slot];
+    if (!slotHost || contribution.shouldShow(context) === false) {
+      unmountContribution(state, contribution.key);
+      continue;
+    }
+    visibleKeys.add(contribution.key);
+    mountOrUpdateContribution(state, contribution, slotHost, context);
+  }
+
+  for (const key of [...state.mounted.keys()]) {
+    if (!visibleKeys.has(key)) unmountContribution(state, key);
+  }
+}
+
+function ensureSlotHosts(context) {
+  return {
+    [COMPOSER_SLOT_ABOVE_INPUT]: ensureAboveInputHost(context.root),
+    [COMPOSER_SLOT_QUICK_ACTIONS]: ensureQuickActionsHost(context.root, context.sendButton),
+  };
+}
+
+function ensureAboveInputHost(root) {
+  let host = root.querySelector(":scope > [data-mari-bridge-slot='composer:above-input']");
+  if (!(host instanceof HTMLElement)) {
+    host = document.createElement("div");
+    host.dataset.mariBridgeSlot = COMPOSER_SLOT_ABOVE_INPUT;
+    host.className = "mari-bridge-slot mari-bridge-slot-above-input";
+    root.insertBefore(host, root.firstChild);
+  }
+  return host;
+}
+
+function ensureQuickActionsHost(root, sendButton) {
+  let host = root.querySelector(":scope [data-mari-bridge-slot='composer:quick-actions']");
+  if (!(host instanceof HTMLElement)) {
+    host = document.createElement("span");
+    host.dataset.mariBridgeSlot = COMPOSER_SLOT_QUICK_ACTIONS;
+    host.className = "mari-bridge-slot mari-bridge-slot-quick-actions";
+  }
+  const targetParent = sendButton?.parentElement || root;
+  if (host.parentElement !== targetParent) {
+    targetParent.insertBefore(host, sendButton || null);
+  } else if (sendButton && host.nextElementSibling !== sendButton) {
+    targetParent.insertBefore(host, sendButton);
+  }
+  return host;
+}
+
+function mountOrUpdateContribution(state, contribution, slotHost, context) {
+  let mounted = state.mounted.get(contribution.key);
+  const needsRender = !mounted || mounted.slotHost !== slotHost;
+  if (needsRender) {
+    unmountContribution(state, contribution.key);
+    const host = document.createElement("span");
+    host.dataset.mariBridgeContribution = contribution.key;
+    host.dataset.mariBridgePackageId = contribution.packageId;
+    host.dataset.mariBridgeContributionId = contribution.id;
+    host.className = "mari-bridge-slot-contribution";
+    const rendered = contribution.render({ ...context, slot: contribution.slot, host, slotHost });
+    const node = rendered instanceof Node ? rendered : host;
+    if (node !== host) host.appendChild(node);
+    slotHost.appendChild(host);
+    mounted = { host, node, slotHost, cleanup: null };
+    state.mounted.set(contribution.key, mounted);
+  }
+  const cleanup = contribution.update?.({ ...context, slot: contribution.slot, host: mounted.host, node: mounted.node, slotHost });
+  if (typeof cleanup === "function") mounted.cleanup = cleanup;
+}
+
+function unmountContribution(state, key) {
+  const mounted = state.mounted.get(key);
+  if (!mounted) return;
+  state.mounted.delete(key);
+  try {
+    mounted.cleanup?.();
+  } catch {}
+  mounted.host?.remove();
+}
+
+function unmountAll(state) {
+  for (const key of [...state.mounted.keys()]) unmountContribution(state, key);
+}
+
+function normalizeSlotContribution(contribution) {
+  const packageId = String(contribution?.packageId || "").trim();
+  const id = String(contribution?.id || "").trim();
+  const slot = String(contribution?.slot || "").trim();
+  if (!packageId) throw new Error("Composer slot contribution requires packageId.");
+  if (!id) throw new Error("Composer slot contribution requires id.");
+  if (!KNOWN_COMPOSER_SLOTS.has(slot)) throw new Error(`Unknown composer slot: ${slot || "(missing)"}`);
+  if (typeof contribution.render !== "function") throw new Error(`Composer slot contribution ${packageId}:${id} requires render().`);
+  return {
+    packageId,
+    id,
+    key: `${packageId}:${id}`,
+    slot,
+    priority: Number.isFinite(Number(contribution.priority)) ? Number(contribution.priority) : 100,
+    shouldShow: typeof contribution.shouldShow === "function" ? contribution.shouldShow : () => true,
+    render: contribution.render,
+    update: typeof contribution.update === "function" ? contribution.update : null,
+  };
+}
+
+function findActiveChatComposer() {
+  const candidates = Array.from(
+    document.querySelectorAll(".mari-chat-input.chat-input-container, .mari-chat-input, .chat-input-container"),
+  );
+  return candidates.find((root) => root instanceof HTMLElement && root.querySelector("textarea") && isVisibleElement(root)) || null;
+}
+
+function patchHistoryMethod(method) {
+  const original = history[method];
+  if (!original || original.__mariBridgeUiSlotPatched) return;
+  const patched = function patchedHistoryMethod(...args) {
+    const result = original.apply(this, args);
+    scheduleComposerSlotRender(0);
+    return result;
+  };
+  patched.__mariBridgeUiSlotPatched = true;
+  history[method] = patched;
+}
+
+// bridge/generation-lifecycle.js
+// Upstream gap MB-011: packages do not yet have stable generation lifecycle hooks.
+
+const GENERATION_STATE_KEY = "__mariBridgeGenerationState";
+const NATIVE_MAIN_SOURCE_ID = "marinara:native-main";
+
+const GENERATION_KIND_MAIN = "main";
+const GENERATION_KIND_AGENT = "agent";
+const GENERATION_STATE_EVENT = "mari-bridge:generation-state";
+const GENERATING_MAIN_EVENT = "mari-bridge:generating-main";
+const GENERATING_AGENT_EVENT = "mari-bridge:generating-agent";
+
+// Starts native generation tracking and bridge event emission.
+function ensureGenerationLifecycleBridge(options = {}) {
+  const state = getGenerationState();
+  state.nativeTracking = options.nativeTracking !== false;
+  if (state.started) return state;
+  state.started = true;
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => startGenerationObservation(state), { once: true });
+  } else {
+    startGenerationObservation(state);
+  }
+  return state;
+}
+
+// Declares package-owned generation activity; callers must call end(), error(), or abort().
+function declarePackageGeneration(input = {}) {
+  ensureGenerationLifecycleBridge();
+  const state = getGenerationState();
+  const entry = normalizeGenerationEntry(input);
+  state.active.set(entry.key, entry);
+  let lock = null;
+  if (entry.lockComposer) {
+    lock = createComposerGenerationLock({
+      packageId: entry.packageId,
+      chatId: entry.chatId,
+      runId: entry.runId,
+      reason: entry.reason,
+      abort: () => controller.abort(),
+    });
+  }
+  const controller = {
+    runId: entry.runId,
+    end: (detail = {}) => finishDeclaredGeneration(entry.key, "complete", detail, lock),
+    error: (error) => finishDeclaredGeneration(entry.key, "error", { error: errorMessage(error) }, lock),
+    abort: () => {
+      try {
+        entry.abort?.();
+      } catch {}
+      finishDeclaredGeneration(entry.key, "aborted", {}, lock);
+    },
+  };
+  emitGenerationSnapshot(state, entry, true, "started");
+  return controller;
+}
+
+// Streams /api/generate/dryRun with bridge generation events and optional composer locking.
+async function streamBridgeDryRunGeneration(input = {}) {
+  const declaration = declarePackageGeneration({
+    packageId: input.packageId,
+    id: input.id || "dry-run",
+    kind: input.kind || GENERATION_KIND_AGENT,
+    chatId: input.chatId || input.body?.chatId || "",
+    reason: input.reason || "dry-run",
+    lockComposer: input.lockComposer === true,
+    abort: input.abort,
+  });
+  try {
+    const result = await streamJsonSse(input.path || "/api/generate/dryRun", input.body || {}, input.handlers || {}, {
+      signal: input.signal,
+      headers: input.headers,
+    });
+    declaration.end();
+    return result;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") declaration.abort();
+    else declaration.error(error);
+    throw error;
+  }
+}
+
+// Calls /api/generate/raw with bridge generation events and optional composer locking.
+async function callBridgeRawGeneration(input = {}) {
+  const declaration = declarePackageGeneration({
+    packageId: input.packageId,
+    id: input.id || "raw",
+    kind: input.kind || GENERATION_KIND_AGENT,
+    chatId: input.chatId || input.body?.chatId || "",
+    reason: input.reason || "raw",
+    lockComposer: input.lockComposer === true,
+    abort: input.abort,
+  });
+  try {
+    const result = await apiRequest(input.path || "/generate/raw", {
+      method: input.method || "POST",
+      headers: input.headers,
+      body: JSON.stringify(input.body || {}),
+      signal: input.signal,
+    });
+    declaration.end();
+    return result;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") declaration.abort();
+    else declaration.error(error);
+    throw error;
+  }
+}
+
+// Temporarily disables the composer and turns the send button into a Stop control.
+function createComposerGenerationLock(input = {}) {
+  const context = findActiveComposerContext();
+  const textarea = context.textarea;
+  const sendButton = context.sendButton;
+  const original = {
+    textareaDisabled: textarea?.disabled,
+    sendDisabled: sendButton?.disabled,
+    sendAriaDisabled: sendButton?.getAttribute("aria-disabled"),
+    sendTitle: sendButton?.getAttribute("title"),
+    sendAriaLabel: sendButton?.getAttribute("aria-label"),
+  };
+  const onStop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    input.abort?.();
+  };
+
+  if (textarea) textarea.disabled = true;
+  if (sendButton) {
+    sendButton.disabled = false;
+    sendButton.removeAttribute("aria-disabled");
+    sendButton.setAttribute("title", "Stop generating");
+    sendButton.setAttribute("aria-label", "Stop generating");
+    sendButton.classList.add("mari-bridge-generation-stop");
+    sendButton.addEventListener("click", onStop, true);
+  }
+
+  return () => {
+    if (textarea && original.textareaDisabled !== undefined) textarea.disabled = original.textareaDisabled;
+    if (sendButton) {
+      sendButton.disabled = original.sendDisabled ?? false;
+      restoreAttribute(sendButton, "aria-disabled", original.sendAriaDisabled);
+      restoreAttribute(sendButton, "title", original.sendTitle);
+      restoreAttribute(sendButton, "aria-label", original.sendAriaLabel);
+      sendButton.classList.remove("mari-bridge-generation-stop");
+      sendButton.removeEventListener("click", onStop, true);
+    }
+  };
+}
+
+// Lets listeners query the current bridge generation snapshot.
+function getBridgeGenerationSnapshot() {
+  const state = getGenerationState();
+  return buildSnapshot(state);
+}
+
+function getGenerationState() {
+  if (!window[GENERATION_STATE_KEY]) {
+    window[GENERATION_STATE_KEY] = {
+      started: false,
+      nativeTracking: true,
+      active: new Map(),
+      nativeActive: false,
+      observer: null,
+      syncTimer: 0,
+    };
+  }
+  return window[GENERATION_STATE_KEY];
+}
+
+function startGenerationObservation(state) {
+  if (state.nativeTracking) {
+    document.addEventListener("click", () => scheduleNativeGenerationSync(state), true);
+    window.addEventListener("focus", () => scheduleNativeGenerationSync(state));
+    window.addEventListener("pageshow", () => scheduleNativeGenerationSync(state));
+    window.addEventListener("marinara:generation-complete", () => setNativeMainActive(state, false, "complete"));
+    window.addEventListener("marinara:generation-error", () => setNativeMainActive(state, false, "error"));
+    if (document.body) {
+      state.observer = new MutationObserver(() => scheduleNativeGenerationSync(state));
+      state.observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["aria-label", "title", "class", "disabled"],
+      });
+    }
+    scheduleNativeGenerationSync(state, 0);
+  }
+}
+
+function scheduleNativeGenerationSync(state, delay = 80) {
+  if (state.syncTimer) window.clearTimeout(state.syncTimer);
+  state.syncTimer = window.setTimeout(() => {
+    state.syncTimer = 0;
+    setNativeMainActive(state, detectNativeMainGenerationActive(), "detected");
+  }, delay);
+}
+
+function setNativeMainActive(state, active, reason) {
+  if (state.nativeActive === active) return;
+  state.nativeActive = active;
+  const entry = {
+    key: NATIVE_MAIN_SOURCE_ID,
+    packageId: "marinara",
+    id: "native-main",
+    kind: GENERATION_KIND_MAIN,
+    chatId: "",
+    runId: NATIVE_MAIN_SOURCE_ID,
+    reason,
+  };
+  if (active) state.active.set(entry.key, entry);
+  else state.active.delete(entry.key);
+  emitGenerationSnapshot(state, entry, active, reason);
+}
+
+function detectNativeMainGenerationActive() {
+  return collectCandidateButtons().some(isGenerationStopButton);
+}
+
+function collectCandidateButtons() {
+  const buttons = new Set();
+  document
+    .querySelectorAll(".mari-chat-input button, .chat-input-container button, button.mari-chat-send-btn")
+    .forEach((button) => buttons.add(button));
+  document
+    .querySelectorAll("button[title*='Stop' i], button[aria-label*='Stop' i]")
+    .forEach((button) => buttons.add(button));
+  return [...buttons];
+}
+
+function isGenerationStopButton(button) {
+  if (!(button instanceof HTMLButtonElement) || !button.isConnected) return false;
+  const label = [button.getAttribute("title"), button.getAttribute("aria-label"), button.textContent]
+    .filter(Boolean)
+    .join(" ");
+  if (/\bstop\s+generat(?:e|ing|ion)\b/i.test(label)) return true;
+  const inChatInput = Boolean(button.closest(".mari-chat-input, .chat-input-container"));
+  if (!inChatInput && !button.classList.contains("mari-chat-send-btn")) return false;
+  const svg = button.querySelector("svg");
+  if (!svg) return false;
+  const className = svg.getAttribute("class") || "";
+  return /\b(lucide-)?(circle-stop|stop-circle)\b/i.test(className) || Boolean(svg.querySelector("circle") && svg.querySelector("rect"));
+}
+
+function finishDeclaredGeneration(key, status, detail, lock) {
+  const state = getGenerationState();
+  const entry = state.active.get(key);
+  if (!entry) return;
+  state.active.delete(key);
+  try {
+    lock?.();
+  } catch {}
+  emitGenerationSnapshot(state, entry, false, status, detail);
+}
+
+function emitGenerationSnapshot(state, entry, active, status, detail = {}) {
+  const snapshot = buildSnapshot(state);
+  const eventDetail = {
+    active,
+    status,
+    source: entry,
+    snapshot,
+    ...detail,
+  };
+  window.dispatchEvent(new CustomEvent(GENERATION_STATE_EVENT, { detail: eventDetail }));
+  window.dispatchEvent(
+    new CustomEvent(entry.kind === GENERATION_KIND_MAIN ? GENERATING_MAIN_EVENT : GENERATING_AGENT_EVENT, {
+      detail: eventDetail,
+    }),
+  );
+}
+
+function buildSnapshot(state) {
+  const active = [...state.active.values()];
+  return {
+    active,
+    mainActive: active.some((entry) => entry.kind === GENERATION_KIND_MAIN),
+    agentActive: active.some((entry) => entry.kind === GENERATION_KIND_AGENT),
+  };
+}
+
+function normalizeGenerationEntry(input) {
+  const packageId = String(input.packageId || "").trim();
+  const id = String(input.id || "").trim();
+  if (!packageId) throw new Error("Generation declaration requires packageId.");
+  if (!id) throw new Error("Generation declaration requires id.");
+  const runId = String(input.runId || `${packageId}:${id}:${Date.now()}:${Math.random().toString(36).slice(2)}`);
+  const kind = input.kind === GENERATION_KIND_MAIN ? GENERATION_KIND_MAIN : GENERATION_KIND_AGENT;
+  return {
+    key: `${packageId}:${id}:${runId}`,
+    packageId,
+    id,
+    kind,
+    chatId: typeof input.chatId === "string" ? input.chatId : "",
+    runId,
+    reason: typeof input.reason === "string" ? input.reason : "",
+    lockComposer: input.lockComposer === true,
+    abort: typeof input.abort === "function" ? input.abort : null,
+  };
+}
+
+function restoreAttribute(element, name, value) {
+  if (value == null) element.removeAttribute(name);
+  else element.setAttribute(name, value);
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// src/client/runtime.js
 (function () {
   const PACKAGE_ID = "group-sort-order";
   const TAG_NAME = "marinara-capability-group-sort-order";
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.3";
+  const RUNTIME_VERSION = "1.0.6";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
     previousState.disposed = true;
+    previousState.slotCleanup?.();
+    previousState.cleanups?.forEach?.((cleanup) => cleanup());
     window.clearTimeout(previousState.pollTimer);
     window.clearTimeout(previousState.renderTimer);
-    previousState.observer?.disconnect();
     document.getElementById(ROOT_ID)?.remove();
     document.getElementById(STYLE_ID)?.remove();
     window[RUNTIME_KEY] = null;
@@ -25,18 +865,19 @@
     lastEnsuredChatId: "",
     lastView: null,
     lastRefreshAt: 0,
-    inputContainer: null,
+    barNode: null,
     propsChatIds: new Map(),
     pollTimer: 0,
     renderTimer: 0,
-    observer: null,
+    slotCleanup: null,
+    cleanups: [],
     ensureInFlight: new Set(),
   };
   state.version = RUNTIME_VERSION;
   window[RUNTIME_KEY] = state;
   state.disposed = false;
 
-  injectStyle();
+  injectStyle(STYLE_ID, styleText());
   defineCapabilityElement();
 
   if (!state.initialized) {
@@ -58,7 +899,7 @@
       disconnectedCallback() {
         this.removeEventListener("marinara-capability-props", this);
         state.propsChatIds.delete(this);
-        scheduleTick(0);
+        scheduleComposerSlotRender(0);
       }
 
       handleEvent(event) {
@@ -74,54 +915,65 @@
     const chatId = typeof props.chatId === "string" && props.chatId.trim() ? props.chatId.trim() : "";
     if (chatId) state.propsChatIds.set(element, chatId);
     else state.propsChatIds.delete(element);
-    scheduleTick(0);
+    bindActiveChat(readCapabilityChatId());
   }
 
   function startRuntime() {
-    document.addEventListener("visibilitychange", scheduleTickFromEvent, true);
-    window.addEventListener("focus", scheduleTickFromEvent);
-    window.addEventListener("resize", onViewportChanged);
-    window.addEventListener("popstate", scheduleTickFromEvent);
-    window.addEventListener("marinara:generation-complete", scheduleTickFromEvent);
-    window.addEventListener("marinara:generation-error", scheduleTickFromEvent);
-    patchHistoryMethod("pushState");
-    patchHistoryMethod("replaceState");
-    observeDom();
-    scheduleTick(0);
+    state.slotCleanup = registerComposerSlotContribution({
+      packageId: PACKAGE_ID,
+      id: "next-speaker",
+      slot: COMPOSER_SLOT_ABOVE_INPUT,
+      priority: 40,
+      shouldShow: ({ chatId }) => Boolean(readCapabilityChatId() || chatId),
+      render: ({ host }) => renderBar(host),
+      update: ({ chatId, node }) => {
+        bindActiveChat(readCapabilityChatId() || chatId || "");
+        updateBar(node, state.lastView);
+      },
+    });
+    on(document, "visibilitychange", scheduleRefreshFromEvent, true);
+    on(window, "focus", scheduleRefreshFromEvent);
+    on(window, "marinara:generation-complete", scheduleRefreshFromEvent);
+    on(window, "marinara:generation-error", scheduleRefreshFromEvent);
+    scheduleComposerSlotRender(0);
   }
 
-  function scheduleTickFromEvent() {
-    scheduleTick(100);
+  function on(target, type, handler, options) {
+    target.addEventListener(type, handler, options);
+    state.cleanups.push(() => target.removeEventListener(type, handler, options));
   }
 
-  function onViewportChanged() {
-    state.inputContainer = null;
-    scheduleTick(100);
+  function scheduleRefreshFromEvent() {
+    scheduleViewRefresh(100);
+    scheduleComposerSlotRender(100);
   }
 
-  function scheduleTick(delay) {
+  function scheduleViewRefresh(delay) {
     if (state.disposed) return;
     if (state.renderTimer) window.clearTimeout(state.renderTimer);
-    state.renderTimer = window.setTimeout(tick, delay);
+    state.renderTimer = window.setTimeout(runViewRefresh, delay);
   }
 
-  function tick() {
+  function runViewRefresh() {
     state.renderTimer = 0;
     if (state.disposed) return;
-    const chatId = readChatId();
-    if (chatId !== state.activeChatId) {
-      state.activeChatId = chatId;
-      state.lastView = null;
-      updateBar(null);
-    }
-    renderShell();
+    const chatId = state.activeChatId;
     if (chatId && chatId !== state.lastEnsuredChatId && !state.ensureInFlight.has(chatId)) {
       void ensure(chatId);
     } else if (chatId && Date.now() - state.lastRefreshAt > 1500) {
       void refreshView(chatId);
     }
     if (state.pollTimer) window.clearTimeout(state.pollTimer);
-    state.pollTimer = window.setTimeout(tick, 2000);
+    state.pollTimer = window.setTimeout(runViewRefresh, 2000);
+  }
+
+  function bindActiveChat(chatId) {
+    const nextChatId = typeof chatId === "string" ? chatId.trim() : "";
+    if (nextChatId === state.activeChatId) return;
+    state.activeChatId = nextChatId;
+    state.lastView = null;
+    updateBar(state.barNode, null);
+    if (nextChatId) scheduleViewRefresh(0);
   }
 
   async function ensure(chatId) {
@@ -147,56 +999,56 @@
       const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/state`);
       if (chatId !== state.activeChatId) return;
       state.lastView = view;
-      updateBar(view);
+      updateBar(state.barNode, view);
+      scheduleComposerSlotRender(0);
     } catch (error) {
       warn("state refresh failed", error);
-      updateBar({ enabled: true, hidden: false, nextSpeaker: null, includePersonaCandidate: false, status: "unknown" });
+      updateBar(state.barNode, { enabled: true, hidden: false, nextSpeaker: null, includePersonaCandidate: false, status: "unknown" });
     }
   }
 
-  function renderShell() {
-    if (!state.activeChatId) {
-      document.getElementById(ROOT_ID)?.remove();
-      return;
-    }
-    const target = findInputContainer();
-    if (!target) return;
-
-    const existing = document.getElementById(ROOT_ID);
-    const root = existing || document.createElement("div");
-    if (!existing) {
-      root.id = ROOT_ID;
-      root.innerHTML = [
-        '<span class="gso-label">Next</span>',
-        '<strong class="gso-next">Unknown</strong>',
-        '<button type="button" class="gso-icon-button gso-persona" aria-label="Include persona candidate" title="Include persona candidate" aria-pressed="false">' +
-          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' +
-        "</button>",
-        '<button type="button" class="gso-icon-button gso-refresh" aria-label="Refresh next speaker" title="Refresh next speaker">' +
-          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.36 6.36L4 16"/><path d="M4 21v-5h5"/><path d="M3 12A9 9 0 0 1 18.36 5.64L20 8"/><path d="M20 3v5h-5"/></svg>' +
-        "</button>",
-      ].join("");
-      root.querySelector(".gso-refresh")?.addEventListener("click", onRefreshClick);
-      root.querySelector(".gso-persona")?.addEventListener("click", onPersonaToggle);
-    }
-
-    if (root.parentElement !== target || target.firstElementChild !== root) {
-      target.insertBefore(root, target.firstChild);
-    }
-    updateBar(state.lastView);
+  function renderBar(host) {
+    host.id = ROOT_ID;
+    host.className = "mari-bridge-slot-contribution gso-root";
+    host.innerHTML = [
+      '<span class="gso-label">Next</span>',
+      '<strong class="gso-next">Unknown</strong>',
+      '<button type="button" class="gso-icon-button gso-persona" aria-label="Include persona candidate" title="Include persona candidate" aria-pressed="false">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' +
+      "</button>",
+      '<button type="button" class="gso-icon-button gso-refresh" aria-label="Refresh next speaker" title="Refresh next speaker">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.36 6.36L4 16"/><path d="M4 21v-5h5"/><path d="M3 12A9 9 0 0 1 18.36 5.64L20 8"/><path d="M20 3v5h-5"/></svg>' +
+      "</button>",
+    ].join("");
+    host.querySelector(".gso-refresh")?.addEventListener("click", onRefreshClick);
+    host.querySelector(".gso-persona")?.addEventListener("click", onPersonaToggle);
+    state.barNode = host;
+    updateBar(host, state.lastView);
+    return host;
   }
 
   async function onRefreshClick() {
     const chatId = state.activeChatId;
     if (!chatId) return;
-    const button = document.getElementById(ROOT_ID)?.querySelector(".gso-refresh");
+    const button = state.barNode?.querySelector(".gso-refresh");
     if (button) button.disabled = true;
+    let generation = declarePackageGeneration({
+      packageId: PACKAGE_ID,
+      id: "refresh-next-speaker",
+      kind: GENERATION_KIND_AGENT,
+      chatId,
+      reason: "raw-next-speaker-refresh",
+    });
     try {
       const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/refresh`, { method: "POST", body: "{}" });
+      generation.end();
+      generation = null;
       if (chatId !== state.activeChatId) return;
       state.lastView = view;
-      updateBar(view);
+      updateBar(state.barNode, view);
+      scheduleComposerSlotRender(0);
     } catch (error) {
+      generation?.error(error);
       warn("refresh failed", error);
       await refreshView(chatId);
     } finally {
@@ -219,15 +1071,15 @@
       });
       if (chatId !== state.activeChatId) return;
       state.lastView = view;
-      updateBar(view);
+      updateBar(state.barNode, view);
+      scheduleComposerSlotRender(0);
     } catch (error) {
       warn("settings update failed", error);
       await refreshView(chatId);
     }
   }
 
-  function updateBar(view) {
-    const root = document.getElementById(ROOT_ID);
+  function updateBar(root, view) {
     if (!root) return;
     const shouldHide = !state.activeChatId || view?.enabled === false || view?.hidden === true;
     root.hidden = shouldHide;
@@ -236,29 +1088,6 @@
     root.querySelector(".gso-next").textContent = view?.nextSpeaker?.name || "Unknown";
     const personaButton = root.querySelector(".gso-persona");
     if (personaButton) personaButton.setAttribute("aria-pressed", view?.includePersonaCandidate === true ? "true" : "false");
-  }
-
-  function findInputContainer() {
-    if (state.inputContainer?.isConnected) return state.inputContainer;
-    const containers = Array.from(document.querySelectorAll(".mari-chat-input.chat-input-container, .chat-input-container"));
-    const visible = containers.find(isVisibleElement);
-    if (visible) {
-      state.inputContainer = visible;
-      return visible;
-    }
-
-    const textarea = Array.from(document.querySelectorAll("textarea.mari-chat-input-textarea, textarea"))
-      .filter(isVisibleElement)
-      .at(-1);
-    state.inputContainer = textarea?.closest(".mari-chat-input, .chat-input-container") || null;
-    return state.inputContainer;
-  }
-
-  function isVisibleElement(element) {
-    if (!(element instanceof Element)) return false;
-    if (!element.isConnected || element.getClientRects().length === 0) return false;
-    const style = window.getComputedStyle(element);
-    return style.display !== "none" && style.visibility !== "hidden";
   }
 
   async function readPersonaCandidate(chatId) {
@@ -284,55 +1113,11 @@
     return response.json();
   }
 
-  function readChatId() {
+  function readCapabilityChatId() {
     for (const chatId of state.propsChatIds.values()) {
       if (chatId) return chatId;
     }
-
-    const stores = [
-      window.useChatStore?.getState?.(),
-      window.__MARINARA_CHAT_STORE__?.getState?.(),
-      window.__marinara?.chatStore?.getState?.(),
-    ];
-    for (const store of stores) {
-      const id = store?.activeChatId || store?.currentChatId || store?.activeChat?.id || store?.chatId;
-      if (typeof id === "string" && id.trim()) return id.trim();
-    }
-
-    const dataChatId = document.querySelector("[data-chat-id]")?.getAttribute("data-chat-id");
-    if (dataChatId?.trim()) return dataChatId.trim();
-    const storedChatId = localStorage.getItem("marinara-active-chat-id");
-    if (storedChatId?.trim()) return storedChatId.trim();
-
-    const url = new URL(window.location.href);
-    const routeChatId = url.searchParams.get("chatId") || url.pathname.match(/\/chats?\/([^/?#]+)/u)?.[1] || "";
-    return routeChatId ? decodeURIComponent(routeChatId) : "";
-  }
-
-  function patchHistoryMethod(method) {
-    const original = history[method];
-    if (original?.__groupSortOrderPatched) return;
-    const patched = function patchedHistoryMethod(...args) {
-      const result = original.apply(this, args);
-      scheduleTick(0);
-      return result;
-    };
-    patched.__groupSortOrderPatched = true;
-    history[method] = patched;
-  }
-
-  function observeDom() {
-    if (state.observer || !document.body) return;
-    state.observer = new MutationObserver(() => {
-      const root = document.getElementById(ROOT_ID);
-      if (root?.isConnected && state.inputContainer?.isConnected) return;
-      state.inputContainer = null;
-      scheduleTick(250);
-    });
-    state.observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
+    return "";
   }
 
   function normalizeObject(value) {
@@ -348,11 +1133,8 @@
     return typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
-  function injectStyle() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
+  function styleText() {
+    return `
       #${ROOT_ID} { display:flex; align-items:center; gap:8px; min-height:28px; padding:4px 8px 6px; font:12px system-ui,sans-serif; color:var(--muted-foreground,#9ca3af); }
       #${ROOT_ID}[hidden] { display:none !important; }
       #${ROOT_ID} .gso-label { text-transform:uppercase; letter-spacing:.04em; font-size:10px; opacity:.78; }
@@ -363,7 +1145,6 @@
       #${ROOT_ID} .gso-icon-button svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
       #${ROOT_ID} button:disabled { opacity:.5; }
     `;
-    document.head.appendChild(style);
   }
 
   function warn(...args) {
@@ -377,12 +1158,16 @@
     state,
     dispose() {
       state.disposed = true;
+      state.slotCleanup?.();
+      state.cleanups.forEach((cleanup) => cleanup());
+      state.cleanups = [];
       window.clearTimeout(state.pollTimer);
       window.clearTimeout(state.renderTimer);
-      state.observer?.disconnect();
-      state.observer = null;
+      state.slotCleanup = null;
+      state.barNode = null;
       document.getElementById(ROOT_ID)?.remove();
       document.getElementById(STYLE_ID)?.remove();
     },
   };
 })();
+

@@ -1,4 +1,3 @@
-import { createPresenceCommandRouter } from "../client/command-handler.js";
 import {
   buildPresenceLorebookName,
   readPresenceChatState,
@@ -7,8 +6,10 @@ import {
 import { PRESENCE_PACKAGE_ID } from "../shared/constants.js";
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
+import { injectHostJson } from "../../bridge/host-routes.js";
 import { parseMessageRange } from "../../bridge/ranges.js";
 import { diffSummaryEntries, inferSummaryHintFromRoute, readSummaryEntries } from "../../bridge/summary-tracking.js";
+import { createPresenceCommandRouter } from "./command-router.js";
 import { buildSummaryAudience, buildSummaryLorebookEntries } from "./summary-mirror.js";
 
 const MESSAGE_CREATE_HOOK_KEY = Symbol.for("marinara.presence.messageCreateHook");
@@ -495,24 +496,7 @@ async function patchChatState(persistence, chat, statePatch) {
 }
 
 async function injectJson(app, method, url, payload) {
-  if (typeof app.inject !== "function") throw new Error("Presence requires Fastify app.inject for host mutations.");
-  const response = await app.inject({
-    method,
-    url,
-    headers: { "x-presence-internal": "1" },
-    ...(payload === undefined ? {} : { payload }),
-  });
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    let error = `${response.statusCode} ${response.statusMessage}`;
-    try {
-      error = JSON.parse(response.payload).error || error;
-    } catch {
-      if (response.payload) error = response.payload;
-    }
-    throw new Error(error);
-  }
-  if (response.statusCode === 204 || !response.payload) return {};
-  return JSON.parse(response.payload);
+  return injectHostJson(app, method, url, payload, { internalHeader: "x-presence-internal" });
 }
 
 function normalizeLookup(value) {
