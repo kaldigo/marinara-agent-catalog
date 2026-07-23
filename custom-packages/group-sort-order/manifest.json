@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "id": "group-sort-order",
+  "name": "Group Sort Order",
+  "version": "1.0.0",
+  "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
+  "engine": {
+    "min": "2.3.3",
+    "maxExclusive": "3.0.0"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "server": "server.mjs",
+    "client": "client.js",
+    "agents": "agents.json"
+  },
+  "files": [
+    {
+      "path": "agents.json",
+      "sha256": "a9556eb965db9458bc65dd3436f25d748d208e14b765278f2b4b70905f370b54",
+      "bytes": 445
+    },
+    {
+      "path": "bridge/commands.js",
+      "sha256": "a2e19c5f7393f85776b4a9395f3e83377947096c80b887535fc0735c98a1b8b1",
+      "bytes": 3117
+    },
+    {
+      "path": "bridge/index.js",
+      "sha256": "a6da8c1ce576b6d48ade64101ae4d88fca46f232e0cdbfdf5f7bb1f92ea991f7",
+      "bytes": 141
+    },
+    {
+      "path": "bridge/prompt-contribution.js",
+      "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
+      "bytes": 6771
+    },
+    {
+      "path": "bridge/ranges.js",
+      "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
+      "bytes": 2012
+    },
+    {
+      "path": "bridge/summary-tracking.js",
+      "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
+      "bytes": 2620
+    },
+    {
+      "path": "client.js",
+      "sha256": "bc62478709e3d93d0723cca71762726dec42b3ac33a5d6a83b8986e309609d23",
+      "bytes": 5486
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+      "bytes": 61
+    },
+    {
+      "path": "src/client/runtime.js",
+      "sha256": "bc62478709e3d93d0723cca71762726dec42b3ac33a5d6a83b8986e309609d23",
+      "bytes": 5486
+    },
+    {
+      "path": "src/server/index.js",
+      "sha256": "cf4d8563d94e8ba257e225db953656672bdc77596eeebaf6eb9190786d835d79",
+      "bytes": 597
+    },
+    {
+      "path": "src/server/routes.js",
+      "sha256": "2be196906e049a4d026a8995e5dc4dfd1dfbcc7e1a364f14502e18137cdbc75a",
+      "bytes": 18618
+    },
+    {
+      "path": "src/shared/state.js",
+      "sha256": "c99e2e1d357b9136d7647d8340adfba4375c789ddb3170b313407e7e7c3afa42",
+      "bytes": 8793
+    }
+  ],
+  "permissions": [
+    "agent-runtime",
+    "chat-read",
+    "chat-write",
+    "prompt-context",
+    "routes",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": true
+}

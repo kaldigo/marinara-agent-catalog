@@ -1,0 +1,18 @@
+[
+  {
+    "id": "group-sort-order",
+    "name": "Group Sort Order",
+    "description": "Feature runtime for group next-speaker ordering and prompt marker instructions.",
+    "category": "tracker",
+    "phase": "pre_generation",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "modeAllowlist": [
+      "roleplay",
+      "visual_novel"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]

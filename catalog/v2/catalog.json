@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-23T09:40:48.815Z",
+  "generatedAt": "2026-07-23T11:13:21.544Z",
   "packages": [
     {
       "manifest": {
@@ -1476,10 +1476,110 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-smart-order-extension-0.1.0.zip",
-        "sha256": "ca84acc32efc61e1abf85e8eae3eae0b2d19210d4051c308d94c46f1ab4984fd",
+        "sha256": "7357ddccd089438434d8bbab411c5e5611fbc75955756afb4de74ea01c13106c",
         "bytes": 31850
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-smart-order-extension"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "group-sort-order",
+        "name": "Group Sort Order",
+        "version": "1.0.0",
+        "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
+        "engine": {
+          "min": "2.3.3",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "server": "server.mjs",
+          "client": "client.js",
+          "agents": "agents.json"
+        },
+        "files": [
+          {
+            "path": "agents.json",
+            "sha256": "a9556eb965db9458bc65dd3436f25d748d208e14b765278f2b4b70905f370b54",
+            "bytes": 445
+          },
+          {
+            "path": "bridge/commands.js",
+            "sha256": "a2e19c5f7393f85776b4a9395f3e83377947096c80b887535fc0735c98a1b8b1",
+            "bytes": 3117
+          },
+          {
+            "path": "bridge/index.js",
+            "sha256": "a6da8c1ce576b6d48ade64101ae4d88fca46f232e0cdbfdf5f7bb1f92ea991f7",
+            "bytes": 141
+          },
+          {
+            "path": "bridge/prompt-contribution.js",
+            "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
+            "bytes": 6771
+          },
+          {
+            "path": "bridge/ranges.js",
+            "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
+            "bytes": 2012
+          },
+          {
+            "path": "bridge/summary-tracking.js",
+            "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
+            "bytes": 2620
+          },
+          {
+            "path": "client.js",
+            "sha256": "bc62478709e3d93d0723cca71762726dec42b3ac33a5d6a83b8986e309609d23",
+            "bytes": 5486
+          },
+          {
+            "path": "server.mjs",
+            "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+            "bytes": 61
+          },
+          {
+            "path": "src/client/runtime.js",
+            "sha256": "bc62478709e3d93d0723cca71762726dec42b3ac33a5d6a83b8986e309609d23",
+            "bytes": 5486
+          },
+          {
+            "path": "src/server/index.js",
+            "sha256": "cf4d8563d94e8ba257e225db953656672bdc77596eeebaf6eb9190786d835d79",
+            "bytes": 597
+          },
+          {
+            "path": "src/server/routes.js",
+            "sha256": "2be196906e049a4d026a8995e5dc4dfd1dfbcc7e1a364f14502e18137cdbc75a",
+            "bytes": 18618
+          },
+          {
+            "path": "src/shared/state.js",
+            "sha256": "c99e2e1d357b9136d7647d8340adfba4375c789ddb3170b313407e7e7c3afa42",
+            "bytes": 8793
+          }
+        ],
+        "permissions": [
+          "agent-runtime",
+          "chat-read",
+          "chat-write",
+          "prompt-context",
+          "routes",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": true
+      },
+      "category": "tracker",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.0.zip",
+        "sha256": "c20cb3c40510f257d077bf72b90bc12fb6b277acaf663cc6c307f46adadfaa7e",
+        "bytes": 18177
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
     },
     {
       "manifest": {
@@ -1517,7 +1617,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-extension-0.1.0.zip",
-        "sha256": "b2e2eb3587f30da631c8cabb61e10423f44d0884f45d64bbb41ffe5b578ff5e2",
+        "sha256": "03bd1165db1c1eb0d7759b34ab87ddce7a1a81f9971f3d914f3a5383c6e392a1",
         "bytes": 27354
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button-extension"
@@ -1554,8 +1654,13 @@
           },
           {
             "path": "bridge/index.js",
-            "sha256": "01e824c4426138859ef4344c24b2647b7286641875c3c72589690c75c8a58055",
-            "bytes": 99
+            "sha256": "a6da8c1ce576b6d48ade64101ae4d88fca46f232e0cdbfdf5f7bb1f92ea991f7",
+            "bytes": 141
+          },
+          {
+            "path": "bridge/prompt-contribution.js",
+            "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
+            "bytes": 6771
           },
           {
             "path": "bridge/ranges.js",
@@ -1647,8 +1752,8 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.2.zip",
-        "sha256": "918f208b08d62d48c146ac921ecdc6eb24919b2f3f3e0ebe87625fd7458e85c8",
-        "bytes": 21259
+        "sha256": "c6a33824864b13424b3dd6b9ddc017e409bcdedc6e4e2495e89e7ab1c00598cc",
+        "bytes": 23151
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     },
@@ -1688,7 +1793,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-extension-0.1.0.zip",
-        "sha256": "1a3482b7f0db9f1db387380453ca11b7170f0e2d155cff0566718ab190a66a0a",
+        "sha256": "1c84915dbb3e6c290fd173320f603ead9363c5ead6daf00a19b83943082ab997",
         "bytes": 25819
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence-extension"
@@ -1731,7 +1836,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.0.zip",
-        "sha256": "d11503896a9bd1bfa7b17d33dfb8303eb1fa1276ce90554afe393a042917575e",
+        "sha256": "d58948ddb9a6563c9f3dc42e1a44af8e2c51ee9260c570c473fbd54961c62a74",
         "bytes": 5491
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -1768,7 +1873,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-extension-1.0.0.zip",
-        "sha256": "8d2fc9270489f97dc56f21d2839fdb122de23131321a7f6fd906c028db389a69",
+        "sha256": "8647a7cb64415e676fac5541fb8711cf83b4a7d8d633ffbe05018da362c52fd7",
         "bytes": 16151
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper-extension"

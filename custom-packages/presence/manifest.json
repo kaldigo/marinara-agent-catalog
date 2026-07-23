@@ -29,8 +29,13 @@
     },
     {
       "path": "bridge/index.js",
-      "sha256": "01e824c4426138859ef4344c24b2647b7286641875c3c72589690c75c8a58055",
-      "bytes": 99
+      "sha256": "a6da8c1ce576b6d48ade64101ae4d88fca46f232e0cdbfdf5f7bb1f92ea991f7",
+      "bytes": 141
+    },
+    {
+      "path": "bridge/prompt-contribution.js",
+      "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
+      "bytes": 6771
     },
     {
       "path": "bridge/ranges.js",
