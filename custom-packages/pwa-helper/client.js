@@ -3,7 +3,7 @@
   // bridge/runtime.js
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.1";
+  const MARI_BRIDGE_VERSION = "1.0.2";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -622,7 +622,7 @@
       host.dataset.mariBridgeSlot = COMPOSER_SLOT_QUICK_ACTIONS;
       host.className = "mari-bridge-slot mari-bridge-slot-quick-actions";
     }
-    if (host.parentElement !== menu) menu.appendChild(host);
+    if (host.parentElement !== menu || host !== menu.firstElementChild) menu.insertBefore(host, menu.firstChild);
     return host;
   }
 

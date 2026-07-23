@@ -3,7 +3,7 @@
   // bridge/runtime.js
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.1";
+  const MARI_BRIDGE_VERSION = "1.0.2";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -622,7 +622,7 @@
       host.dataset.mariBridgeSlot = COMPOSER_SLOT_QUICK_ACTIONS;
       host.className = "mari-bridge-slot mari-bridge-slot-quick-actions";
     }
-    if (host.parentElement !== menu) menu.appendChild(host);
+    if (host.parentElement !== menu || host !== menu.firstElementChild) menu.insertBefore(host, menu.firstChild);
     return host;
   }
 
@@ -1261,7 +1261,7 @@
   // src/client/constants.js
   const PACKAGE_ID = "impersonate-button";
   const PACKAGE_NAME = "Impersonate Button";
-  const PACKAGE_VERSION = "1.0.2";
+  const PACKAGE_VERSION = "1.0.3";
   const RUNTIME_KEY = "__marinaraImpersonateButtonPackageRuntime";
   const PUBLIC_API_KEY = "__marinaraImpersonateButton";
   const STYLE_ID = "marinara-impersonate-button-style";
@@ -1324,10 +1324,10 @@
     position: relative;
     height: 2.75rem;
     width: 2.75rem;
-    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border: 1px solid color-mix(in srgb, var(--foreground, currentColor) 20%, transparent);
     border-radius: 999px;
-    background: var(--card);
-    color: color-mix(in srgb, currentColor 55%, transparent);
+    background: var(--card, transparent);
+    color: color-mix(in srgb, var(--foreground, currentColor) 55%, transparent);
     box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.24), 0 8px 10px -6px rgb(0 0 0 / 0.22);
     outline: none;
     transition-property: color, background-color, border-color, transform;
@@ -1351,8 +1351,8 @@
   }
 
   .mari-bridge-slot-quick-actions .mari-ib-button:hover:not(:disabled) {
-    background: color-mix(in srgb, currentColor 10%, var(--card));
-    color: color-mix(in srgb, currentColor 80%, transparent);
+    background: color-mix(in srgb, var(--foreground, currentColor) 10%, var(--card, transparent));
+    color: color-mix(in srgb, var(--foreground, currentColor) 80%, transparent);
   }
 
   .mari-ib-button:active:not(:disabled) {
@@ -1374,8 +1374,8 @@
   }
 
   .mari-bridge-slot-quick-actions .mari-ib-button:disabled {
-    border-color: color-mix(in srgb, currentColor 10%, transparent);
-    background: color-mix(in srgb, var(--card) 75%, transparent);
+    border-color: color-mix(in srgb, var(--foreground, currentColor) 10%, transparent);
+    background: color-mix(in srgb, var(--card, transparent) 75%, transparent);
     opacity: 0.45;
   }
 
@@ -1390,8 +1390,9 @@
   }
 
   .mari-bridge-slot-quick-actions .mari-ib-icon-shell {
-    background: color-mix(in srgb, currentColor 10%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 15%, transparent);
+    color: inherit;
+    background: color-mix(in srgb, var(--foreground, currentColor) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground, currentColor) 15%, transparent);
     transition: background-color 160ms ease, box-shadow 160ms ease;
   }
 

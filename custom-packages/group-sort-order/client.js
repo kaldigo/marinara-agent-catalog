@@ -3,7 +3,7 @@
   // bridge/runtime.js
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.1";
+  const MARI_BRIDGE_VERSION = "1.0.2";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -622,7 +622,7 @@
       host.dataset.mariBridgeSlot = COMPOSER_SLOT_QUICK_ACTIONS;
       host.className = "mari-bridge-slot mari-bridge-slot-quick-actions";
     }
-    if (host.parentElement !== menu) menu.appendChild(host);
+    if (host.parentElement !== menu || host !== menu.firstElementChild) menu.insertBefore(host, menu.firstChild);
     return host;
   }
 
@@ -1117,7 +1117,7 @@
     const ROOT_ID = "marinara-group-sort-order-root";
     const STYLE_ID = "marinara-group-sort-order-style";
     const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-    const RUNTIME_VERSION = "1.0.11";
+    const RUNTIME_VERSION = "1.0.12";
 
     const previousState = window[RUNTIME_KEY];
     if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -1414,8 +1414,9 @@
         #${ROOT_ID} .gso-label { text-transform:uppercase; letter-spacing:.04em; font-size:10px; opacity:.78; }
         #${ROOT_ID} .gso-next { color:var(--foreground,#f8fafc); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         #${ROOT_ID} .gso-persona { margin-left:auto; }
-        #${ROOT_ID} .gso-icon-button { display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; border:1px solid var(--border,#334155); border-radius:6px; padding:0; background:var(--secondary,#1f2937); color:inherit; line-height:1; }
-        #${ROOT_ID} .gso-icon-button[aria-pressed="true"] { color:var(--primary,#93c5fd); border-color:color-mix(in srgb,var(--primary,#93c5fd) 55%,var(--border,#334155)); background:color-mix(in srgb,var(--primary,#93c5fd) 14%,transparent); }
+        #${ROOT_ID} .gso-icon-button { display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; border:1px solid color-mix(in srgb,var(--foreground,#f8fafc) 16%,transparent); border-radius:999px; padding:0; background:color-mix(in srgb,var(--secondary,#1f2937) 72%,transparent); color:color-mix(in srgb,var(--foreground,#f8fafc) 82%,transparent); line-height:1; }
+        #${ROOT_ID} .gso-icon-button:hover:not(:disabled) { background:color-mix(in srgb,var(--foreground,#f8fafc) 10%,transparent); color:var(--foreground,#f8fafc); }
+        #${ROOT_ID} .gso-icon-button[aria-pressed="true"] { color:var(--primary,#93c5fd); border-color:color-mix(in srgb,var(--primary,#93c5fd) 45%,transparent); background:color-mix(in srgb,var(--primary,#93c5fd) 16%,transparent); }
         #${ROOT_ID} .gso-icon-button svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
         #${ROOT_ID} button:disabled { opacity:.5; }
       `;

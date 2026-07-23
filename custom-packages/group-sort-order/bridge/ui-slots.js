@@ -194,7 +194,7 @@ function ensureQuickActionsHost(context) {
     host.dataset.mariBridgeSlot = COMPOSER_SLOT_QUICK_ACTIONS;
     host.className = "mari-bridge-slot mari-bridge-slot-quick-actions";
   }
-  if (host.parentElement !== menu) menu.appendChild(host);
+  if (host.parentElement !== menu || host !== menu.firstElementChild) menu.insertBefore(host, menu.firstChild);
   return host;
 }
 
