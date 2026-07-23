@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-23T07:43:16.821Z",
+  "generatedAt": "2026-07-23T07:54:17.750Z",
   "packages": [
     {
       "manifest": {
@@ -1443,7 +1443,7 @@
     {
       "manifest": {
         "schemaVersion": 1,
-        "id": "group-smart-order",
+        "id": "group-smart-order-extension",
         "name": "Group Smart Order (Extension)",
         "version": "0.1.0",
         "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
@@ -1460,8 +1460,8 @@
         "files": [
           {
             "path": "client.js",
-            "sha256": "edb16ee09a19d5e4fef318571cd81052944e2a780ca2a83b8d0c865c567676d3",
-            "bytes": 145294
+            "sha256": "dfede1dc3a382bdd039f6a0e43f79aaeba435c84ee0b9493e4e0d47d16d9ebae",
+            "bytes": 145314
           }
         ],
         "permissions": [
@@ -1475,16 +1475,16 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-smart-order-0.1.0.zip",
-        "sha256": "9be24e891e6abf84c2e1311099ac5e68c007a2c9f21365dbb4d6313d3adde3dc",
-        "bytes": 31846
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-smart-order-extension-0.1.0.zip",
+        "sha256": "b758412ba5471388a33d2e09da941b079eced57c2fec184fd6f533b2c336e2f1",
+        "bytes": 31850
       },
-      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-smart-order"
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-smart-order-extension"
     },
     {
       "manifest": {
         "schemaVersion": 1,
-        "id": "impersonate-button",
+        "id": "impersonate-button-extension",
         "name": "Impersonate Button (Extension)",
         "version": "0.1.0",
         "description": "Adds a scoped dry-run impersonate button with continue, restore, stop, settings sync, and external-generation disabled state.",
@@ -1501,8 +1501,8 @@
         "files": [
           {
             "path": "client.js",
-            "sha256": "837c2ee7e8c043c43840b765bae6c13ecbdb0ba4544a237725fb754b482cf6f6",
-            "bytes": 121816
+            "sha256": "448fae09f8945c528dc7896190e3fd9cb6780e9edd04a0555ed5b9ad85cdb9d7",
+            "bytes": 121836
           }
         ],
         "permissions": [
@@ -1516,11 +1516,11 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-0.1.0.zip",
-        "sha256": "ee07ea976db84b453c2dc4671b844532ace0bdae4c3559afd1bc1c14821f78fa",
-        "bytes": 27346
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-extension-0.1.0.zip",
+        "sha256": "fe9dc754745e02412861135bbb9ee3caf85563dcc49eec57bdad8ef2969d3ea8",
+        "bytes": 27354
       },
-      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button-extension"
     },
     {
       "manifest": {
@@ -1652,7 +1652,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.2.zip",
-        "sha256": "10f7dd645099b465a10ade614f54e6691d5adcc73510aeb2468ff7119855be22",
+        "sha256": "b4105c8450585e366c4f5abd8286fd6c94295675d01e6d02cbef43bf634631d7",
         "bytes": 21318
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -1693,7 +1693,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-extension-0.1.0.zip",
-        "sha256": "e9fd26a8a8595162bd881954589cb33b0b0d2867e4415a4e260f7dd626f12f24",
+        "sha256": "a50bd26bf91f8e8b9a32fc8bb6df5ed55ffd376a2494007e6ffb7a553b5b5c85",
         "bytes": 25819
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence-extension"
@@ -1736,7 +1736,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.0.zip",
-        "sha256": "95ba6e95ac97da36a03d645ead53515b1da375aee9cc6d58a964212707e25f35",
+        "sha256": "c18da8b963bccad1a945509ff709d8ee3f38905c6c79ba65803fba9b272b6d45",
         "bytes": 5491
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -1773,7 +1773,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-extension-1.0.0.zip",
-        "sha256": "e9a566d55854abc835180f5c55ad1e4992d5828949f96fc9b4511b6f498353b5",
+        "sha256": "fb900de06a54f8dca0cce7d641be0a439f057a7b3920710791cb391793bcba72",
         "bytes": 16151
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper-extension"

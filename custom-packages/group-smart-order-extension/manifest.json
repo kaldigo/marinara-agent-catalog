@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "group-smart-order",
+  "id": "group-smart-order-extension",
   "name": "Group Smart Order (Extension)",
   "version": "0.1.0",
   "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
@@ -17,8 +17,8 @@
   "files": [
     {
       "path": "client.js",
-      "sha256": "edb16ee09a19d5e4fef318571cd81052944e2a780ca2a83b8d0c865c567676d3",
-      "bytes": 145294
+      "sha256": "dfede1dc3a382bdd039f6a0e43f79aaeba435c84ee0b9493e4e0d47d16d9ebae",
+      "bytes": 145314
     }
   ],
   "permissions": [

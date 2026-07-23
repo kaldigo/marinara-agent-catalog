@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "impersonate-button",
+  "id": "impersonate-button-extension",
   "name": "Impersonate Button (Extension)",
   "version": "0.1.0",
   "description": "Adds a scoped dry-run impersonate button with continue, restore, stop, settings sync, and external-generation disabled state.",
@@ -17,8 +17,8 @@
   "files": [
     {
       "path": "client.js",
-      "sha256": "837c2ee7e8c043c43840b765bae6c13ecbdb0ba4544a237725fb754b482cf6f6",
-      "bytes": 121816
+      "sha256": "448fae09f8945c528dc7896190e3fd9cb6780e9edd04a0555ed5b9ad85cdb9d7",
+      "bytes": 121836
     }
   ],
   "permissions": [

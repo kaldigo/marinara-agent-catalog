@@ -1,6 +1,6 @@
 // Generated from packages branch source by the catalog rebuild workflow.
-const PACKAGE_ID = "group-smart-order";
-const TAG_NAME = "marinara-capability-group-smart-order";
+const PACKAGE_ID = "group-smart-order-extension";
+const TAG_NAME = "marinara-capability-group-smart-order-extension";
 const LEGACY_CSS = "";
 
 
