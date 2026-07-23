@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-23T19:45:50.391Z",
+  "generatedAt": "2026-07-23T19:56:33.082Z",
   "packages": [
     {
       "manifest": {
@@ -1445,7 +1445,7 @@
         "schemaVersion": 1,
         "id": "group-sort-order",
         "name": "Group Sort Order",
-        "version": "1.0.10",
+        "version": "1.0.11",
         "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
         "engine": {
           "min": "2.3.3",
@@ -1522,8 +1522,8 @@
           },
           {
             "path": "bridge/runtime.js",
-            "sha256": "f9796b5dcee8254342922f4a5042958d5966bf98deb9561dc3f66a8ca49a5d7d",
-            "bytes": 4552
+            "sha256": "8afe253fb0f6dd96082ba6b4c01b9fb2f3ac13ac2446b03aa4c7f65db8ccb9b6",
+            "bytes": 4810
           },
           {
             "path": "bridge/summary-tracking.js",
@@ -1532,13 +1532,13 @@
           },
           {
             "path": "bridge/ui-slots.js",
-            "sha256": "cced19a94658f90eb45dc14ea3602f3794d64be5e534c0d0ddf965a0a315e354",
-            "bytes": 12198
+            "sha256": "acf83a2a5df632974e788ba22300a3d5deb86887d8563771bb7cc2da9cd4c2c7",
+            "bytes": 12284
           },
           {
             "path": "client.js",
-            "sha256": "630847bb941847a14bdad110186830d25c5ce81c1c89615ae9ad6e822a373f10",
-            "bytes": 54679
+            "sha256": "c004a2792548a26f5a16038337af898bbaabdcb3b5593191ec95824259e6409a",
+            "bytes": 55045
           },
           {
             "path": "server.mjs",
@@ -1547,7 +1547,7 @@
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "284dfc3bf4bd1dcbd56ed5cb0b8e3c6a79e65af249a5d3915ad568fab6c2106e",
+            "sha256": "11e4963b3a7269d2fe1ec96dae169cdd106085e7596ded967ac05184f857324f",
             "bytes": 13069
           },
           {
@@ -1579,9 +1579,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.10.zip",
-        "sha256": "f682735d968ff20e9db342837b2cbf7889a3e9b676bc2ef59297848ffbe93fc9",
-        "bytes": 49803
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.11.zip",
+        "sha256": "cf0301785ddbefeb6247fce86e3c8d193096c3ae8032b25bc1eeaa370d42e70c",
+        "bytes": 49929
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
     },
@@ -1590,7 +1590,7 @@
         "schemaVersion": 1,
         "id": "impersonate-button",
         "name": "Impersonate Button",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "description": "Adds package-era composer quick actions for dry-run persona generation helpers.",
         "engine": {
           "min": "2.3.3",
@@ -1611,8 +1611,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "f6d4e895318ab914c21a53e4442d8ec10908be5e0cb5321d729afd5671db245c",
-            "bytes": 83733
+            "sha256": "49215fea5f6b81f54b1b571f63b0609a16898e8fee4d5fdd9dd0d595205e7ab0",
+            "bytes": 84099
           }
         ],
         "permissions": [
@@ -1626,9 +1626,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.1.zip",
-        "sha256": "2d24bea42e53c5777b974a1c79b7eb0a784fd8d0df45c554175b9fd2b84dc6c6",
-        "bytes": 20640
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.2.zip",
+        "sha256": "b3c338bb44b4b3a7607165efbd7d36be0eed90010df01c95089722b02845c567",
+        "bytes": 20708
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
     },
@@ -1709,8 +1709,8 @@
           },
           {
             "path": "bridge/runtime.js",
-            "sha256": "f9796b5dcee8254342922f4a5042958d5966bf98deb9561dc3f66a8ca49a5d7d",
-            "bytes": 4552
+            "sha256": "8afe253fb0f6dd96082ba6b4c01b9fb2f3ac13ac2446b03aa4c7f65db8ccb9b6",
+            "bytes": 4810
           },
           {
             "path": "bridge/summary-tracking.js",
@@ -1719,13 +1719,13 @@
           },
           {
             "path": "bridge/ui-slots.js",
-            "sha256": "cced19a94658f90eb45dc14ea3602f3794d64be5e534c0d0ddf965a0a315e354",
-            "bytes": 12198
+            "sha256": "acf83a2a5df632974e788ba22300a3d5deb86887d8563771bb7cc2da9cd4c2c7",
+            "bytes": 12284
           },
           {
             "path": "client.js",
-            "sha256": "bebd1cce0d7a3d358b26114bec4214e1a3eb140d23a78871ae36432a577ef594",
-            "bytes": 27204
+            "sha256": "790395df6cef1a0282ffe452efaf592e5ef7025e50ed766dbba9f1697abd795c",
+            "bytes": 27480
           },
           {
             "path": "server.mjs",
@@ -1797,8 +1797,8 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.7.zip",
-        "sha256": "3dacdc792b7c9f624b2c1f3372fbaa1ed9cd4e1627cb1273940ee8595a301939",
-        "bytes": 43942
+        "sha256": "f8c29e3902b7c8ff95c23875566fc6b83aa8ea24a0273d5f987b9e310484bd5f",
+        "bytes": 44064
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     },
@@ -1828,8 +1828,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "419a02b8ad5878a72cdcd835def403e624c74f3b5b17621b5efb143e87dec1b8",
-            "bytes": 55852
+            "sha256": "e015566da53536a12cb22911340d0f14f9196ea3a96b995604bcf73b259971ab",
+            "bytes": 56218
           }
         ],
         "permissions": [
@@ -1840,8 +1840,8 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.4.zip",
-        "sha256": "9fba3ecb18643a3fa6a461529f982f74447ec541962c6e90daca8de799d21a33",
-        "bytes": 14310
+        "sha256": "ab554f74b37561295f07e4d8962e04ee4c6a71fe1d5ce2ec914ca195158ad6c6",
+        "bytes": 14377
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
     }

@@ -3,7 +3,7 @@
   // bridge/runtime.js
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.0";
+  const MARI_BRIDGE_VERSION = "1.0.1";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -49,7 +49,7 @@
       return { active: false, current, runtime, token: null };
     }
 
-    if (current && comparison === 0 && current.installed) {
+    if (current && comparison === 0 && (current.installed || current.installing)) {
       return { active: false, current, runtime, token: current.token || null };
     }
 
@@ -68,17 +68,26 @@
       ownerId,
       token,
       installed: false,
+      installing: true,
       installedAt: Date.now(),
       cleanup: null,
     };
     runtime.subsystems.set(subsystem, next);
 
-    if (typeof definition.install === "function") {
-      const cleanup = definition.install({ runtime, previous: current, token });
-      if (typeof cleanup === "function") next.cleanup = cleanup;
+    try {
+      if (typeof definition.install === "function") {
+        const cleanup = definition.install({ runtime, previous: current, token });
+        if (typeof cleanup === "function") next.cleanup = cleanup;
+      }
+      next.installed = true;
+      return { active: true, current: next, runtime, token };
+    } catch (error) {
+      if (current) runtime.subsystems.set(subsystem, current);
+      else runtime.subsystems.delete(subsystem);
+      throw error;
+    } finally {
+      next.installing = false;
     }
-    next.installed = true;
-    return { active: true, current: next, runtime, token };
   }
 
   // Checks whether a callback still belongs to the active owner of a subsystem.
@@ -563,15 +572,18 @@
     if (state.activeRoot && state.activeRoot !== context.root) unmountAll(state);
     state.activeRoot = context.root;
 
-    const slotHosts = ensureSlotHosts(context);
     const contributions = [...state.contributions.values()]
       .filter((entry) => KNOWN_COMPOSER_SLOTS.has(entry.slot))
       .sort((a, b) => a.priority - b.priority || a.key.localeCompare(b.key));
     const visibleKeys = new Set();
 
     for (const contribution of contributions) {
-      const slotHost = slotHosts[contribution.slot];
-      if (!slotHost || contribution.shouldShow(context) === false) {
+      if (contribution.shouldShow(context) === false) {
+        unmountContribution(state, contribution.key);
+        continue;
+      }
+      const slotHost = ensureSlotHost(contribution.slot, context);
+      if (!slotHost) {
         unmountContribution(state, contribution.key);
         continue;
       }
@@ -584,11 +596,10 @@
     }
   }
 
-  function ensureSlotHosts(context) {
-    return {
-      [COMPOSER_SLOT_ABOVE_INPUT]: ensureAboveInputHost(context.root),
-      [COMPOSER_SLOT_QUICK_ACTIONS]: ensureQuickActionsHost(context),
-    };
+  function ensureSlotHost(slot, context) {
+    if (slot === COMPOSER_SLOT_ABOVE_INPUT) return ensureAboveInputHost(context.root);
+    if (slot === COMPOSER_SLOT_QUICK_ACTIONS) return ensureQuickActionsHost(context);
+    return null;
   }
 
   function ensureAboveInputHost(root) {
@@ -1106,7 +1117,7 @@
     const ROOT_ID = "marinara-group-sort-order-root";
     const STYLE_ID = "marinara-group-sort-order-style";
     const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-    const RUNTIME_VERSION = "1.0.10";
+    const RUNTIME_VERSION = "1.0.11";
 
     const previousState = window[RUNTIME_KEY];
     if (previousState && previousState.version !== RUNTIME_VERSION) {

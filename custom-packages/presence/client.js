@@ -2,7 +2,7 @@
   "use strict";
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.0";
+  const MARI_BRIDGE_VERSION = "1.0.1";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -48,7 +48,7 @@
       return { active: false, current, runtime, token: null };
     }
 
-    if (current && comparison === 0 && current.installed) {
+    if (current && comparison === 0 && (current.installed || current.installing)) {
       return { active: false, current, runtime, token: current.token || null };
     }
 
@@ -67,17 +67,26 @@
       ownerId,
       token,
       installed: false,
+      installing: true,
       installedAt: Date.now(),
       cleanup: null,
     };
     runtime.subsystems.set(subsystem, next);
 
-    if (typeof definition.install === "function") {
-      const cleanup = definition.install({ runtime, previous: current, token });
-      if (typeof cleanup === "function") next.cleanup = cleanup;
+    try {
+      if (typeof definition.install === "function") {
+        const cleanup = definition.install({ runtime, previous: current, token });
+        if (typeof cleanup === "function") next.cleanup = cleanup;
+      }
+      next.installed = true;
+      return { active: true, current: next, runtime, token };
+    } catch (error) {
+      if (current) runtime.subsystems.set(subsystem, current);
+      else runtime.subsystems.delete(subsystem);
+      throw error;
+    } finally {
+      next.installing = false;
     }
-    next.installed = true;
-    return { active: true, current: next, runtime, token };
   }
 
   // Checks whether a callback still belongs to the active owner of a subsystem.

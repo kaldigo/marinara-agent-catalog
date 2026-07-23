@@ -144,15 +144,18 @@ function renderComposerSlots(state) {
   if (state.activeRoot && state.activeRoot !== context.root) unmountAll(state);
   state.activeRoot = context.root;
 
-  const slotHosts = ensureSlotHosts(context);
   const contributions = [...state.contributions.values()]
     .filter((entry) => KNOWN_COMPOSER_SLOTS.has(entry.slot))
     .sort((a, b) => a.priority - b.priority || a.key.localeCompare(b.key));
   const visibleKeys = new Set();
 
   for (const contribution of contributions) {
-    const slotHost = slotHosts[contribution.slot];
-    if (!slotHost || contribution.shouldShow(context) === false) {
+    if (contribution.shouldShow(context) === false) {
+      unmountContribution(state, contribution.key);
+      continue;
+    }
+    const slotHost = ensureSlotHost(contribution.slot, context);
+    if (!slotHost) {
       unmountContribution(state, contribution.key);
       continue;
     }
@@ -165,11 +168,10 @@ function renderComposerSlots(state) {
   }
 }
 
-function ensureSlotHosts(context) {
-  return {
-    [COMPOSER_SLOT_ABOVE_INPUT]: ensureAboveInputHost(context.root),
-    [COMPOSER_SLOT_QUICK_ACTIONS]: ensureQuickActionsHost(context),
-  };
+function ensureSlotHost(slot, context) {
+  if (slot === COMPOSER_SLOT_ABOVE_INPUT) return ensureAboveInputHost(context.root);
+  if (slot === COMPOSER_SLOT_QUICK_ACTIONS) return ensureQuickActionsHost(context);
+  return null;
 }
 
 function ensureAboveInputHost(root) {
