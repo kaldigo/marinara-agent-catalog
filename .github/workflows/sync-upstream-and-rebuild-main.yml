@@ -1,0 +1,58 @@
+name: Sync Upstream And Rebuild Main
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rebuild-main-catalog
+  cancel-in-progress: false
+
+jobs:
+  sync-and-rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Mirror official Marinara agents branch
+        run: |
+          git remote add marinara https://github.com/Pasta-Devs/Marinara-Agents.git
+          git fetch marinara main
+          git push origin marinara/main:upstream-marinara --force
+
+      - name: Fetch input branches
+        run: |
+          git fetch origin upstream-marinara:refs/remotes/origin/upstream-marinara
+          git fetch origin agents:refs/remotes/origin/agents
+
+      - name: Rebuild main from inputs
+        env:
+          UPSTREAM_BRANCH: origin/upstream-marinara
+          AGENTS_BRANCH: origin/agents
+          OUTPUT_BRANCH: main
+          CATALOG_REPOSITORY: ${{ github.repository }}
+        run: node .github/scripts/rebuild-main-catalog.mjs
+
+      - name: Publish generated main
+        run: |
+          git status --short
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No generated catalog changes."
+          else
+            git add -A
+            git commit -m "Rebuild merged Marinara catalog"
+            git push origin HEAD:main
+          fi
