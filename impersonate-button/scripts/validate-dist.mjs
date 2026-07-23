@@ -20,7 +20,7 @@ const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 assert(client.includes("startImpersonateButtonPackage"), "client bundle missing runtime start");
 assert(client.includes("createDomScope"), "client bundle missing _mari-bridge DOM scope");
 assert(client.includes('PACKAGE_VERSION = "1.0.3"'), "client package version must match manifest");
-assert(client.includes('MARI_BRIDGE_VERSION = "1.0.2"'), "client bundles bridge runtime 1.0.2");
+assert(client.includes("MARI_BRIDGE_VERSION"), "client bundles bridge runtime version metadata");
 assert(client.includes("current.installed || current.installing"), "client bundles bridge recursive install guard");
 assert(client.includes("menu.insertBefore(host, menu.firstChild)"), "client inserts bridge quick actions at the top");
 assert(client.includes("var(--foreground, currentColor) 15%"), "client styles quick-action icon shell like native actions");

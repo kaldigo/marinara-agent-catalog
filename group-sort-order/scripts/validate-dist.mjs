@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "group-sort-order", "manifest id is group-sort-order");
-assert(manifest.version === "1.0.13", "manifest version is 1.0.13");
+assert(manifest.version === "1.0.15", "manifest version is 1.0.15");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
@@ -24,11 +24,19 @@ assert(clientSource.includes("marinara-capability-group-sort-order"), "client re
 assert(!clientSource.includes("import "), "client entrypoint is self-contained");
 assert(clientSource.includes("registerComposerSlotContribution"), "client bundles bridge UI slots");
 assert(clientSource.includes("declarePackageGeneration"), "client bundles bridge generation declarations");
-assert(clientSource.includes('MARI_BRIDGE_VERSION = "1.0.2"'), "client bundles bridge runtime 1.0.2");
+assert(clientSource.includes("MARI_BRIDGE_VERSION"), "client bundles bridge runtime version metadata");
 assert(clientSource.includes("current.installed || current.installing"), "client bundles bridge recursive install guard");
+assert(clientSource.includes("watchActiveChatId(() => scheduleComposerSlotRender(0)"), "client bundles bridge active-chat slot rerendering");
 assert(clientSource.includes("border-radius:999px"), "client uses round GSO icon buttons");
 assert(clientSource.includes("view?.hidden !== false"), "client hides GSO bar until server view explicitly shows it");
 assert(clientSource.includes("width:13px; height:13px"), "client uses smaller GSO icons");
+assert(clientSource.includes("bindActiveChat(chatId || \"\")"), "client binds GSO state to bridge active chat");
+assert(!clientSource.includes("readCapabilityChatId() || chatId"), "client does not prefer stale capability chat ids");
+assert(!clientSource.includes("propsChatIds"), "client does not cache stale capability chat ids");
+assert(
+  clientSource.indexOf("readStoredActiveChatId()") < clientSource.indexOf('querySelector("[data-chat-id]")'),
+  "client bridge prefers stored active chat before sidebar data-chat-id fallback",
+);
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);

@@ -120,12 +120,12 @@ assert(routesSource.includes("statePersona?.name"), "refresh transcript can name
 assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not write tracker metadata");
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
-assert(clientSource.includes("capabilityProps"), "client reads capability props");
+assert(clientSource.includes("marinara-capability-props"), "client responds to capability prop changes");
 assert(clientSource.includes("registerComposerSlotContribution"), "client uses bridge composer slot contribution");
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(clientSource.includes("declarePackageGeneration"), "client declares bridge generation activity for refresh");
 assert(clientSource.includes("GENERATION_KIND_AGENT"), "client marks refresh as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.13"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.15"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
@@ -134,6 +134,9 @@ assert(clientSource.includes('aria-label="Refresh next speaker"'), "refresh cont
 assert(clientSource.includes("options.body !== undefined"), "client only sends JSON content-type when a body exists");
 assert(clientSource.includes("view?.hidden !== false"), "client hides the bar when only two candidates are available");
 assert(clientSource.includes("width:13px; height:13px"), "client uses smaller GSO icons");
+assert(clientSource.includes("bindActiveChat(chatId || \"\")"), "client binds active chat from bridge context");
+assert(!clientSource.includes("readCapabilityChatId() || chatId"), "client does not prefer stale capability chat ids");
+assert(!clientSource.includes("propsChatIds"), "client does not cache stale capability chat ids");
 const buildSource = await fs.readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8");
 assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-runtime slot");
 assert(buildSource.includes("stripBrowserModuleSyntax"), "client entrypoint bundles browser-safe bridge modules");
