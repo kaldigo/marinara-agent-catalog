@@ -7,7 +7,7 @@
     "buildCommand": ["npm", "run", "build"]
   },
   "package": {
-    "id": "group-smart-order",
+    "id": "group-smart-order-extension",
     "name": "Group Smart Order (Extension)",
     "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
     "engine": {

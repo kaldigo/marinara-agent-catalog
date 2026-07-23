@@ -7,7 +7,7 @@
     "buildCommand": ["npm", "run", "build"]
   },
   "package": {
-    "id": "impersonate-button",
+    "id": "impersonate-button-extension",
     "name": "Impersonate Button (Extension)",
     "description": "Adds a scoped dry-run impersonate button with continue, restore, stop, settings sync, and external-generation disabled state.",
     "engine": {
