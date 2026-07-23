@@ -383,6 +383,92 @@ function validateSharedRoots(sourceName, metadata) {
   }
 }
 
+function resolvePackageSourcePath(sourceName, sourceDir, relativePath, label) {
+  const value = String(relativePath || "");
+  if (!value || path.isAbsolute(value)) {
+    throw new Error(`${sourceName} ${label} must be a relative path`);
+  }
+
+  const resolved = path.resolve(sourceDir, value);
+  const sourceRoot = path.resolve(sourceDir);
+  if (resolved !== sourceRoot && !resolved.startsWith(`${sourceRoot}${path.sep}`)) {
+    throw new Error(`${sourceName} ${label} must stay inside the package source folder`);
+  }
+
+  return resolved;
+}
+
+function validateBuildCommand(sourceName, buildCommand) {
+  if (!Array.isArray(buildCommand) || buildCommand.length === 0) {
+    throw new Error(`${sourceName} buildCommand must be a non-empty array`);
+  }
+}
+
+function runBuildCommand(sourceName, sourceDir, metadata, defaultCommand) {
+  const buildCommand = metadata.processing.buildCommand || defaultCommand;
+  validateBuildCommand(sourceName, buildCommand);
+
+  const build = platformBuildCommand(String(buildCommand[0]), buildCommand.slice(1).map(String));
+  run(build.command, build.args, { cwd: sourceDir });
+}
+
+function packageId(sourceName, metadata) {
+  const id = metadata.package?.id;
+  if (!id) {
+    throw new Error(`${sourceName} package metadata is missing package.id`);
+  }
+  return id;
+}
+
+function validatePreparedPackage(sourceName, packageDir, expectedId) {
+  const manifestPath = path.join(packageDir, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(`${sourceName} prepared package output is missing manifest.json`);
+  }
+
+  const manifest = readJson(manifestPath);
+  if (manifest.id !== expectedId) {
+    throw new Error(`${sourceName} prepared manifest id ${manifest.id || "<missing>"} must match ${expectedId}`);
+  }
+
+  const entrypoints = manifest.entrypoints || {};
+  if (Object.keys(entrypoints).length === 0) {
+    throw new Error(`${sourceName} prepared manifest must declare at least one entrypoint`);
+  }
+
+  for (const [name, relativePath] of Object.entries(entrypoints)) {
+    if (!relativePath || path.isAbsolute(String(relativePath))) {
+      throw new Error(`${sourceName} manifest entrypoint ${name} must be a relative path`);
+    }
+    const absolutePath = path.resolve(packageDir, String(relativePath));
+    const packageRoot = path.resolve(packageDir);
+    if (!absolutePath.startsWith(`${packageRoot}${path.sep}`) || !existsSync(absolutePath)) {
+      throw new Error(`${sourceName} manifest entrypoint ${name} points at missing file ${relativePath}`);
+    }
+  }
+}
+
+function copyPreparedPackage(sourceName, sourceDir, metadata, customPackagesDir) {
+  runBuildCommand(sourceName, sourceDir, metadata, ["npm", "run", "build"]);
+
+  const id = packageId(sourceName, metadata);
+  const outputDir = resolvePackageSourcePath(
+    sourceName,
+    sourceDir,
+    metadata.processing.outputDir || "dist/package",
+    "processing.outputDir",
+  );
+  if (!existsSync(outputDir) || !statSync(outputDir).isDirectory()) {
+    throw new Error(`${sourceName} package build output directory does not exist: ${metadata.processing.outputDir || "dist/package"}`);
+  }
+
+  const packageDir = path.join(customPackagesDir, id);
+  rmSync(packageDir, { recursive: true, force: true });
+  cpSync(outputDir, packageDir, { recursive: true });
+  validatePreparedPackage(sourceName, packageDir, id);
+  console.log(`Prepared package ${sourceName} -> custom-packages/${id}`);
+}
+
 function buildPackageSourceFolders() {
   if (!existsSync(packagesDir)) {
     return;
@@ -396,36 +482,33 @@ function buildPackageSourceFolders() {
       continue;
     }
 
-    const extensionDir = path.join(packagesDir, entry.name);
-    const metadata = sourceMetadata(extensionDir);
+    const sourceDir = path.join(packagesDir, entry.name);
+    const metadata = sourceMetadata(sourceDir);
     if (!metadata || metadata.includeInMain === false || metadata.type !== "capability-package") {
       continue;
     }
     validateSharedRoots(entry.name, metadata);
 
+    if (metadata.processing?.kind === "package-build") {
+      copyPreparedPackage(entry.name, sourceDir, metadata, customPackagesDir);
+      continue;
+    }
+
     if (metadata.processing?.kind !== "legacy-extension") {
       throw new Error(`${entry.name} has unsupported package processing kind: ${metadata.processing?.kind}`);
     }
 
-    const packageJsonPath = path.join(extensionDir, "package.json");
+    const packageJsonPath = path.join(sourceDir, "package.json");
     if (!existsSync(packageJsonPath)) {
       throw new Error(`${entry.name} package source is missing package.json`);
     }
 
-    const buildCommand = metadata.processing.buildCommand || ["npm", "run", "build"];
-    if (!Array.isArray(buildCommand) || buildCommand.length === 0) {
-      throw new Error(`${entry.name} buildCommand must be a non-empty array`);
-    }
-
-    const build = platformBuildCommand(String(buildCommand[0]), buildCommand.slice(1).map(String));
-    run(build.command, build.args, { cwd: extensionDir });
+    runBuildCommand(entry.name, sourceDir, metadata, ["npm", "run", "build"]);
 
     const packageJson = readJson(packageJsonPath);
     const capability = metadata.package || {};
-    if (!capability.id) {
-      throw new Error(`${entry.name} package metadata is missing package.id`);
-    }
-    const legacy = findLegacyManifest(extensionDir);
+    packageId(entry.name, metadata);
+    const legacy = findLegacyManifest(sourceDir);
     const legacyDir = path.dirname(legacy.file);
     const legacyConfig = legacy.manifest.config || {};
     const legacyJsPath = path.join(legacyDir, legacyConfig.jsPath);
@@ -443,7 +526,7 @@ function buildPackageSourceFolders() {
       wrapLegacyExtensionClient({ id: capability.id, legacyJs, css }),
     );
 
-    const readmePath = path.join(extensionDir, "README.md");
+    const readmePath = path.join(sourceDir, "README.md");
     if (existsSync(readmePath)) {
       cpSync(readmePath, path.join(packageDir, "README.md"));
     } else {
