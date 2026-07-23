@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "presence",
+  "name": "Presence",
+  "version": "0.1.0",
+  "description": "Tracks per-message character presence and temporarily filters prompt history during generation.",
+  "engine": {
+    "min": "2.3.0",
+    "maxExclusive": "3.0.0"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "client": "client.js"
+  },
+  "files": [
+    {
+      "path": "client.js",
+      "sha256": "cbc2032045bab54421d687b4471f6cda9798c86833e31d43b2f64762ad3d1394",
+      "bytes": 113960
+    }
+  ],
+  "permissions": [
+    "chat-read",
+    "chat-write",
+    "network",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": false
+}

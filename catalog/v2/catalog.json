@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T19:16:06.255Z",
+  "generatedAt": "2026-07-23T03:31:14.704Z",
   "packages": [
     {
       "manifest": {
@@ -1439,6 +1439,166 @@
         "bytes": 1650
       },
       "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Engine/blob/staging/docs/agents/built-in-agents.md#world-state"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "group-smart-order",
+        "name": "Group Smart Order",
+        "version": "0.1.0",
+        "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
+        "engine": {
+          "min": "2.3.0",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "client": "client.js"
+        },
+        "files": [
+          {
+            "path": "client.js",
+            "sha256": "e321770e7998b750a3f95b64556ce6f267a98a6b2ca5002c711a435d96b95db4",
+            "bytes": 145317
+          }
+        ],
+        "permissions": [
+          "chat-read",
+          "chat-write",
+          "network",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": false
+      },
+      "category": "misc",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-smart-order-0.1.0.zip",
+        "sha256": "e93348170a7965b9e8350d031b0028c55144129b0f6b9bd5fbf80f8b900f0759",
+        "bytes": 31841
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-smart-order"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "impersonate-button",
+        "name": "Impersonate Button",
+        "version": "0.1.0",
+        "description": "Adds a scoped dry-run impersonate button with continue, restore, stop, settings sync, and external-generation disabled state.",
+        "engine": {
+          "min": "2.3.0",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "client": "client.js"
+        },
+        "files": [
+          {
+            "path": "client.js",
+            "sha256": "896738a7b16dd65ee1169e6685930e5801193aa3b24202163810bfdbe7d3e5ac",
+            "bytes": 121839
+          }
+        ],
+        "permissions": [
+          "chat-read",
+          "chat-write",
+          "network",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": false
+      },
+      "category": "misc",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-0.1.0.zip",
+        "sha256": "8aef879add0367a37714a174d0c9b5544f2056e5a0a0ae1c286e95fd2312863c",
+        "bytes": 27337
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "presence",
+        "name": "Presence",
+        "version": "0.1.0",
+        "description": "Tracks per-message character presence and temporarily filters prompt history during generation.",
+        "engine": {
+          "min": "2.3.0",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "client": "client.js"
+        },
+        "files": [
+          {
+            "path": "client.js",
+            "sha256": "cbc2032045bab54421d687b4471f6cda9798c86833e31d43b2f64762ad3d1394",
+            "bytes": 113960
+          }
+        ],
+        "permissions": [
+          "chat-read",
+          "chat-write",
+          "network",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": false
+      },
+      "category": "misc",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-0.1.0.zip",
+        "sha256": "d63d7b56ff7ecd5e9c33961473c1be8ed304441c8afc42cdd846e97eae8a71e9",
+        "bytes": 25806
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "pwa-helper",
+        "name": "PWA Helper",
+        "version": "0.1.0",
+        "description": "Keeps mobile and tablet screens awake while Marinara generation is running.",
+        "engine": {
+          "min": "2.3.0",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "client": "client.js"
+        },
+        "files": [
+          {
+            "path": "client.js",
+            "sha256": "d7c7b3b33f427d029bd5cf5c4694196ad20d6b68aaa36e6627b426b8c7545981",
+            "bytes": 68597
+          }
+        ],
+        "permissions": [
+          "ui"
+        ],
+        "restartRequired": false
+      },
+      "category": "misc",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-0.1.0.zip",
+        "sha256": "84051712bf1280efa70c940fe25ea7412dce03692ad157f843c7cf1c8ef87bfb",
+        "bytes": 16142
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
     }
   ]
 }
