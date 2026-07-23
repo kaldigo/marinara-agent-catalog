@@ -4,20 +4,35 @@
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
+  const RUNTIME_VERSION = "1.0.3";
+
+  const previousState = window[RUNTIME_KEY];
+  if (previousState && previousState.version !== RUNTIME_VERSION) {
+    previousState.disposed = true;
+    window.clearTimeout(previousState.pollTimer);
+    window.clearTimeout(previousState.renderTimer);
+    previousState.observer?.disconnect();
+    document.getElementById(ROOT_ID)?.remove();
+    document.getElementById(STYLE_ID)?.remove();
+    window[RUNTIME_KEY] = null;
+  }
 
   const state = window[RUNTIME_KEY] || {
+    version: RUNTIME_VERSION,
     disposed: false,
     initialized: false,
     activeChatId: "",
     lastEnsuredChatId: "",
     lastView: null,
     lastRefreshAt: 0,
+    inputContainer: null,
     propsChatIds: new Map(),
     pollTimer: 0,
     renderTimer: 0,
     observer: null,
     ensureInFlight: new Set(),
   };
+  state.version = RUNTIME_VERSION;
   window[RUNTIME_KEY] = state;
   state.disposed = false;
 
@@ -65,6 +80,7 @@
   function startRuntime() {
     document.addEventListener("visibilitychange", scheduleTickFromEvent, true);
     window.addEventListener("focus", scheduleTickFromEvent);
+    window.addEventListener("resize", onViewportChanged);
     window.addEventListener("popstate", scheduleTickFromEvent);
     window.addEventListener("marinara:generation-complete", scheduleTickFromEvent);
     window.addEventListener("marinara:generation-error", scheduleTickFromEvent);
@@ -75,6 +91,11 @@
   }
 
   function scheduleTickFromEvent() {
+    scheduleTick(100);
+  }
+
+  function onViewportChanged() {
+    state.inputContainer = null;
     scheduleTick(100);
   }
 
@@ -148,11 +169,15 @@
       root.innerHTML = [
         '<span class="gso-label">Next</span>',
         '<strong class="gso-next">Unknown</strong>',
-        '<label class="gso-toggle"><input type="checkbox" class="gso-persona"> Include persona</label>',
-        '<button type="button" class="gso-refresh">Refresh</button>',
+        '<button type="button" class="gso-icon-button gso-persona" aria-label="Include persona candidate" title="Include persona candidate" aria-pressed="false">' +
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>' +
+        "</button>",
+        '<button type="button" class="gso-icon-button gso-refresh" aria-label="Refresh next speaker" title="Refresh next speaker">' +
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.36 6.36L4 16"/><path d="M4 21v-5h5"/><path d="M3 12A9 9 0 0 1 18.36 5.64L20 8"/><path d="M20 3v5h-5"/></svg>' +
+        "</button>",
       ].join("");
       root.querySelector(".gso-refresh")?.addEventListener("click", onRefreshClick);
-      root.querySelector(".gso-persona")?.addEventListener("change", onPersonaToggle);
+      root.querySelector(".gso-persona")?.addEventListener("click", onPersonaToggle);
     }
 
     if (root.parentElement !== target || target.firstElementChild !== root) {
@@ -167,7 +192,7 @@
     const button = document.getElementById(ROOT_ID)?.querySelector(".gso-refresh");
     if (button) button.disabled = true;
     try {
-      const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/refresh`, { method: "POST" });
+      const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/refresh`, { method: "POST", body: "{}" });
       if (chatId !== state.activeChatId) return;
       state.lastView = view;
       updateBar(view);
@@ -179,10 +204,10 @@
     }
   }
 
-  async function onPersonaToggle(event) {
+  async function onPersonaToggle() {
     const chatId = state.activeChatId;
     if (!chatId) return;
-    const checked = event.target?.checked === true;
+    const checked = state.lastView?.includePersonaCandidate !== true;
     try {
       const persona = await readPersonaCandidate(chatId).catch(() => null);
       const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/settings`, {
@@ -209,19 +234,24 @@
     root.dataset.status = typeof view?.status === "string" ? view.status : "unknown";
     if (root.dataset.chatId !== (state.activeChatId || "")) root.dataset.chatId = state.activeChatId || "";
     root.querySelector(".gso-next").textContent = view?.nextSpeaker?.name || "Unknown";
-    const checkbox = root.querySelector(".gso-persona");
-    if (checkbox) checkbox.checked = view?.includePersonaCandidate === true;
+    const personaButton = root.querySelector(".gso-persona");
+    if (personaButton) personaButton.setAttribute("aria-pressed", view?.includePersonaCandidate === true ? "true" : "false");
   }
 
   function findInputContainer() {
+    if (state.inputContainer?.isConnected) return state.inputContainer;
     const containers = Array.from(document.querySelectorAll(".mari-chat-input.chat-input-container, .chat-input-container"));
     const visible = containers.find(isVisibleElement);
-    if (visible) return visible;
+    if (visible) {
+      state.inputContainer = visible;
+      return visible;
+    }
 
     const textarea = Array.from(document.querySelectorAll("textarea.mari-chat-input-textarea, textarea"))
       .filter(isVisibleElement)
       .at(-1);
-    return textarea?.closest(".mari-chat-input, .chat-input-container") || null;
+    state.inputContainer = textarea?.closest(".mari-chat-input, .chat-input-container") || null;
+    return state.inputContainer;
   }
 
   function isVisibleElement(element) {
@@ -241,8 +271,12 @@
   }
 
   async function api(path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (options.body !== undefined && !headers["content-type"] && !headers["Content-Type"]) {
+      headers["content-type"] = "application/json";
+    }
     const response = await fetch(`/api${path}`, {
-      headers: { "content-type": "application/json", ...(options.headers || {}) },
+      headers,
       ...options,
     });
     if (!response.ok) throw new Error(await response.text());
@@ -289,12 +323,15 @@
 
   function observeDom() {
     if (state.observer || !document.body) return;
-    state.observer = new MutationObserver(() => scheduleTick(100));
+    state.observer = new MutationObserver(() => {
+      const root = document.getElementById(ROOT_ID);
+      if (root?.isConnected && state.inputContainer?.isConnected) return;
+      state.inputContainer = null;
+      scheduleTick(250);
+    });
     state.observer.observe(document.body, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ["class", "hidden", "style", "data-chat-id"],
     });
   }
 
@@ -320,8 +357,10 @@
       #${ROOT_ID}[hidden] { display:none !important; }
       #${ROOT_ID} .gso-label { text-transform:uppercase; letter-spacing:.04em; font-size:10px; opacity:.78; }
       #${ROOT_ID} .gso-next { color:var(--foreground,#f8fafc); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      #${ROOT_ID} .gso-toggle { display:flex; align-items:center; gap:4px; margin-left:auto; white-space:nowrap; }
-      #${ROOT_ID} button { border:1px solid var(--border,#334155); border-radius:6px; padding:3px 8px; background:var(--secondary,#1f2937); color:inherit; line-height:1.2; }
+      #${ROOT_ID} .gso-persona { margin-left:auto; }
+      #${ROOT_ID} .gso-icon-button { display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; border:1px solid var(--border,#334155); border-radius:6px; padding:0; background:var(--secondary,#1f2937); color:inherit; line-height:1; }
+      #${ROOT_ID} .gso-icon-button[aria-pressed="true"] { color:var(--primary,#93c5fd); border-color:color-mix(in srgb,var(--primary,#93c5fd) 55%,var(--border,#334155)); background:color-mix(in srgb,var(--primary,#93c5fd) 14%,transparent); }
+      #${ROOT_ID} .gso-icon-button svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
       #${ROOT_ID} button:disabled { opacity:.5; }
     `;
     document.head.appendChild(style);
