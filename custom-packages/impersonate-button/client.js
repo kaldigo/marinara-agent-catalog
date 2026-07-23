@@ -1010,7 +1010,7 @@
   // src/client/constants.js
   const PACKAGE_ID = "impersonate-button";
   const PACKAGE_NAME = "Impersonate Button";
-  const PACKAGE_VERSION = "0.1.3";
+  const PACKAGE_VERSION = "1.0.0";
   const RUNTIME_KEY = "__marinaraImpersonateButtonPackageRuntime";
   const PUBLIC_API_KEY = "__marinaraImpersonateButton";
   const STYLE_ID = "marinara-impersonate-button-style";
@@ -1069,10 +1069,28 @@
     transition: all 160ms ease;
   }
 
+  .mari-bridge-slot-quick-actions .mari-ib-button {
+    position: relative;
+    height: 2.75rem;
+    width: 2.75rem;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 999px;
+    background: var(--card);
+    color: color-mix(in srgb, currentColor 55%, transparent);
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.24), 0 8px 10px -6px rgb(0 0 0 / 0.22);
+    outline: none;
+    transition-property: color, background-color, border-color, transform;
+  }
+
   @media (min-width: 640px) {
     .mari-ib-button {
       height: 2rem;
       width: 2rem;
+    }
+
+    .mari-bridge-slot-quick-actions .mari-ib-button {
+      height: 2.5rem;
+      width: 2.5rem;
     }
   }
 
@@ -1081,14 +1099,54 @@
     color: currentColor;
   }
 
+  .mari-bridge-slot-quick-actions .mari-ib-button:hover:not(:disabled) {
+    background: color-mix(in srgb, currentColor 10%, var(--card));
+    color: color-mix(in srgb, currentColor 80%, transparent);
+  }
+
   .mari-ib-button:active:not(:disabled) {
     transform: scale(0.9);
+  }
+
+  .mari-bridge-slot-quick-actions .mari-ib-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .mari-ib-button:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 20%, transparent);
   }
 
   .mari-ib-button:disabled {
     cursor: not-allowed;
     opacity: 0.5;
     color: color-mix(in srgb, currentColor 25%, transparent);
+  }
+
+  .mari-bridge-slot-quick-actions .mari-ib-button:disabled {
+    border-color: color-mix(in srgb, currentColor 10%, transparent);
+    background: color-mix(in srgb, var(--card) 75%, transparent);
+    opacity: 0.45;
+  }
+
+  .mari-ib-icon-shell {
+    display: flex;
+    height: 2rem;
+    width: 2rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+  }
+
+  .mari-bridge-slot-quick-actions .mari-ib-icon-shell {
+    background: color-mix(in srgb, currentColor 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 15%, transparent);
+    transition: background-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .mari-bridge-slot-quick-actions .mari-ib-button:hover:not(:disabled) .mari-ib-icon-shell {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
   }
 
   .mari-ib-button svg {
@@ -1904,7 +1962,7 @@
     btn.dataset.mariImpersonateAction = action.id;
     btn.title = `${action.label}: ${action.title}`;
     btn.setAttribute("aria-label", `${action.label}: ${action.title}`);
-    btn.innerHTML = action.icon;
+    btn.innerHTML = `<span class="mari-ib-icon-shell">${action.icon}</span>`;
     runtime.dom.on(btn, "pointerdown", (event) => event.preventDefault());
     runtime.dom.on(btn, "dragstart", (event) => event.preventDefault());
     runtime.dom.on(btn, "click", (event) => {
