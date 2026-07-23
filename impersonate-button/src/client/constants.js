@@ -1,6 +1,6 @@
 const PACKAGE_ID = "impersonate-button";
 const PACKAGE_NAME = "Impersonate Button";
-const PACKAGE_VERSION = "0.1.3";
+const PACKAGE_VERSION = "1.0.0";
 const RUNTIME_KEY = "__marinaraImpersonateButtonPackageRuntime";
 const PUBLIC_API_KEY = "__marinaraImpersonateButton";
 const STYLE_ID = "marinara-impersonate-button-style";

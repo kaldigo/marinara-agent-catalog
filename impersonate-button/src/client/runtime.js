@@ -113,7 +113,7 @@ function createQuickActionButton(runtime, action) {
   btn.dataset.mariImpersonateAction = action.id;
   btn.title = `${action.label}: ${action.title}`;
   btn.setAttribute("aria-label", `${action.label}: ${action.title}`);
-  btn.innerHTML = action.icon;
+  btn.innerHTML = `<span class="mari-ib-icon-shell">${action.icon}</span>`;
   runtime.dom.on(btn, "pointerdown", (event) => event.preventDefault());
   runtime.dom.on(btn, "dragstart", (event) => event.preventDefault());
   runtime.dom.on(btn, "click", (event) => {
