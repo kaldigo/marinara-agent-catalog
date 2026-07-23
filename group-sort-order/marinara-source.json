@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package",
+    "sharedRoots": ["_mari-bridge"]
+  },
+  "package": {
+    "id": "group-sort-order",
+    "name": "Group Sort Order",
+    "description": "Package-era next-speaker ordering helper for group roleplay chats.",
+    "kind": ["agent"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+    "restartRequired": true
+  }
+}

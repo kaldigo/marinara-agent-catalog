@@ -5,6 +5,6 @@
   "type": "module",
   "description": "Shared package-era compatibility helpers for Marinara capability packages.",
   "scripts": {
-    "check": "node --check src/index.js && node --check src/commands.js && node --check src/ranges.js && node --check src/summary-tracking.js"
+    "check": "node --check src/index.js && node --check src/commands.js && node --check src/ranges.js && node --check src/summary-tracking.js && node --check src/prompt-contribution.js"
   }
 }
