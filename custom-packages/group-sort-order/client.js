@@ -1,5 +1,6 @@
 (function () {
   const PACKAGE_ID = "group-sort-order";
+  const TAG_NAME = "marinara-capability-group-sort-order";
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
 
@@ -8,7 +9,21 @@
   let pollTimer = 0;
 
   injectStyle();
+  defineCapabilityElement();
   tick();
+
+  function defineCapabilityElement() {
+    if (customElements.get(TAG_NAME)) return;
+
+    class GroupSortOrderCapabilityElement extends HTMLElement {
+      connectedCallback() {
+        this.hidden = true;
+        this.setAttribute("aria-hidden", "true");
+      }
+    }
+
+    customElements.define(TAG_NAME, GroupSortOrderCapabilityElement);
+  }
 
   function tick() {
     if (disposed) return;
