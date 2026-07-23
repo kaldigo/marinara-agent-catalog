@@ -12,6 +12,16 @@ const CLIENT_CSS = `
   -webkit-tap-highlight-color: transparent;
 }
 
+.mari-bridge-slot-quick-actions,
+.mari-bridge-slot-quick-actions .mari-bridge-slot-contribution {
+  display: contents;
+}
+
+.mari-bridge-slot-quick-actions .mari-ib-root {
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
 .mari-ib-root,
 .mari-ib-root * {
   user-select: none;

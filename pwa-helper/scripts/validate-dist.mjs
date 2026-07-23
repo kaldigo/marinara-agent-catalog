@@ -19,7 +19,7 @@ const generationMonitorSource = fs.readFileSync(generationMonitorSourcePath, "ut
 assert(manifest.schemaVersion === 1, "manifest schemaVersion is 1");
 assert(manifest.id === "pwa-helper", "manifest id is pwa-helper");
 assert(manifest.name === "PWA Helper", "manifest name is PWA Helper");
-assert(manifest.version === "1.0.2", "manifest version is 1.0.2");
+assert(manifest.version === "1.0.3", "manifest version is 1.0.3");
 assert(manifest.engine?.min === "2.3.3", "manifest engine min is 2.3.3");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before Engine 3");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
@@ -38,7 +38,7 @@ assert(!client.includes("import "), "client entrypoint is self-contained");
 assert(client.includes("customElements.define(ELEMENT_TAG, PwaHelperElement)"), "client registers package element");
 assert(client.includes("navigator.wakeLock.request(\"screen\")"), "client requests screen wake lock");
 assert(client.includes("window[PUBLIC_API_KEY] = api"), "client exposes public API fallback");
-assert(client.includes('PACKAGE_VERSION = "1.0.2"'), "client package version matches manifest");
+assert(client.includes('PACKAGE_VERSION = "1.0.3"'), "client package version matches manifest");
 assert(client.includes("marinara:pwa-helper-ready"), "client dispatches ready event");
 assert(client.includes("`${PACKAGE_ID}:bridge-generation`"), "client has bridge generation wake lease");
 assert(client.includes("mari-bridge:generation-state"), "client consumes bridge generation state events");
