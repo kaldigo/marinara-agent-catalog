@@ -9,7 +9,7 @@ import { PRESENCE_MIGRATION_VERSION, PRESENCE_PACKAGE_ID } from "../shared/const
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
 import { parseMessageRange } from "../../../_mari-bridge/src/ranges.js";
-import { readSummaryEntries } from "../../../_mari-bridge/src/summary-tracking.js";
+import { inferSummaryHintFromRoute, readSummaryEntries } from "../../../_mari-bridge/src/summary-tracking.js";
 import { planExtensionMigration } from "./migration.js";
 import { buildSummaryAudience, buildSummaryLorebookEntries } from "./summary-mirror.js";
 
@@ -21,8 +21,9 @@ export function registerPresenceMessageCreateHook({ app, runtime }) {
   app.addHook("onSend", async (request, reply, payload) => {
     try {
       await stampCreatedUserMessage({ app, runtime, request, reply, payload });
+      await reconcileSummariesAfterHostChange({ app, runtime, request, reply });
     } catch (error) {
-      runtime.logger.warn(error, "[Presence] Could not stamp created message");
+      runtime.logger.warn(error, "[Presence] Could not process response hook");
     }
     return payload;
   });
@@ -90,19 +91,8 @@ export function createPresenceRoutes({ app, runtime }) {
   app.post("/chat/:chatId/reconcile", async (req, reply) => {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
-    const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
-    const state = readPresenceChatState(chat);
-    const messages = await persistence.listMessages(req.params.chatId);
-    const backfill = planRosterBackfill({
-      previousRosterIds: state.rosterCharacterIds,
-      currentRosterIds: rosterIds,
-      messages,
-    });
-    for (const patch of backfill.messagePatches) {
-      await patchMessageExtra(app, req.params.chatId, patch.messageId, patch.patch);
-    }
-    await patchChatState(persistence, chat, { rosterCharacterIds: rosterIds });
-    return { ok: true, addedCharacterIds: backfill.addedCharacterIds, patchedMessages: backfill.messagePatches.length };
+    const result = await reconcileRoster({ app, runtime, chat });
+    return { ok: true, ...result };
   });
 
   app.post("/chat/:chatId/migrate-extension", async (req, reply) => {
@@ -141,6 +131,21 @@ async function stampCreatedUserMessage({ app, runtime, request, reply, payload }
   await patchMessageExtra(app, chatId, created.id, patch);
 }
 
+async function reconcileSummariesAfterHostChange({ app, runtime, request, reply }) {
+  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+  if (isPresenceInternalRequest(request)) return;
+  const url = String(request.url || "");
+  if (url.includes("/api/presence/")) return;
+  const body = normalizeObject(request.body);
+  const hint = inferSummaryHintFromRoute(request.method, url, body);
+  if (hint.source === "unknown") return;
+  const chatId = extractChatRouteId(url) || (typeof body.chatId === "string" ? body.chatId : "");
+  if (!chatId) return;
+  const chat = await runtime.persistence.getChat(chatId);
+  if (!chat) return;
+  await reconcileSummaryLorebook({ app, runtime, chat });
+}
+
 async function runPresenceCommand({ tokens, app, runtime, chat }) {
   const [rawAction, characterName, ...rangeTokens] = tokens;
   const action = String(rawAction || "").toLowerCase();
@@ -154,8 +159,32 @@ async function runPresenceCommand({ tokens, app, runtime, chat }) {
         : `Migrated ${result.patchedMessages} message${result.patchedMessages === 1 ? "" : "s"} from the Presence extension.`,
     };
   }
+  if (action === "reconcile" || action === "backfill") {
+    const result = await reconcileRoster({ app, runtime, chat });
+    return {
+      ...result,
+      ok: true,
+      feedback: `Reconciled Presence roster state, added ${result.addedCharacterIds.length} character${result.addedCharacterIds.length === 1 ? "" : "s"}, patched ${result.patchedMessages} message${result.patchedMessages === 1 ? "" : "s"}.`,
+    };
+  }
+  if (action === "summaries" || action === "summary") {
+    const subcommand = String(characterName || "").toLowerCase();
+    if (subcommand && subcommand !== "reconcile") {
+      return { ok: false, feedback: "Usage: /presence summaries" };
+    }
+    const result = await reconcileSummaryLorebook({ app, runtime, chat });
+    return {
+      ...result,
+      ok: true,
+      feedback: `Rebuilt Presence summaries lorebook with ${result.entries} entr${result.entries === 1 ? "y" : "ies"} and disabled ${result.disabledNativeSummaries} native summar${result.disabledNativeSummaries === 1 ? "y" : "ies"}.`,
+    };
+  }
   if (action !== "set" && action !== "unset") {
-    return { ok: false, feedback: "Usage: /presence <set|unset> <character> <range> or /presence migrate" };
+    return {
+      ok: false,
+      feedback:
+        "Usage: /presence <set|unset> <character> <range>, /presence migrate, /presence reconcile, or /presence summaries",
+    };
   }
   return setPresenceForRange({
     app,
@@ -165,6 +194,23 @@ async function runPresenceCommand({ tokens, app, runtime, chat }) {
     characterName,
     rangeTokens,
   });
+}
+
+async function reconcileRoster({ app, runtime, chat }) {
+  const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
+  const state = readPresenceChatState(chat);
+  const messages = await runtime.persistence.listMessages(chat.id);
+  const backfill = planRosterBackfill({
+    previousRosterIds: state.rosterCharacterIds,
+    currentRosterIds: rosterIds,
+    messages,
+  });
+  for (const patch of backfill.messagePatches) {
+    await patchMessageExtra(app, chat.id, patch.messageId, patch.patch);
+  }
+  const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
+  await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds });
+  return { addedCharacterIds: backfill.addedCharacterIds, patchedMessages: backfill.messagePatches.length };
 }
 
 async function migrateExtensionChat({ app, runtime, chat }) {
@@ -379,6 +425,7 @@ async function injectJson(app, method, url, payload) {
   const response = await app.inject({
     method,
     url,
+    headers: { "x-presence-internal": "1" },
     ...(payload === undefined ? {} : { payload }),
   });
   if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -409,4 +456,14 @@ function parsePayloadObject(payload) {
 function extractMessageCreateChatId(url) {
   const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)\/messages(?:[?#].*)?$/u);
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+function extractChatRouteId(url) {
+  const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)\//u);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function isPresenceInternalRequest(request) {
+  const value = request.headers?.["x-presence-internal"];
+  return value === "1" || value === "true" || (Array.isArray(value) && value.includes("1"));
 }

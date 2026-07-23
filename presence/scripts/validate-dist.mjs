@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "presence", "manifest id is presence");
-assert(manifest.version === "1.0.1", "manifest version is 1.0.1");
+assert(manifest.version === "1.0.2", "manifest version is 1.0.2");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps Presence before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
@@ -17,6 +17,14 @@ assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint declar
 assert(agents[0]?.category === "misc", "Presence is a misc capability, not a tracker agent");
 assert(agents[0]?.phase === "pre_generation", "Presence declares the required packaged agent phase");
 assert(!fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("import "), "client entrypoint is self-contained");
+assert(
+  fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("reconcileCurrentChatSummaries"),
+  "client exposes the summary reconcile console helper",
+);
+assert(
+  fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("reconcileCurrentChat: async"),
+  "client exposes the roster reconcile console helper",
+);
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);
