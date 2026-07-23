@@ -343,10 +343,13 @@ function scheduleComposerSlotRender(delayMs) {
 // Returns the active composer pieces that bridge slot renderers receive.
 function findActiveComposerContext() {
   const root = findActiveChatComposer();
-  const textarea = root?.querySelector("textarea.mari-chat-input-textarea, textarea") || null;
-  const sendButton = root?.querySelector("button.mari-chat-send-btn, button[title='Send'], button[aria-label='Send']") || null;
+  const shell = findActiveInputShell(root);
+  const scope = shell || root;
+  const textarea = scope?.querySelector("textarea.mari-chat-input-textarea, textarea") || null;
+  const sendButton = findComposerSendButton(scope);
   return {
     root,
+    shell,
     textarea,
     sendButton,
     chatId: getActiveChatIdFromClient(),
@@ -420,7 +423,7 @@ function renderComposerSlots(state) {
 function ensureSlotHosts(context) {
   return {
     [COMPOSER_SLOT_ABOVE_INPUT]: ensureAboveInputHost(context.root),
-    [COMPOSER_SLOT_QUICK_ACTIONS]: ensureQuickActionsHost(context.root, context.sendButton),
+    [COMPOSER_SLOT_QUICK_ACTIONS]: ensureQuickActionsHost(context),
   };
 }
 
@@ -435,18 +438,26 @@ function ensureAboveInputHost(root) {
   return host;
 }
 
-function ensureQuickActionsHost(root, sendButton) {
-  let host = root.querySelector(":scope [data-mari-bridge-slot='composer:quick-actions']");
+function ensureQuickActionsHost(context) {
+  const shell = context.shell || context.root;
+  const root = context.root;
+  const sendButton = context.sendButton;
+  let host = shell.querySelector(":scope [data-mari-bridge-slot='composer:quick-actions']");
+  if (!(host instanceof HTMLElement) && root !== shell) {
+    host = root.querySelector(":scope [data-mari-bridge-slot='composer:quick-actions']");
+  }
   if (!(host instanceof HTMLElement)) {
     host = document.createElement("span");
     host.dataset.mariBridgeSlot = COMPOSER_SLOT_QUICK_ACTIONS;
     host.className = "mari-bridge-slot mari-bridge-slot-quick-actions";
   }
-  const targetParent = sendButton?.parentElement || root;
+  const anchor = findQuickActionsAnchor(shell, sendButton);
+  const targetParent = anchor?.parentElement || shell;
+  const before = anchor || null;
   if (host.parentElement !== targetParent) {
-    targetParent.insertBefore(host, sendButton || null);
-  } else if (sendButton && host.nextElementSibling !== sendButton) {
-    targetParent.insertBefore(host, sendButton);
+    targetParent.insertBefore(host, before);
+  } else if (before && host.nextElementSibling !== before) {
+    targetParent.insertBefore(host, before);
   }
   return host;
 }
@@ -507,10 +518,49 @@ function normalizeSlotContribution(contribution) {
 }
 
 function findActiveChatComposer() {
-  const candidates = Array.from(
-    document.querySelectorAll(".mari-chat-input.chat-input-container, .mari-chat-input, .chat-input-container"),
-  );
+  const shells = Array.from(document.querySelectorAll(".marinara-chat-input-shell, .mari-chat-input-box"));
+  const activeShell = shells.find((shell) => shell instanceof HTMLElement && shell.querySelector("textarea") && isVisibleElement(shell));
+  if (activeShell instanceof HTMLElement) {
+    return (
+      activeShell.closest(".mari-chat-input.chat-input-container, .mari-chat-input, .chat-input-container") ||
+      activeShell
+    );
+  }
+  const candidates = Array.from(document.querySelectorAll(".mari-chat-input.chat-input-container, .mari-chat-input, .chat-input-container"));
   return candidates.find((root) => root instanceof HTMLElement && root.querySelector("textarea") && isVisibleElement(root)) || null;
+}
+
+function findActiveInputShell(root) {
+  if (!root) return null;
+  if (root.matches?.(".marinara-chat-input-shell, .mari-chat-input-box")) return root;
+  return (
+    Array.from(root.querySelectorAll(".marinara-chat-input-shell, .mari-chat-input-box")).find((shell) =>
+      shell.querySelector("textarea"),
+    ) ||
+    root.querySelector("textarea")?.closest(".marinara-chat-input-shell, .mari-chat-input-box") ||
+    null
+  );
+}
+
+function findComposerSendButton(scope) {
+  if (!scope) return null;
+  return (
+    scope.querySelector("button.mari-chat-send-btn") ||
+    Array.from(scope.querySelectorAll("button[aria-label], button[title]")).find((button) => {
+      const text = `${button.getAttribute("aria-label") || ""} ${button.getAttribute("title") || ""}`;
+      return /\b(send|stop|retry|continue)\b/i.test(text);
+    }) ||
+    Array.from(scope.querySelectorAll("button")).reverse().find((button) => button instanceof HTMLButtonElement) ||
+    null
+  );
+}
+
+function findQuickActionsAnchor(shell, sendButton) {
+  const quickReplyTrigger = shell.querySelector("button[aria-label='Quick replies'], button[title='Quick replies']");
+  if (quickReplyTrigger) {
+    return quickReplyTrigger.closest(".relative, .hidden, .sm\\:block") || quickReplyTrigger;
+  }
+  return sendButton;
 }
 
 function patchHistoryMethod(method) {
@@ -843,7 +893,7 @@ function errorMessage(error) {
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.6";
+  const RUNTIME_VERSION = "1.0.7";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {

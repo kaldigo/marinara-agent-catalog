@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
@@ -79,8 +79,8 @@
     },
     {
       "path": "bridge/ui-slots.js",
-      "sha256": "038398909eb60d2b298bdbfc960b31b08b4f048fa66dd72c83dce46e9be98377",
-      "bytes": 9092
+      "sha256": "88c9c2ac704748684e16226ab2e095e81d2093b7e9386f9e403e4eab7846e302",
+      "bytes": 11126
     },
     {
       "path": "client.js",
