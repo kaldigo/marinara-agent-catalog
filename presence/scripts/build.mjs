@@ -86,6 +86,7 @@ function rewriteSourceImports(content) {
 
 async function buildClientEntrypoint() {
   const files = [
+    path.join(bridgeRoot, "runtime.js"),
     path.join(bridgeRoot, "ranges.js"),
     path.join(bridgeRoot, "composer-dom.js"),
     path.join(bridgeRoot, "commands.js"),

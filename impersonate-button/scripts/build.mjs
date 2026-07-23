@@ -11,6 +11,7 @@ const bridgeRoot = path.resolve(projectRoot, "..", "_mari-bridge", "src");
 const pkg = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8"));
 
 const bridgeSources = [
+  "runtime.js",
   "composer-dom.js",
   "generation-stream.js",
   "ui-slots.js",

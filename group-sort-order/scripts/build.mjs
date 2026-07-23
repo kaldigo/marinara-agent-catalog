@@ -10,6 +10,7 @@ const packageRoot = path.join(distRoot, "package");
 const bridgeRoot = path.resolve(projectRoot, "..", "_mari-bridge", "src");
 const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8")).version;
 const bridgeClientSources = [
+  "runtime.js",
   "composer-dom.js",
   "generation-stream.js",
   "ui-slots.js",

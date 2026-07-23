@@ -12,7 +12,9 @@ These instructions apply to the `packages` branch checkout.
 - Package-specific business logic, rendering details, prompt text, package settings, and package-owned API routes stay in the consuming package.
 - Prefer bridge-owned registration APIs over package-local DOM/event interception. Packages should register contributions and handlers; the bridge should own discovery, mounting, matching, lifecycle, and cleanup.
 - Add short inline comments on exported bridge APIs when the intended contract is not obvious. Do not rely on a bridge README for the contract.
-- When committing changes to `_mari-bridge`, bump the version of every committed package source that uses `_mari-bridge` through `processing.sharedRoots`, unless that package has uncommitted files. If a package has uncommitted files, leave it alone and call that out in the commit notes or handoff.
+- Keep bridge package-facing APIs static when possible. Existing routes and registration shapes should remain compatible; add new routes/helpers instead of changing current contracts.
+- `_mari-bridge` browser singletons must be designed so the newest compatible bridge runtime wins when different installed packages carry different bridge copies.
+- Do not bump every bridge-consuming package for internal bridge fixes or compatible additions. Bump consumers only when their own source/output changes, or when a bridge change requires a package-facing API or packaged-output contract update. If a required bump is skipped because a package has uncommitted files, call that out in the commit notes or handoff.
 - Before committing or pushing, inspect `git status --short` from this folder and stage only the package or bridge source relevant to the task.
 
 ## Legacy Extension Ports

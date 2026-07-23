@@ -1,5 +1,6 @@
 import { looksLikeNativeMessageRange, tokenizeCommandTail } from "./ranges.js";
 import { getActiveChatIdFromClient, setTextControlValue } from "./composer-dom.js";
+import { MARI_BRIDGE_VERSION, claimBridgeSubsystem, isBridgeSubsystemOwner } from "./runtime.js";
 
 // Upstream gap MB-001: packages cannot register Roleplay/Conversation slash commands.
 
@@ -42,13 +43,19 @@ export function ensureSlashCommandBridge(options = {}) {
   const state = getCommandBridgeState();
   if (typeof options.resolveContext === "function") state.resolveContext = options.resolveContext;
   if (typeof options.onFeedback === "function") state.onFeedback = options.onFeedback;
-  if (state.started) return state;
-  state.started = true;
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", installSlashCommandListeners, { once: true });
-  } else {
-    installSlashCommandListeners();
-  }
+  claimBridgeSubsystem("slash-commands", {
+    version: MARI_BRIDGE_VERSION,
+    ownerId: "mari-bridge:slash-commands",
+    install: ({ token }) => {
+      state.ownerToken = token;
+      const start = () => installSlashCommandListeners(token);
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start, { once: true });
+        return () => document.removeEventListener("DOMContentLoaded", start);
+      }
+      return start();
+    },
+  });
   return state;
 }
 
@@ -126,14 +133,28 @@ function getCommandBridgeState() {
       registrations: new Map(),
       resolveContext: null,
       onFeedback: null,
+      ownerToken: null,
     };
   }
-  return window[COMMAND_BRIDGE_STATE_KEY];
+  const state = window[COMMAND_BRIDGE_STATE_KEY];
+  if (!(state.registrations instanceof Map)) state.registrations = new Map();
+  if (!("ownerToken" in state)) state.ownerToken = null;
+  return state;
 }
 
-function installSlashCommandListeners() {
-  document.addEventListener("keydown", onComposerKeyDownCapture, true);
-  document.addEventListener("submit", onComposerSubmitCapture, true);
+function installSlashCommandListeners(token) {
+  const onKeyDown = (event) => {
+    if (isBridgeSubsystemOwner("slash-commands", token)) onComposerKeyDownCapture(event);
+  };
+  const onSubmit = (event) => {
+    if (isBridgeSubsystemOwner("slash-commands", token)) onComposerSubmitCapture(event);
+  };
+  window.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("submit", onSubmit, true);
+  return () => {
+    window.removeEventListener("keydown", onKeyDown, true);
+    window.removeEventListener("submit", onSubmit, true);
+  };
 }
 
 async function onComposerKeyDownCapture(event) {

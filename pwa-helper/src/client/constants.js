@@ -1,6 +1,6 @@
 const PACKAGE_ID = "pwa-helper";
 const PACKAGE_NAME = "PWA Helper";
-const PACKAGE_VERSION = "1.0.3";
+const PACKAGE_VERSION = "1.0.4";
 const ELEMENT_TAG = "marinara-capability-pwa-helper";
 const RUNTIME_KEY = "__marinaraPwaHelperRuntime";
 const PUBLIC_API_KEY = "marinaraPwaHelper";

@@ -13,6 +13,7 @@ const packageJson = JSON.parse(await fs.readFile(path.join(projectRoot, "package
 const version = packageJson.version;
 
 const bridgeSources = [
+  "runtime.js",
   "composer-dom.js",
   "generation-stream.js",
   "ui-slots.js",
