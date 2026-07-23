@@ -324,13 +324,6 @@ function sourceMetadata(sourceDir) {
   return existsSync(metadataPath) ? readJson(metadataPath) : null;
 }
 
-function copySharedSources(branchDir, targetDir) {
-  const sharedDir = path.join(branchDir, "_shared");
-  if (existsSync(sharedDir)) {
-    copyIfExists(sharedDir, path.join(targetDir, "_shared"));
-  }
-}
-
 function buildPackageSourceFolders() {
   if (!existsSync(packagesDir)) {
     return;
@@ -338,7 +331,6 @@ function buildPackageSourceFolders() {
 
   const customPackagesDir = path.join(nextDir, "custom-packages");
   mkdirSync(customPackagesDir, { recursive: true });
-  copySharedSources(packagesDir, customPackagesDir);
 
   for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
     if (!isSourceFolder(entry)) {
