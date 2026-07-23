@@ -12,7 +12,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.12";
+  const RUNTIME_VERSION = "1.0.13";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -172,7 +172,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
       scheduleComposerSlotRender(0);
     } catch (error) {
       warn("state refresh failed", error);
-      updateBar(state.barNode, { enabled: true, hidden: false, nextSpeaker: null, includePersonaCandidate: false, status: "unknown" });
+      updateBar(state.barNode, { enabled: true, hidden: true, nextSpeaker: null, includePersonaCandidate: false, status: "unknown" });
     }
   }
 
@@ -250,7 +250,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
 
   function updateBar(root, view) {
     if (!root) return;
-    const shouldHide = !state.activeChatId || view?.enabled === false || view?.hidden === true;
+    const shouldHide = !state.activeChatId || view?.enabled === false || view?.hidden !== false;
     root.hidden = shouldHide;
     root.dataset.status = typeof view?.status === "string" ? view.status : "unknown";
     if (root.dataset.chatId !== (state.activeChatId || "")) root.dataset.chatId = state.activeChatId || "";
@@ -312,7 +312,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
       #${ROOT_ID} .gso-icon-button { display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; border:1px solid color-mix(in srgb,var(--foreground,#f8fafc) 16%,transparent); border-radius:999px; padding:0; background:color-mix(in srgb,var(--secondary,#1f2937) 72%,transparent); color:color-mix(in srgb,var(--foreground,#f8fafc) 82%,transparent); line-height:1; }
       #${ROOT_ID} .gso-icon-button:hover:not(:disabled) { background:color-mix(in srgb,var(--foreground,#f8fafc) 10%,transparent); color:var(--foreground,#f8fafc); }
       #${ROOT_ID} .gso-icon-button[aria-pressed="true"] { color:var(--primary,#93c5fd); border-color:color-mix(in srgb,var(--primary,#93c5fd) 45%,transparent); background:color-mix(in srgb,var(--primary,#93c5fd) 16%,transparent); }
-      #${ROOT_ID} .gso-icon-button svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+      #${ROOT_ID} .gso-icon-button svg { width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
       #${ROOT_ID} button:disabled { opacity:.5; }
     `;
   }
