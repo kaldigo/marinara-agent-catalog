@@ -104,6 +104,293 @@ function bytes(file) {
   return statSync(file).size;
 }
 
+function legacyBridgeSource() {
+  return String.raw`
+function defineCapabilityElement(tagName) {
+  if (customElements.get(tagName)) return;
+  customElements.define(tagName, class extends HTMLElement {
+    connectedCallback() {
+      this.hidden = true;
+      this.setAttribute("aria-hidden", "true");
+    }
+  });
+}
+
+function ensureLegacyMarinaraBridge() {
+  const existing = window.__marinaraLegacyCapabilityBridge;
+  if (existing?.api) {
+    if (!window.marinara) window.marinara = existing.api;
+    return existing;
+  }
+
+  const runtime = {
+    cleanupStack: [],
+    globalCleanups: [],
+    styles: new Map(),
+  };
+
+  function activeCleanups() {
+    return runtime.cleanupStack[runtime.cleanupStack.length - 1] || runtime.globalCleanups;
+  }
+
+  function track(cleanup) {
+    activeCleanups().push(cleanup);
+    return cleanup;
+  }
+
+  function normalizeApiPath(path) {
+    const value = String(path || "");
+    if (/^https?:\/\//i.test(value)) return value;
+    if (value.startsWith("/api/") || value === "/api") return value;
+    return "/api" + (value.startsWith("/") ? value : "/" + value);
+  }
+
+  const api = {
+    on(target, type, handler, options) {
+      target.addEventListener(type, handler, options);
+      track(() => target.removeEventListener(type, handler, options));
+    },
+    onCleanup(cleanup) {
+      if (typeof cleanup === "function") track(cleanup);
+    },
+    observe(target, callback, options) {
+      const observer = new MutationObserver(callback);
+      observer.observe(target, options);
+      track(() => observer.disconnect());
+      return observer;
+    },
+    setTimeout(handler, timeout, ...args) {
+      const id = window.setTimeout(handler, timeout, ...args);
+      track(() => window.clearTimeout(id));
+      return id;
+    },
+    setInterval(handler, timeout, ...args) {
+      const id = window.setInterval(handler, timeout, ...args);
+      track(() => window.clearInterval(id));
+      return id;
+    },
+    addStyle(css) {
+      const key = createStyleKey(css);
+      let record = runtime.styles.get(key);
+      if (!record) {
+        const style = document.createElement("style");
+        style.textContent = css;
+        style.dataset.marinaraLegacyCapabilityStyle = key;
+        document.head.appendChild(style);
+        record = { style, refs: 0 };
+        runtime.styles.set(key, record);
+      }
+      record.refs += 1;
+      track(() => {
+        record.refs -= 1;
+        if (record.refs <= 0) {
+          record.style.remove();
+          runtime.styles.delete(key);
+        }
+      });
+      return record.style;
+    },
+    async apiFetch(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if (typeof options.body === "string" && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+      const response = await fetch(normalizeApiPath(path), {
+        cache: "no-store",
+        ...options,
+        headers,
+      });
+      if (response.status === 204) return {};
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        const error = new Error(data?.error || response.status + " " + response.statusText);
+        error.status = response.status;
+        error.body = data;
+        throw error;
+      }
+      return data;
+    },
+  };
+
+  function createStyleKey(css) {
+    let hash = 0;
+    for (let index = 0; index < css.length; index += 1) {
+      hash = (hash * 31 + css.charCodeAt(index)) >>> 0;
+    }
+    return css.length + "-" + hash.toString(36);
+  }
+
+  runtime.api = api;
+  runtime.withCleanups = (cleanups, callback) => {
+    runtime.cleanupStack.push(cleanups);
+    try {
+      return callback();
+    } finally {
+      runtime.cleanupStack.pop();
+    }
+  };
+  window.__marinaraLegacyCapabilityBridge = runtime;
+  if (!window.marinara) window.marinara = api;
+  return runtime;
+}
+`;
+}
+
+function wrapLegacyExtensionClient({ id, legacyJs, css }) {
+  const tagName = `marinara-capability-${id}`;
+  return `// Generated from agents/extensions source by the catalog rebuild workflow.
+const PACKAGE_ID = ${JSON.stringify(id)};
+const TAG_NAME = ${JSON.stringify(tagName)};
+const LEGACY_CSS = ${JSON.stringify(css || "")};
+
+${legacyBridgeSource()}
+
+defineCapabilityElement(TAG_NAME);
+
+const installedPorts = window.__marinaraLegacyCapabilityPorts || {};
+window.__marinaraLegacyCapabilityPorts = installedPorts;
+
+if (!installedPorts[PACKAGE_ID]) {
+  const bridge = ensureLegacyMarinaraBridge();
+  const cleanups = [];
+  const port = {
+    cleanups,
+    uninstall() {
+      while (cleanups.length) {
+        const cleanup = cleanups.pop();
+        try {
+          cleanup?.();
+        } catch (error) {
+          console.warn("[Marinara legacy capability]", PACKAGE_ID, "cleanup failed", error);
+        }
+      }
+      if (installedPorts[PACKAGE_ID] === port) delete installedPorts[PACKAGE_ID];
+    },
+  };
+  installedPorts[PACKAGE_ID] = port;
+  bridge.withCleanups(cleanups, () => {
+    if (LEGACY_CSS) bridge.api.addStyle(LEGACY_CSS);
+
+${legacyJs}
+  });
+}
+`;
+}
+
+function walkFiles(directory, callback) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const absolutePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      walkFiles(absolutePath, callback);
+      continue;
+    }
+    callback(absolutePath);
+  }
+}
+
+function findLegacyManifest(extensionDir) {
+  const distDir = path.join(extensionDir, "dist");
+  let match = null;
+  if (!existsSync(distDir)) {
+    throw new Error(`Extension build did not create dist/: ${extensionDir}`);
+  }
+
+  walkFiles(distDir, (file) => {
+    if (match || path.basename(file) !== "manifest.json") {
+      return;
+    }
+    const manifest = readJson(file);
+    if (manifest.kind === "marinara.extension" && manifest.config?.jsPath) {
+      match = { file, manifest };
+    }
+  });
+
+  if (!match) {
+    throw new Error(`No legacy Marinara extension manifest found in ${distDir}`);
+  }
+
+  return match;
+}
+
+function buildExtensionSourcePackages() {
+  const extensionsDir = path.join(agentsDir, "extensions");
+  if (!existsSync(extensionsDir)) {
+    return;
+  }
+
+  const customPackagesDir = path.join(nextDir, "custom-packages");
+  mkdirSync(customPackagesDir, { recursive: true });
+
+  for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith("_")) {
+      continue;
+    }
+
+    const extensionDir = path.join(extensionsDir, entry.name);
+    const packageJsonPath = path.join(extensionDir, "package.json");
+    const capabilityJsonPath = path.join(extensionDir, "capability-package.json");
+    if (!existsSync(packageJsonPath) || !existsSync(capabilityJsonPath)) {
+      continue;
+    }
+
+    run("npm", ["run", "build"], { cwd: extensionDir });
+
+    const packageJson = readJson(packageJsonPath);
+    const capability = readJson(capabilityJsonPath);
+    const legacy = findLegacyManifest(extensionDir);
+    const legacyDir = path.dirname(legacy.file);
+    const legacyConfig = legacy.manifest.config || {};
+    const legacyJsPath = path.join(legacyDir, legacyConfig.jsPath);
+    const legacyCssPath = legacyConfig.cssPath ? path.join(legacyDir, legacyConfig.cssPath) : null;
+    const legacyJs = readFileSync(legacyJsPath, "utf8");
+    const css = legacyCssPath && existsSync(legacyCssPath) ? readFileSync(legacyCssPath, "utf8") : "";
+
+    const packageDir = path.join(customPackagesDir, capability.id);
+    rmSync(packageDir, { recursive: true, force: true });
+    mkdirSync(packageDir, { recursive: true });
+
+    const clientPath = path.join(packageDir, "client.js");
+    writeFileSync(
+      clientPath,
+      wrapLegacyExtensionClient({ id: capability.id, legacyJs, css }),
+    );
+
+    const readmePath = path.join(extensionDir, "README.md");
+    if (existsSync(readmePath)) {
+      cpSync(readmePath, path.join(packageDir, "README.md"));
+    } else {
+      writeFileSync(
+        path.join(packageDir, "README.md"),
+        `# ${legacyConfig.name || capability.id}\n\n${legacyConfig.description || ""}\n`,
+      );
+    }
+
+    const manifest = {
+      schemaVersion: 1,
+      id: capability.id,
+      name: capability.name || legacyConfig.name || capability.id,
+      version: String(capability.version || packageJson.version || "0.0.0"),
+      description: capability.description || legacyConfig.description || "",
+      engine: capability.engine || { min: "2.3.0", maxExclusive: "3.0.0" },
+      kind: capability.kind || ["agent"],
+      entrypoints: { client: "client.js" },
+      files: [
+        {
+          path: "client.js",
+          sha256: sha256(clientPath),
+          bytes: bytes(clientPath),
+        },
+      ],
+      permissions: Array.from(new Set(capability.permissions || ["ui"])).sort(),
+      restartRequired: Boolean(capability.restartRequired),
+    };
+
+    writeJson(path.join(packageDir, "manifest.json"), manifest);
+    console.log(`Built ${entry.name} -> custom-packages/${capability.id}`);
+  }
+}
+
 function listPackageFiles(packageDir) {
   const files = [];
 
@@ -304,6 +591,7 @@ copyIfExists(path.join(agentsDir, "custom-packages"), path.join(nextDir, "custom
 copyIfExists(path.join(agentsDir, "custom-artifacts"), path.join(nextDir, "custom-artifacts"));
 copyIfExists(path.join(agentsDir, "custom-artwork"), path.join(nextDir, "custom-artwork"));
 copyIfExists(path.join(agentsDir, "catalog-overrides"), path.join(nextDir, "catalog-overrides"));
+buildExtensionSourcePackages();
 
 copyIfExists(
   path.join(nextDir, "custom-artwork", "agent-covers"),
