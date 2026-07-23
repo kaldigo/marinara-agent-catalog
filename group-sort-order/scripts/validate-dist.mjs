@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "group-sort-order", "manifest id is group-sort-order");
-assert(manifest.version === "1.0.12", "manifest version is 1.0.12");
+assert(manifest.version === "1.0.13", "manifest version is 1.0.13");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
@@ -27,6 +27,8 @@ assert(clientSource.includes("declarePackageGeneration"), "client bundles bridge
 assert(clientSource.includes('MARI_BRIDGE_VERSION = "1.0.2"'), "client bundles bridge runtime 1.0.2");
 assert(clientSource.includes("current.installed || current.installing"), "client bundles bridge recursive install guard");
 assert(clientSource.includes("border-radius:999px"), "client uses round GSO icon buttons");
+assert(clientSource.includes("view?.hidden !== false"), "client hides GSO bar until server view explicitly shows it");
+assert(clientSource.includes("width:13px; height:13px"), "client uses smaller GSO icons");
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);
