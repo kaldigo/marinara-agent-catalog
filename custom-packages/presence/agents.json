@@ -1,0 +1,17 @@
+[
+  {
+    "id": "presence",
+    "name": "Presence",
+    "description": "Feature runtime for per-message character presence and scoped chat summaries.",
+    "category": "tracker",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "modeAllowlist": [
+      "roleplay",
+      "visual_novel"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]

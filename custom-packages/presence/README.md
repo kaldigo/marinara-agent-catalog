@@ -1,55 +1,49 @@
-# Marinara-Presence
+# Presence
 
-Browser extension for Marinara Engine. The installed extension name is **Presence**.
+Package-era rewrite of **Presence** for Marinara Engine.
 
-Presence stores per-message character attendance in `message.extra.marinaraPresence`.
-When generation starts, it temporarily hides messages that none of the currently
-active chat characters were present for, then restores exactly those messages when
-generation completes or fails.
+Presence tracks which active chat characters were present for each message and
+uses Marinara's native per-character **Hide From AI** field
+(`message.extra.hiddenFromAICharacterIds`) as the durable prompt-scoping layer.
 
-When a message is saved, Presence stamps it with the chat's currently active
-characters. Characters listed in chat metadata `inactiveCharacterIds` are excluded.
+This package is not published yet. `includeInMain` is `false` while it sits
+beside the legacy `presence-extension` catalog package that still owns the same
+install id.
 
-If Marinara Group Smart Order is installed with Presence compatibility, GSO hands
-Presence the final generate body after it chooses `forCharacterId`. Presence still
-works without GSO.
+## Goals
+
+- Store presence as character IDs, not names.
+- Preserve manual/global Hide From AI state.
+- Backfill newly added characters so they do not inherit old scene history.
+- Mirror chat summaries into a Presence-owned lorebook with per-character filters.
+- Disable native chat summary injection after mirrored summaries are created.
+- Use `_mari-bridge` for slash command handling and summary lifecycle detection.
+- Provide a one-time migration path from `presence-extension`.
 
 ## Slash Commands
 
-Presence consumes only commands that start with `/presence`:
+Presence should own:
 
 ```text
-/presence set Alice 10-25
-/presence unset Bob last 30
-/presence set "Alice Liddell" all
-/presence unset Charlie from 12 to 40
+/presence set Sophie 4-46
+/presence unset Sophie last 20
+/hide Sophie 4-46
+/unhide "Sophie Valentine" all
 ```
 
-If a message has no presence record, everyone in the current chat roster is treated
-as present. Resetting a message to everyone-present stores `marinaraPresence: null`.
+Native Marinara commands such as `/hide 4-46` and `/unhide last 20` must pass
+through untouched.
 
-`set` marks a character present without removing anyone else. `unset` removes a
-character from the selected messages.
+## Summary Strategy
 
-## Debug Logging
+Native chat summary entries do not currently support per-character audience
+scoping. Presence mirrors enabled summary entries into a chat-scoped lorebook:
 
-Debug logging is off by default. In the browser console:
+- First wrapper entry opens `<chat_summaries>`.
+- Each summary entry uses the summary ID as the lorebook entry name.
+- Each summary entry is locked and character-filtered.
+- Last wrapper entry closes `</chat_summaries>`.
+- User enabled/disabled mirror preferences are stored per chat by summary ID.
 
-```js
-window.__marinaraPresence.setDebug(true)
-```
-
-Turn it off again with:
-
-```js
-window.__marinaraPresence.setDebug(false)
-```
-
-## Build
-
-```text
-npm run check
-```
-
-Import either `dist/Presence/manifest.json` as a folder package or
-`dist/presence.json` as a single extension file.
+The native summary entries are then disabled so the same summary is not injected
+globally. Mirror enabled/disabled preferences are stored per chat by summary ID.
