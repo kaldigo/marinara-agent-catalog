@@ -6,19 +6,17 @@ Presence tracks which active chat characters were present for each message and
 uses Marinara's native per-character **Hide From AI** field
 (`message.extra.hiddenFromAICharacterIds`) as the durable prompt-scoping layer.
 
-This package is not published yet. `includeInMain` is `false` while it sits
-beside the legacy `presence-extension` catalog package that still owns the same
-install id.
+Presence is exposed as a tracker-category feature agent. It only mutates chats
+where the Presence tracker is enabled in the chat's active agent list.
 
 ## Goals
 
 - Store presence as character IDs, not names.
-- Preserve manual/global Hide From AI state.
+- Preserve global Hide From AI state.
 - Backfill newly added characters so they do not inherit old scene history.
 - Mirror chat summaries into a Presence-owned lorebook with per-character filters.
 - Disable native chat summary injection after mirrored summaries are created.
 - Use `_mari-bridge` for slash command handling and summary lifecycle detection.
-- Provide a one-time migration path from `presence-extension`.
 
 ## Slash Commands
 

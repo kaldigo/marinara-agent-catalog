@@ -1,31 +1,43 @@
 import { createPresenceCommandRouter } from "../client/command-handler.js";
 import {
-  buildExtensionMigrationMarker,
   buildPresenceLorebookName,
   readPresenceChatState,
   writePresenceChatState,
 } from "../shared/chat-state.js";
-import { PRESENCE_MIGRATION_VERSION, PRESENCE_PACKAGE_ID } from "../shared/constants.js";
+import { PRESENCE_PACKAGE_ID } from "../shared/constants.js";
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
 import { parseMessageRange } from "../../bridge/ranges.js";
-import { inferSummaryHintFromRoute, readSummaryEntries } from "../../bridge/summary-tracking.js";
-import { planExtensionMigration } from "./migration.js";
+import { diffSummaryEntries, inferSummaryHintFromRoute, readSummaryEntries } from "../../bridge/summary-tracking.js";
 import { buildSummaryAudience, buildSummaryLorebookEntries } from "./summary-mirror.js";
 
 const MESSAGE_CREATE_HOOK_KEY = Symbol.for("marinara.presence.messageCreateHook");
+const GENERATE_REQUEST_STATE = new WeakMap();
+const SUMMARY_REQUEST_STATE = new WeakMap();
 
 export function registerPresenceMessageCreateHook({ app, runtime }) {
   if (app[MESSAGE_CREATE_HOOK_KEY]) return;
   app[MESSAGE_CREATE_HOOK_KEY] = true;
+  app.addHook("preHandler", async (request) => {
+    await captureGenerationRequestState({ runtime, request });
+    await captureSummaryRequestState({ runtime, request });
+  });
   app.addHook("onSend", async (request, reply, payload) => {
     try {
-      await stampCreatedUserMessage({ app, runtime, request, reply, payload });
+      await stampCreatedMessage({ app, runtime, request, reply, payload });
+      await ensureAfterChatSettingsChange({ app, runtime, request, reply });
       await reconcileSummariesAfterHostChange({ app, runtime, request, reply });
     } catch (error) {
       runtime.logger.warn(error, "[Presence] Could not process response hook");
     }
     return payload;
+  });
+  app.addHook("onResponse", async (request, reply) => {
+    try {
+      await finishGenerationLifecycle({ app, runtime, request, reply });
+    } catch (error) {
+      runtime.logger.warn(error, "[Presence] Could not finish generation lifecycle");
+    }
   });
 }
 
@@ -56,6 +68,9 @@ export function createPresenceRoutes({ app, runtime }) {
   app.post("/chat/:chatId/messages/:messageId/presence", async (req, reply) => {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
+    if (!isPresenceTrackerEnabled(chat)) {
+      return reply.status(409).send({ error: "Presence tracker is not enabled for this chat." });
+    }
     const messages = await persistence.listMessages(req.params.chatId);
     const message = messages.find((item) => item.id === req.params.messageId);
     if (!message) return reply.status(404).send({ error: "Message not found" });
@@ -73,6 +88,9 @@ export function createPresenceRoutes({ app, runtime }) {
   app.post("/chat/:chatId/command", async (req, reply) => {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
+    if (!isPresenceTrackerEnabled(chat)) {
+      return reply.status(409).send({ error: "Presence tracker is not enabled for this chat." });
+    }
     const raw = String(normalizeObject(req.body).text || "");
     const router = createPresenceCommandRouter({
       runPresenceCommand: (args) => runPresenceCommand({ ...args, app, runtime, chat }),
@@ -88,51 +106,36 @@ export function createPresenceRoutes({ app, runtime }) {
     }
   });
 
-  app.post("/chat/:chatId/reconcile", async (req, reply) => {
+  app.post("/chat/:chatId/ensure", async (req, reply) => {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
-    const result = await reconcileRoster({ app, runtime, chat });
-    return { ok: true, ...result };
-  });
-
-  app.post("/chat/:chatId/migrate-extension", async (req, reply) => {
-    const chat = await persistence.getChat(req.params.chatId);
-    if (!chat) return reply.status(404).send({ error: "Chat not found" });
-    const result = await migrateExtensionChat({ app, runtime, chat });
-    return { ok: true, ...result };
-  });
-
-  app.post("/chat/:chatId/summaries/reconcile", async (req, reply) => {
-    const chat = await persistence.getChat(req.params.chatId);
-    if (!chat) return reply.status(404).send({ error: "Chat not found" });
-    const result = await reconcileSummaryLorebook({ app, runtime, chat });
+    const result = await ensurePresenceChatLifecycle({ app, runtime, chat });
     return { ok: true, ...result };
   });
 }
 
-async function stampCreatedUserMessage({ app, runtime, request, reply, payload }) {
-  if (request.method !== "POST") return;
-  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+async function captureGenerationRequestState({ runtime, request }) {
+  if (isPresenceInternalRequest(request)) return;
+  const method = String(request.method || "").toUpperCase();
+  if (method !== "POST") return;
   const url = String(request.url || "");
-  if (!/^\/api\/chats\/[^/]+\/messages(?:[?#].*)?$/u.test(url)) return;
-  const created = parsePayloadObject(payload);
-  if (!created?.id || created.role !== "user") return;
-  const chatId = typeof created.chatId === "string" && created.chatId ? created.chatId : extractMessageCreateChatId(url);
+  if (!isNormalGenerateUrl(url)) return;
+  const body = normalizeObject(request.body);
+  const chatId = typeof body.chatId === "string" ? body.chatId : "";
   if (!chatId) return;
   const chat = await runtime.persistence.getChat(chatId);
-  if (!chat) return;
-  const rosterIds = uniqueStrings(chat.characterIds);
-  const activeIds = resolveActiveRosterIds(chat);
-  const patch = buildPresenceExtraPatch({
-    extra: created.extra,
-    rosterIds,
-    presentCharacterIds: activeIds,
+  if (!chat || !isPresenceTrackerEnabled(chat)) return;
+  const messages = await runtime.persistence.listMessages(chatId);
+  GENERATE_REQUEST_STATE.set(request, {
+    chatId,
+    beforeMessageIds: new Set(messages.map((message) => message.id).filter(Boolean)),
+    summaryEntriesBefore: readSummaryEntries(chat),
+    regenerateMessageId: typeof body.regenerateMessageId === "string" ? body.regenerateMessageId : "",
+    continueMessageId: typeof body.continueMessageId === "string" ? body.continueMessageId : "",
   });
-  await patchMessageExtra(app, chatId, created.id, patch);
 }
 
-async function reconcileSummariesAfterHostChange({ app, runtime, request, reply }) {
-  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+async function captureSummaryRequestState({ runtime, request }) {
   if (isPresenceInternalRequest(request)) return;
   const url = String(request.url || "");
   if (url.includes("/api/presence/")) return;
@@ -142,48 +145,122 @@ async function reconcileSummariesAfterHostChange({ app, runtime, request, reply 
   const chatId = extractChatRouteId(url) || (typeof body.chatId === "string" ? body.chatId : "");
   if (!chatId) return;
   const chat = await runtime.persistence.getChat(chatId);
+  if (!chat || !isPresenceTrackerEnabled(chat)) return;
+  SUMMARY_REQUEST_STATE.set(request, {
+    chatId,
+    hint,
+    summaryEntriesBefore: readSummaryEntries(chat),
+  });
+}
+
+async function stampCreatedMessage({ app, runtime, request, reply, payload }) {
+  if (request.method !== "POST") return;
+  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+  const url = String(request.url || "");
+  if (!/^\/api\/chats\/[^/]+\/messages(?:[?#].*)?$/u.test(url)) return;
+  const created = parsePayloadObject(payload);
+  if (!created?.id || !isStampableMessageRole(created.role)) return;
+  const chatId = typeof created.chatId === "string" && created.chatId ? created.chatId : extractMessageCreateChatId(url);
+  if (!chatId) return;
+  const chat = await runtime.persistence.getChat(chatId);
+  if (!chat || !isPresenceTrackerEnabled(chat)) return;
+  await stampMessageWithActivePresence({ app, runtime, chat, message: created, overwriteExisting: true });
+}
+
+async function finishGenerationLifecycle({ app, runtime, request, reply }) {
+  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+  const state = GENERATE_REQUEST_STATE.get(request);
+  if (!state) return;
+  GENERATE_REQUEST_STATE.delete(request);
+  const chat = await runtime.persistence.getChat(state.chatId);
+  if (!chat || !isPresenceTrackerEnabled(chat)) return;
+  await stampGeneratedMessages({ app, runtime, chat, state });
+  const freshChat = (await runtime.persistence.getChat(state.chatId)) || chat;
+  if (isPresenceTrackerEnabled(freshChat)) {
+    const summaryEvents = diffSummaryEntries(state.summaryEntriesBefore, readSummaryEntries(freshChat), {
+      source: "generation",
+    });
+    if (summaryEvents.length > 0) {
+      await reconcileSummaryLorebook({ app, runtime, chat: freshChat });
+    }
+  }
+}
+
+async function stampGeneratedMessages({ app, runtime, chat, state }) {
+  const messages = await runtime.persistence.listMessages(state.chatId);
+  const createdMessages = messages.filter((message) => !state.beforeMessageIds.has(message.id));
+  const targetIds = new Set(
+    [
+      ...createdMessages.filter((message) => isStampableMessageRole(message.role)).map((message) => message.id),
+      state.regenerateMessageId,
+      state.continueMessageId,
+    ].filter(Boolean),
+  );
+  for (const message of messages) {
+    if (!targetIds.has(message.id)) continue;
+    await stampMessageWithActivePresence({ app, runtime, chat, message, overwriteExisting: false });
+  }
+}
+
+async function stampMessageWithActivePresence({ app, runtime, chat, message, overwriteExisting }) {
+  if (!message?.id) return;
+  const extra = normalizeObject(message.extra);
+  if (!overwriteExisting && Array.isArray(extra.hiddenFromAICharacterIds)) return;
+  const rosterIds = uniqueStrings(chat.characterIds);
+  const activeIds = resolveActiveRosterIds(chat);
+  const patch = buildPresenceExtraPatch({
+    extra,
+    rosterIds,
+    presentCharacterIds: activeIds,
+  });
+  await patchMessageExtra(app, chat.id, message.id, patch);
+}
+
+async function ensureAfterChatSettingsChange({ app, runtime, request, reply }) {
+  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+  if (isPresenceInternalRequest(request)) return;
+  const method = String(request.method || "").toUpperCase();
+  if (method !== "PATCH" && method !== "PUT") return;
+  const url = String(request.url || "");
+  if (!/^\/api\/chats\/[^/?#]+(?:\/metadata)?(?:[?#].*)?$/u.test(url)) return;
+  const body = normalizeObject(request.body);
+  const touchesPresenceSettings =
+    Array.isArray(body.characterIds) ||
+    Object.prototype.hasOwnProperty.call(body, "activeAgentIds") ||
+    Object.prototype.hasOwnProperty.call(body, "enableAgents");
+  if (!touchesPresenceSettings) return;
+  const chatId = extractChatRootId(url) || extractChatMetadataRouteId(url);
+  if (!chatId) return;
+  const chat = await runtime.persistence.getChat(chatId);
   if (!chat) return;
-  await reconcileSummaryLorebook({ app, runtime, chat });
+  if (isPresenceTrackerEnabled(chat)) {
+    await ensurePresenceChatLifecycle({ app, runtime, chat });
+  } else {
+    await suspendPresenceChatLifecycle({ app, runtime, chat });
+  }
+}
+
+async function reconcileSummariesAfterHostChange({ app, runtime, request, reply }) {
+  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+  if (isPresenceInternalRequest(request)) return;
+  const state = SUMMARY_REQUEST_STATE.get(request);
+  if (!state) return;
+  SUMMARY_REQUEST_STATE.delete(request);
+  const chat = await runtime.persistence.getChat(state.chatId);
+  if (!chat || !isPresenceTrackerEnabled(chat)) return;
+  const summaryEvents = diffSummaryEntries(state.summaryEntriesBefore, readSummaryEntries(chat), state.hint);
+  if (summaryEvents.length > 0) {
+    await reconcileSummaryLorebook({ app, runtime, chat });
+  }
 }
 
 async function runPresenceCommand({ tokens, app, runtime, chat }) {
   const [rawAction, characterName, ...rangeTokens] = tokens;
   const action = String(rawAction || "").toLowerCase();
-  if (action === "migrate") {
-    const result = await migrateExtensionChat({ app, runtime, chat });
-    return {
-      ...result,
-      ok: true,
-      feedback: result.skipped
-        ? "Presence migration already ran for this chat."
-        : `Migrated ${result.patchedMessages} message${result.patchedMessages === 1 ? "" : "s"} from the Presence extension.`,
-    };
-  }
-  if (action === "reconcile" || action === "backfill") {
-    const result = await reconcileRoster({ app, runtime, chat });
-    return {
-      ...result,
-      ok: true,
-      feedback: `Reconciled Presence roster state, added ${result.addedCharacterIds.length} character${result.addedCharacterIds.length === 1 ? "" : "s"}, patched ${result.patchedMessages} message${result.patchedMessages === 1 ? "" : "s"}.`,
-    };
-  }
-  if (action === "summaries" || action === "summary") {
-    const subcommand = String(characterName || "").toLowerCase();
-    if (subcommand && subcommand !== "reconcile") {
-      return { ok: false, feedback: "Usage: /presence summaries" };
-    }
-    const result = await reconcileSummaryLorebook({ app, runtime, chat });
-    return {
-      ...result,
-      ok: true,
-      feedback: `Rebuilt Presence summaries lorebook with ${result.entries} entr${result.entries === 1 ? "y" : "ies"} and disabled ${result.disabledNativeSummaries} native summar${result.disabledNativeSummaries === 1 ? "y" : "ies"}.`,
-    };
-  }
   if (action !== "set" && action !== "unset") {
     return {
       ok: false,
-      feedback:
-        "Usage: /presence <set|unset> <character> <range>, /presence migrate, /presence reconcile, or /presence summaries",
+      feedback: "Usage: /presence <set|unset> <character> <range>",
     };
   }
   return setPresenceForRange({
@@ -194,6 +271,31 @@ async function runPresenceCommand({ tokens, app, runtime, chat }) {
     characterName,
     rangeTokens,
   });
+}
+
+async function ensurePresenceChatLifecycle({ app, runtime, chat }) {
+  if (!isPresenceTrackerEnabled(chat)) {
+    await suspendPresenceChatLifecycle({ app, runtime, chat });
+    return { skipped: true, enabled: false };
+  }
+  const roster = await reconcileRoster({ app, runtime, chat });
+  const afterRoster = (await runtime.persistence.getChat(chat.id)) || chat;
+  const summaries = await reconcileSummaryLorebook({ app, runtime, chat: afterRoster });
+  return { enabled: true, roster, summaries };
+}
+
+async function suspendPresenceChatLifecycle({ app, runtime, chat }) {
+  const state = readPresenceChatState(chat);
+  if (!state.summaryLorebookId) return { disabledLorebook: false };
+  try {
+    const lorebook = await injectJson(app, "GET", `/api/lorebooks/${encodeURIComponent(state.summaryLorebookId)}`);
+    if (!lorebook?.id || lorebook.enabled === false) return { disabledLorebook: false };
+    await injectJson(app, "PATCH", `/api/lorebooks/${encodeURIComponent(lorebook.id)}`, { enabled: false });
+    return { disabledLorebook: true };
+  } catch (error) {
+    runtime.logger.warn(error, "[Presence] Could not disable summary lorebook for inactive tracker");
+    return { disabledLorebook: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function reconcileRoster({ app, runtime, chat }) {
@@ -211,39 +313,6 @@ async function reconcileRoster({ app, runtime, chat }) {
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
   await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds });
   return { addedCharacterIds: backfill.addedCharacterIds, patchedMessages: backfill.messagePatches.length };
-}
-
-async function migrateExtensionChat({ app, runtime, chat }) {
-  const state = readPresenceChatState(chat);
-  if (state.extensionMigrationVersion >= PRESENCE_MIGRATION_VERSION) {
-    return {
-      skipped: true,
-      patchedMessages: 0,
-      unresolved: state.extensionMigrationUnresolved,
-      migratedAt: state.extensionMigratedAt,
-    };
-  }
-  const now = new Date().toISOString();
-  const [messages, roster] = await Promise.all([
-    runtime.persistence.listMessages(chat.id),
-    resolveRoster(runtime, chat),
-  ]);
-  const migration = planExtensionMigration({ messages, roster, now });
-  for (const patch of migration.patches) {
-    await patchMessageExtra(app, chat.id, patch.messageId, patch.patch);
-  }
-  const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
-  await patchChatState(
-    runtime.persistence,
-    freshChat,
-    buildExtensionMigrationMarker({ unresolved: migration.unresolved, now }),
-  );
-  return {
-    skipped: false,
-    patchedMessages: migration.patches.length,
-    unresolved: migration.unresolved,
-    migratedAt: now,
-  };
 }
 
 async function runScopedHideCommand({ hidden, tokens, app, runtime, chat }) {
@@ -328,14 +397,14 @@ async function ensureSummaryLorebook({ app, runtime, chat, state }) {
   if (state.summaryLorebookId) {
     try {
       const existing = await injectJson(app, "GET", `/api/lorebooks/${encodeURIComponent(state.summaryLorebookId)}`);
-      if (existing?.id) return existing;
+      if (existing?.id) return ensureLorebookEnabled(app, existing);
     } catch {
       runtime.logger.warn("[Presence] Stored summary lorebook is missing; recreating");
     }
   }
   const listed = await injectJson(app, "GET", `/api/lorebooks?chatId=${encodeURIComponent(chat.id)}`);
   const found = (Array.isArray(listed) ? listed : []).find((book) => book?.sourceAgentId === PRESENCE_PACKAGE_ID);
-  if (found?.id) return found;
+  if (found?.id) return ensureLorebookEnabled(app, found);
   return injectJson(app, "POST", "/api/lorebooks", {
     name: buildPresenceLorebookName(chat.id),
     description: "Character-scoped mirror of this chat's summaries for Presence.",
@@ -345,6 +414,11 @@ async function ensureSummaryLorebook({ app, runtime, chat, state }) {
     category: "uncategorized",
     tags: ["presence", "chat-summaries"],
   });
+}
+
+async function ensureLorebookEnabled(app, lorebook) {
+  if (lorebook.enabled !== false) return lorebook;
+  return injectJson(app, "PATCH", `/api/lorebooks/${encodeURIComponent(lorebook.id)}`, { enabled: true });
 }
 
 async function replaceOwnedLorebookEntries(app, lorebookId, entries) {
@@ -458,9 +532,34 @@ function extractMessageCreateChatId(url) {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
+function isPresenceTrackerEnabled(chat) {
+  const metadata = normalizeObject(chat?.metadata);
+  const activeAgentIds = uniqueStrings(metadata.activeAgentIds);
+  if (!activeAgentIds.includes(PRESENCE_PACKAGE_ID)) return false;
+  return metadata.enableAgents !== false;
+}
+
+function isStampableMessageRole(role) {
+  return role === "user" || role === "assistant" || role === "narrator";
+}
+
 function extractChatRouteId(url) {
   const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)\//u);
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+function extractChatRootId(url) {
+  const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)(?:[?#].*)?$/u);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function extractChatMetadataRouteId(url) {
+  const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)\/metadata(?:[?#].*)?$/u);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
+function isNormalGenerateUrl(url) {
+  return /^\/api\/generate(?:[?#].*)?$/u.test(String(url || ""));
 }
 
 function isPresenceInternalRequest(request) {

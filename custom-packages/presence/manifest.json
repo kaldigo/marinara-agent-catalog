@@ -19,8 +19,8 @@
   "files": [
     {
       "path": "agents.json",
-      "sha256": "576f24eafa174da62b02d89398446ce604405c14ee308e424f538a25a45ce237",
-      "bytes": 424
+      "sha256": "7177c1a3ba59b6ece877477e701fb1c424fc7176e304309825b2c4d32daef5da",
+      "bytes": 427
     },
     {
       "path": "bridge/commands.js",
@@ -44,8 +44,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "77916a50084634809a4d2b59d81eb3c51ffab73631ef94135837209911c22b86",
-      "bytes": 9461
+      "sha256": "1b4c8341e756b8b302877cd716bc0abcf74125e35dfddd44ebc7819a87fea97c",
+      "bytes": 10373
     },
     {
       "path": "server.mjs",
@@ -64,23 +64,18 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "77916a50084634809a4d2b59d81eb3c51ffab73631ef94135837209911c22b86",
-      "bytes": 9461
+      "sha256": "1b4c8341e756b8b302877cd716bc0abcf74125e35dfddd44ebc7819a87fea97c",
+      "bytes": 10373
     },
     {
       "path": "src/server/index.js",
-      "sha256": "5c0ed5c6bbcc2815c4e689360bad38c5266a62fe246b5dadaab31ce3820cd198",
-      "bytes": 1061
-    },
-    {
-      "path": "src/server/migration.js",
-      "sha256": "9e114d1cee5f1f9695e22e093dc6a8aca80398094d0f36478dd0887be7125885",
-      "bytes": 2443
+      "sha256": "8db336b1469d1e0a92f5a73e5a8585b6a98e4e032afbc78dad63079f9cc25f36",
+      "bytes": 1004
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "f04005bd42ff4f6bf320e098891259804871508c251321090ddda0475b4b2b1c",
-      "bytes": 19499
+      "sha256": "48f894aa62f0c845c49fee3f9742ad7840a818ab3cbd8b310fb20f335f50ac2f",
+      "bytes": 24153
     },
     {
       "path": "src/server/summary-mirror.js",
@@ -89,13 +84,13 @@
     },
     {
       "path": "src/shared/chat-state.js",
-      "sha256": "9de54d418ba04d262a6c052dec82c57c719888147f28c074e457b863da6a5f29",
-      "bytes": 2553
+      "sha256": "415398095cd0dc4e89fbd0412b827c7cd77f4d526ffb971eadcf007a416c9bd6",
+      "bytes": 1496
     },
     {
       "path": "src/shared/constants.js",
-      "sha256": "eaadfdccb7e104e28263d89d952768462fd96173ed1a4b13db09b3ab04a0055b",
-      "bytes": 325
+      "sha256": "f56430746c6b6f250c54b1da290d18dfa9dd4e0bf730dd73aaa8a7aa7bb6bc2a",
+      "bytes": 224
     },
     {
       "path": "src/shared/index.js",
@@ -104,13 +99,13 @@
     },
     {
       "path": "src/shared/presence-state.js",
-      "sha256": "6a8f481d19721a4d244d0ac80ec975b019dd75064be0e397b0a46783d36bc143",
-      "bytes": 2175
+      "sha256": "6c9e605317381be9cb3e60ece40ca5818c63c78f8a5bce2b2a70868b05e79e00",
+      "bytes": 1626
     },
     {
       "path": "src/shared/roster.js",
-      "sha256": "25c9c0866e013973ea342028f4b0577ed038fd7369183f069a89bdf240d90bd4",
-      "bytes": 1144
+      "sha256": "c2c919084e807a26a08fbf4e8e41a349122a26b9645f0e1dcb1984273c6e2aa5",
+      "bytes": 1101
     }
   ],
   "permissions": [

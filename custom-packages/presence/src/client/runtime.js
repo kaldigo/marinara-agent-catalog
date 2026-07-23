@@ -3,8 +3,18 @@ const TAG_NAME = "marinara-capability-presence";
 const state = window.__marinaraPresencePackageRuntime || {
   initialized: false,
   router: null,
+  activeChatId: "",
+  ensureTimer: 0,
+  ensureInFlight: new Set(),
+  lastEnsureAttemptAt: 0,
+  lastEnsureAttemptChatId: "",
 };
 window.__marinaraPresencePackageRuntime = state;
+state.activeChatId = typeof state.activeChatId === "string" ? state.activeChatId : "";
+state.ensureTimer = Number(state.ensureTimer) || 0;
+state.ensureInFlight = state.ensureInFlight instanceof Set ? state.ensureInFlight : new Set();
+state.lastEnsureAttemptAt = Number(state.lastEnsureAttemptAt) || 0;
+state.lastEnsureAttemptChatId = typeof state.lastEnsureAttemptChatId === "string" ? state.lastEnsureAttemptChatId : "";
 
 class PresenceCapabilityElement extends HTMLElement {
   connectedCallback() {
@@ -23,46 +33,61 @@ if (!state.initialized) {
     runPresenceCommand: ({ raw, context }) => runServerCommand(raw, context),
     runScopedHideCommand: ({ raw, context }) => runServerCommand(raw, context),
   });
-  exposeConsoleApi();
+  startChatLifecycleDetection();
   document.addEventListener("keydown", onKeyDownCapture, true);
   document.addEventListener("submit", onSubmitCapture, true);
 }
 
-function exposeConsoleApi() {
-  const api = window.marinaraPresence || {};
-  window.marinaraPresence = {
-    ...api,
-    migrateCurrentChat: async () => {
-      const chatId = resolveActiveChatId();
-      if (!chatId) throw new Error("No active chat detected.");
-      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/migrate-extension`, {
-        method: "POST",
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
-      return data;
-    },
-    reconcileCurrentChat: async () => {
-      const chatId = resolveActiveChatId();
-      if (!chatId) throw new Error("No active chat detected.");
-      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/reconcile`, {
-        method: "POST",
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
-      return data;
-    },
-    reconcileCurrentChatSummaries: async () => {
-      const chatId = resolveActiveChatId();
-      if (!chatId) throw new Error("No active chat detected.");
-      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/summaries/reconcile`, {
-        method: "POST",
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
-      return data;
-    },
+function startChatLifecycleDetection() {
+  patchHistoryMethod("pushState");
+  patchHistoryMethod("replaceState");
+  window.addEventListener("popstate", scheduleEnsureActiveChat);
+  window.addEventListener("focus", scheduleEnsureActiveChat);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduleEnsureActiveChat();
+  });
+  setInterval(scheduleEnsureActiveChat, 2_000);
+  scheduleEnsureActiveChat();
+}
+
+function patchHistoryMethod(method) {
+  const original = history[method];
+  if (original?.__presencePatched) return;
+  const patched = function patchedHistoryMethod(...args) {
+    const result = original.apply(this, args);
+    scheduleEnsureActiveChat();
+    return result;
   };
+  patched.__presencePatched = true;
+  history[method] = patched;
+}
+
+function scheduleEnsureActiveChat() {
+  if (state.ensureTimer) window.clearTimeout(state.ensureTimer);
+  state.ensureTimer = window.setTimeout(ensureActiveChat, 150);
+}
+
+async function ensureActiveChat() {
+  state.ensureTimer = 0;
+  const chatId = resolveActiveChatId();
+  const now = Date.now();
+  if (!chatId || chatId === state.activeChatId || state.ensureInFlight.has(chatId)) return;
+  if (chatId === state.lastEnsureAttemptChatId && now - state.lastEnsureAttemptAt < 10_000) return;
+  state.lastEnsureAttemptAt = now;
+  state.lastEnsureAttemptChatId = chatId;
+  state.ensureInFlight.add(chatId);
+  try {
+    const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/ensure`, { method: "POST" });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.error || `${response.status} ${response.statusText}`);
+    }
+    state.activeChatId = chatId;
+  } catch (error) {
+    console.warn("[Presence] chat lifecycle ensure failed", error);
+  } finally {
+    state.ensureInFlight.delete(chatId);
+  }
 }
 
 async function onKeyDownCapture(event) {
@@ -128,7 +153,8 @@ function resolveActiveChatId() {
   const routeChatId =
     url.searchParams.get("chatId") ||
     url.pathname.match(/\/chats?\/([^/?#]+)/)?.[1] ||
-    document.querySelector("[data-chat-id]")?.getAttribute("data-chat-id");
+    document.querySelector("[data-chat-id]")?.getAttribute("data-chat-id") ||
+    localStorage.getItem("marinara-active-chat-id");
   if (routeChatId) return routeChatId;
   const stores = [
     window.useChatStore?.getState?.(),
