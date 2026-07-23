@@ -117,8 +117,14 @@ assert(hooks.some((hook) => hook.name === "onResponse"), "onResponse hook regist
 const routesSource = await fs.readFile(new URL("../src/server/routes.js", import.meta.url), "utf8");
 assert(routesSource.includes("/api/generate/raw"), "refresh uses raw generation selector route");
 assert(routesSource.includes("statePersona?.name"), "refresh transcript can name persona outside candidate list");
+assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not write tracker metadata");
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
+assert(clientSource.includes("capabilityProps"), "client reads capability props");
+assert(clientSource.includes("findInputContainer"), "client anchors to visible chat input container");
+const buildSource = await fs.readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8");
+assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-runtime slot");
+assert(buildSource.includes("runtimeDisabled: true"), "feature marker is runtime-disabled");
 
 await selfCheck({
   app: { db: fakeDb() },

@@ -413,16 +413,9 @@ function clearGroupSortPromptContribution(chatId) {
 
 async function patchChatState(runtime, chat, statePatch) {
   const currentMetadata = normalizeObject(chat.metadata);
-  const manualTrackerAgentTypes = normalizeObject(currentMetadata.manualTrackerAgentTypes);
   await runtime.persistence.updateChatMetadata({
     chatId: chat.id,
-    metadata: {
-      ...writeGroupSortState(currentMetadata, statePatch),
-      manualTrackerAgentTypes: {
-        ...manualTrackerAgentTypes,
-        [GROUP_SORT_ORDER_AGENT_TYPE]: true,
-      },
-    },
+    metadata: writeGroupSortState(currentMetadata, statePatch),
     updatedAt: new Date().toISOString(),
   });
 }

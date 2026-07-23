@@ -44,6 +44,9 @@ function manifest() {
       client: "client.js",
       agents: "agents.json"
     },
+    contributions: {
+      slots: ["chat-runtime"]
+    },
     files: [{ path: "server.mjs", sha256: "0".repeat(64), bytes: 0 }],
     permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
     restartRequired: true
@@ -60,6 +63,7 @@ function agentDefinitions() {
       phase: "pre_generation",
       execution: "feature",
       enabledByDefault: false,
+      runtimeDisabled: true,
       modeAllowlist: ["roleplay", "visual_novel"],
       defaultTools: [],
       defaultSettings: {},
