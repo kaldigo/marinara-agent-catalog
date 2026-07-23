@@ -6,7 +6,7 @@
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
-    "maxExclusive": "3.0.0"
+    "maxExclusive": "4.0.0"
   },
   "kind": [
     "agent"
@@ -19,8 +19,8 @@
   "files": [
     {
       "path": "agents.json",
-      "sha256": "4bd969fa9b855dbd435051d4efdd678fa434b2a6c052be805aef039eb65660e4",
-      "bytes": 396
+      "sha256": "22fad5c02d02938bb932936bec67431302082d8ef406f839c513b9b2bd2f395f",
+      "bytes": 393
     },
     {
       "path": "bridge/commands.js",

@@ -3,7 +3,7 @@
     "id": "presence",
     "name": "Presence",
     "description": "Feature runtime for per-message character presence and scoped chat summaries.",
-    "category": "tracker",
+    "category": "misc",
     "execution": "feature",
     "enabledByDefault": false,
     "modeAllowlist": [
