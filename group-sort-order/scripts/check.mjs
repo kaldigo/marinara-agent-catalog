@@ -122,6 +122,10 @@ const clientSource = await fs.readFile(new URL("../src/client/runtime.js", impor
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
 assert(clientSource.includes("capabilityProps"), "client reads capability props");
 assert(clientSource.includes("findInputContainer"), "client anchors to visible chat input container");
+assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
+assert(!clientSource.includes('type="checkbox"'), "persona control is not a checkbox");
+assert(clientSource.includes('aria-label="Refresh next speaker"'), "refresh control is icon-labeled");
+assert(clientSource.includes("options.body !== undefined"), "client only sends JSON content-type when a body exists");
 const buildSource = await fs.readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8");
 assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-runtime slot");
 assert(buildSource.includes("runtimeDisabled: true"), "feature marker is runtime-disabled");
