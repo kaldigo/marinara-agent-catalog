@@ -1,6 +1,6 @@
 {
   "name": "marinara-mari-bridge",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "Shared package-era compatibility helpers for Marinara capability packages.",

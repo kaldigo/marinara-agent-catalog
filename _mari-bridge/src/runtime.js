@@ -1,6 +1,6 @@
 // Shared runtime coordinator for bridge copies bundled by different packages.
 
-export const MARI_BRIDGE_VERSION = "1.0.1";
+export const MARI_BRIDGE_VERSION = "1.0.2";
 
 const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
 const DEFAULT_CAPABILITIES = [
