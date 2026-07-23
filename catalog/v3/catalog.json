@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-23T06:54:03.990Z",
+  "generatedAt": "2026-07-23T07:00:23.514Z",
   "packages": [
     {
       "manifest": {
@@ -420,7 +420,7 @@
         "schemaVersion": 1,
         "id": "presence",
         "name": "Presence",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
         "engine": {
           "min": "2.3.3",
@@ -437,8 +437,8 @@
         "files": [
           {
             "path": "agents.json",
-            "sha256": "22fad5c02d02938bb932936bec67431302082d8ef406f839c513b9b2bd2f395f",
-            "bytes": 393
+            "sha256": "576f24eafa174da62b02d89398446ce604405c14ee308e424f538a25a45ce237",
+            "bytes": 424
           },
           {
             "path": "bridge/commands.js",
@@ -544,9 +544,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-0.1.0.zip",
-        "sha256": "e55214e214796a2bd2fcfc4d6c9b04644e41f5a1e7bd13ae8300dd364510da98",
-        "bytes": 16438
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-0.1.1.zip",
+        "sha256": "784e0cc2a3688e0d8c92e8f158949b8bdb16dfd859f60a153963285feeab1083",
+        "bytes": 16447
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     }
