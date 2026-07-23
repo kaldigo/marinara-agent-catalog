@@ -3,7 +3,6 @@ name: Rebuild Main Catalog
 on:
   push:
     branches:
-      - upstream-marinara
       - agents
       - packages
   workflow_dispatch:
@@ -32,13 +31,12 @@ jobs:
 
       - name: Fetch input branches
         run: |
-          git fetch origin upstream-marinara:refs/remotes/origin/upstream-marinara
           git fetch origin agents:refs/remotes/origin/agents
           git fetch origin packages:refs/remotes/origin/packages
 
       - name: Rebuild main from inputs
         env:
-          UPSTREAM_BRANCH: origin/upstream-marinara
+          UPSTREAM_REPOSITORY: https://github.com/Pasta-Devs/Marinara-Agents.git
           AGENTS_BRANCH: origin/agents
           PACKAGES_BRANCH: origin/packages
           OUTPUT_BRANCH: main

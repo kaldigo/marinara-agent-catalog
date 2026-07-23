@@ -15,7 +15,9 @@ import {
 import path from "node:path";
 
 const root = process.cwd();
-const upstreamBranch = process.env.UPSTREAM_BRANCH || "origin/upstream-marinara";
+const upstreamRepository =
+  process.env.UPSTREAM_REPOSITORY || "https://github.com/Pasta-Devs/Marinara-Agents.git";
+const upstreamRef = process.env.UPSTREAM_REF || "";
 const agentsBranch = process.env.AGENTS_BRANCH || "origin/agents";
 const packagesBranch = process.env.PACKAGES_BRANCH || "origin/packages";
 const repository = process.env.CATALOG_REPOSITORY || process.env.GITHUB_REPOSITORY || "OWNER/REPO";
@@ -30,6 +32,7 @@ function run(command, args, options = {}) {
     cwd: options.cwd || root,
     input: options.input,
     maxBuffer: 512 * 1024 * 1024,
+    shell: options.shell || false,
     stdio: options.input ? ["pipe", "pipe", "pipe"] : "pipe",
   });
 
@@ -57,6 +60,30 @@ function extractRef(ref, destination) {
   run("git", ["archive", "--format=tar", "--output", archivePath, ref]);
   run("tar", ["-xf", archivePath, "-C", destination]);
   rmSync(archivePath, { force: true });
+}
+
+function ensureRemote(name, url) {
+  const existing = spawnSync("git", ["remote", "get-url", name], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  if (existing.status !== 0) {
+    run("git", ["remote", "add", name, url]);
+    return;
+  }
+
+  const existingUrl = existing.stdout.toString().trim();
+  if (existingUrl !== url) {
+    run("git", ["remote", "set-url", name, url]);
+  }
+}
+
+function fetchOfficialUpstream() {
+  const ref = "refs/remotes/marinara/main";
+  ensureRemote("marinara", upstreamRepository);
+  run("git", ["fetch", "--depth=1", "marinara", `main:${ref}`]);
+  return ref;
 }
 
 function refExists(ref) {
@@ -104,6 +131,18 @@ function sha256(file) {
 
 function bytes(file) {
   return statSync(file).size;
+}
+
+function platformBuildCommand(command, args) {
+  if (process.platform === "win32" && command === "npm") {
+    return { command: "cmd.exe", args: ["/d", "/s", "/c", "npm", ...args] };
+  }
+
+  return { command, args };
+}
+
+function powershellString(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
 }
 
 function legacyBridgeSource() {
@@ -357,7 +396,8 @@ function buildPackageSourceFolders() {
       throw new Error(`${entry.name} buildCommand must be a non-empty array`);
     }
 
-    run(String(buildCommand[0]), buildCommand.slice(1).map(String), { cwd: extensionDir });
+    const build = platformBuildCommand(String(buildCommand[0]), buildCommand.slice(1).map(String));
+    run(build.command, build.args, { cwd: extensionDir });
 
     const packageJson = readJson(packageJsonPath);
     const capability = metadata.package || {};
@@ -510,9 +550,31 @@ function zipPackage(packageDir, manifest, packageFiles) {
   mkdirSync(path.dirname(artifactPath), { recursive: true });
   rmSync(artifactPath, { force: true });
 
-  run("zip", ["-X", "-q", artifactPath, "manifest.json", ...packageFiles], {
-    cwd: packageDir,
-  });
+  const files = ["manifest.json", ...packageFiles];
+  if (process.platform === "win32") {
+    const fileArray = files.map(powershellString).join(", ");
+    const script = `
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$artifact = ${powershellString(artifactPath)}
+$files = @(${fileArray})
+$zip = [System.IO.Compression.ZipFile]::Open($artifact, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+  foreach ($file in $files) {
+    $source = Join-Path (Get-Location) $file
+    $entry = $file -replace '\\\\', '/'
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $source, $entry, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+  }
+} finally {
+  $zip.Dispose()
+}
+`;
+    run("powershell", ["-NoProfile", "-Command", script], { cwd: packageDir });
+  } else {
+    run("zip", ["-X", "-q", artifactPath, ...files], {
+      cwd: packageDir,
+    });
+  }
 
   return {
     url: `https://raw.githubusercontent.com/${repository}/main/artifacts/${artifactName}`,
@@ -658,13 +720,27 @@ function replaceWorkingTree() {
   }
 }
 
+function writeUpstreamMetadata(ref) {
+  const commit = run("git", ["rev-parse", `${ref}^{commit}`]).toString().trim();
+  writeJson(path.join(nextDir, "UPSTREAM-MARINARA-AGENTS.json"), {
+    repository: "Pasta-Devs/Marinara-Agents",
+    url: upstreamRepository,
+    branch: "main",
+    ref,
+    commit,
+    syncedAt: new Date().toISOString(),
+  });
+}
+
 rmSync(workDir, { recursive: true, force: true });
 mkdirSync(workDir, { recursive: true });
 
-extractRef(resolveRef(upstreamBranch), upstreamDir);
+const resolvedUpstreamRef = upstreamRef ? resolveRef(upstreamRef) : fetchOfficialUpstream();
+extractRef(resolvedUpstreamRef, upstreamDir);
 extractRef(resolveRef(agentsBranch), agentsDir);
 extractRef(resolveRef(packagesBranch), packagesDir);
 cpSync(upstreamDir, nextDir, { recursive: true });
+writeUpstreamMetadata(resolvedUpstreamRef);
 
 copyIfExists(path.join(root, ".github"), path.join(nextDir, ".github"));
 copyIfExists(path.join(root, "CUSTOM-CATALOG.md"), path.join(nextDir, "CUSTOM-CATALOG.md"));
