@@ -17,3 +17,6 @@ https://raw.githubusercontent.com/<owner>/<repo>/main/catalog/v2/catalog.json
 the `packages` branch, and the `agents` branch. Scheduled refreshes poll the
 official catalog directly, so no mirror branch is required. Do not hand-edit
 catalog JSON or generated artifacts on `main`; update the input branches instead.
+
+For source folder setup, metadata expectations, and shared package roots such
+as `_shared` and `_mari-bridge`, see `PACKAGE-AGENT-SETUP.md`.

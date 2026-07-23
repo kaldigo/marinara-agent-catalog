@@ -363,6 +363,26 @@ function sourceMetadata(sourceDir) {
   return existsSync(metadataPath) ? readJson(metadataPath) : null;
 }
 
+function validateSharedRoots(sourceName, metadata) {
+  const sharedRoots = metadata.processing?.sharedRoots || [];
+  if (!Array.isArray(sharedRoots)) {
+    throw new Error(`${sourceName} processing.sharedRoots must be an array when provided`);
+  }
+
+  for (const sharedRoot of sharedRoots) {
+    const name = String(sharedRoot || "");
+    if (!name || name.includes("/") || name.includes("\\") || name === "." || name === "..") {
+      throw new Error(`${sourceName} has invalid shared root name: ${JSON.stringify(sharedRoot)}`);
+    }
+    if (!name.startsWith("_")) {
+      throw new Error(`${sourceName} shared root ${name} must be an underscore-prefixed root folder`);
+    }
+    if (!existsSync(path.join(packagesDir, name))) {
+      throw new Error(`${sourceName} requires missing shared root ${name}`);
+    }
+  }
+}
+
 function buildPackageSourceFolders() {
   if (!existsSync(packagesDir)) {
     return;
@@ -381,6 +401,7 @@ function buildPackageSourceFolders() {
     if (!metadata || metadata.includeInMain === false || metadata.type !== "capability-package") {
       continue;
     }
+    validateSharedRoots(entry.name, metadata);
 
     if (metadata.processing?.kind !== "legacy-extension") {
       throw new Error(`${entry.name} has unsupported package processing kind: ${metadata.processing?.kind}`);
@@ -744,6 +765,7 @@ writeUpstreamMetadata(resolvedUpstreamRef);
 
 copyIfExists(path.join(root, ".github"), path.join(nextDir, ".github"));
 copyIfExists(path.join(root, "CUSTOM-CATALOG.md"), path.join(nextDir, "CUSTOM-CATALOG.md"));
+copyIfExists(path.join(root, "PACKAGE-AGENT-SETUP.md"), path.join(nextDir, "PACKAGE-AGENT-SETUP.md"));
 copyIfExists(path.join(packagesDir, "custom-packages"), path.join(nextDir, "custom-packages"));
 copyIfExists(path.join(packagesDir, "custom-artifacts"), path.join(nextDir, "custom-artifacts"));
 copyIfExists(path.join(packagesDir, "custom-artwork"), path.join(nextDir, "custom-artwork"));
