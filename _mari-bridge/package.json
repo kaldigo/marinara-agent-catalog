@@ -1,0 +1,10 @@
+{
+  "name": "marinara-mari-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared package-era compatibility helpers for Marinara capability packages.",
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/commands.js && node --check src/ranges.js && node --check src/summary-tracking.js"
+  }
+}

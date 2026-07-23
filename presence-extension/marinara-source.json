@@ -7,7 +7,7 @@
     "buildCommand": ["npm", "run", "build"]
   },
   "package": {
-    "id": "presence",
+    "id": "presence-extension",
     "name": "Presence (Extension)",
     "description": "Tracks per-message character presence and temporarily filters prompt history during generation.",
     "engine": {
