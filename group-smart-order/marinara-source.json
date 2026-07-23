@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "legacy-extension",
+    "buildCommand": ["npm", "run", "build"]
+  },
+  "package": {
+    "id": "group-smart-order",
+    "name": "Group Smart Order",
+    "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
+    "engine": {
+      "min": "2.3.0",
+      "maxExclusive": "3.0.0"
+    },
+    "kind": ["agent"],
+    "permissions": ["chat-read", "chat-write", "network", "storage", "ui"],
+    "restartRequired": false
+  }
+}
+

@@ -1,0 +1,275 @@
+.mari-si-root {
+  position: relative;
+  display: inline-flex;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+  height: 2.25rem;
+  width: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.mari-si-root,
+.mari-si-root * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (min-width: 640px) {
+  .mari-si-root {
+    height: 2rem;
+    width: 2rem;
+  }
+}
+
+.mari-si-button {
+  display: flex;
+  height: 2.25rem;
+  width: 2.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, currentColor 75%, transparent);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  transition: all 160ms ease;
+}
+
+@media (min-width: 640px) {
+  .mari-si-button {
+    height: 2rem;
+    width: 2rem;
+  }
+}
+
+.mari-si-button:hover:not(:disabled),
+.mari-si-button.mari-si-active {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: currentColor;
+}
+
+.mari-si-button:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.mari-si-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  color: color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.mari-si-button svg {
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+}
+
+.mari-si-native-stop {
+  position: relative;
+}
+
+.mari-si-native-stop > svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.mari-si-native-stop::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  transform: translate(-50%, -50%);
+  background: currentColor;
+  pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Crect x='9' y='9' width='6' height='6' rx='1'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Crect x='9' y='9' width='6' height='6' rx='1'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.mari-si-menu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.5rem);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  transform: translateX(-50%) translateY(0.75rem) scale(0.75);
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(2px);
+  transition: opacity 140ms ease, transform 160ms ease, filter 160ms ease;
+}
+
+.mari-si-menu.mari-si-menu-open {
+  transform: translateX(-50%) translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+  filter: blur(0);
+}
+
+.mari-si-menu-action {
+  position: relative;
+  display: flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  background: var(--card, color-mix(in srgb, canvas 92%, currentColor 8%));
+  color: color-mix(in srgb, currentColor 65%, transparent);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  outline: none;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.mari-si-menu-action:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 10%, var(--card, transparent));
+  color: currentColor;
+}
+
+.mari-si-menu-action:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.mari-si-menu-action span {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.mari-si-menu-action svg {
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+}
+
+.mari-si-menu-action-mobile-main {
+  display: none;
+}
+
+.mari-si-picker-actions {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  transform: translateX(-50%);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mari-si-picker-action {
+  display: flex;
+  height: 2.5rem;
+  width: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  background: var(--card, color-mix(in srgb, canvas 92%, currentColor 8%));
+  color: color-mix(in srgb, currentColor 65%, transparent);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.mari-si-picker-action:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 10%, var(--card, transparent));
+  color: currentColor;
+}
+
+.mari-si-picker-action:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.mari-si-picker-action span {
+  display: flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.mari-si-picker-action svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+  pointer-events: none;
+}
+
+@media (max-width: 639.98px) {
+  .mari-si-root.mari-si-mobile-root-hidden,
+  .mari-si-quick-replies-hidden {
+    display: none !important;
+  }
+
+  .mari-si-menu-action-mobile-main {
+    display: flex;
+  }
+}
+
+.mari-si-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 86px;
+  z-index: 99999;
+  max-width: min(90vw, 640px);
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 8px 12px;
+  text-align: center;
+  font: 700 12px/1.2 system-ui, Segoe UI, Roboto, Helvetica, Arial;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transition: opacity 220ms ease;
+}
+
+.mari-si-toast-ok {
+  background: linear-gradient(135deg, #10b981, #14b8a6);
+}
+
+.mari-si-toast-out {
+  opacity: 0;
+}

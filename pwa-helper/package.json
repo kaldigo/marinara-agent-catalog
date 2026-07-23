@@ -1,0 +1,11 @@
+{
+  "name": "marinara-pwa-helper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Marinara PWA helper extension build project.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run build -- --no-zip && node --check dist/Marinara-PWA-Helper/pwa-helper.js && node scripts/validate-dist.mjs"
+  }
+}

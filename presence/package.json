@@ -1,0 +1,11 @@
+{
+  "name": "marinara-presence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Temporary presence-based prompt visibility for Marinara roleplay chats.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run build && node --check dist/Presence/presence.js && node scripts/validate-dist.mjs"
+  }
+}
