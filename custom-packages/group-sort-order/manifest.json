@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "group-sort-order",
   "name": "Group Sort Order",
-  "version": "1.0.13",
+  "version": "1.0.15",
   "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
   "engine": {
     "min": "2.3.3",
@@ -39,8 +39,8 @@
     },
     {
       "path": "bridge/composer-dom.js",
-      "sha256": "2fc31bf7b8f61880263035ad80a5fe0a155905d25e20f26d70a7a5c18155fade",
-      "bytes": 6429
+      "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
+      "bytes": 6719
     },
     {
       "path": "bridge/fetch-intercept.js",
@@ -79,7 +79,7 @@
     },
     {
       "path": "bridge/runtime.js",
-      "sha256": "3def5a902b376e132db9dc158be267a0dbf8da22eb6646a7be5fa9029d6867da",
+      "sha256": "4922b0bd44a4fe0a2c0b38a82dabb34bc07512a3572e4ae7dd21063f715e213c",
       "bytes": 4810
     },
     {
@@ -89,13 +89,13 @@
     },
     {
       "path": "bridge/ui-slots.js",
-      "sha256": "25c11e1a736549953d5acd99f055eb2c9c262f58be9cf0ec36b2b4afad11d7c8",
-      "bytes": 12337
+      "sha256": "d2c9070044f1b1126a753d51e2bab3e1d937d0934e8fb706edcbde3e364abf0d",
+      "bytes": 12472
     },
     {
       "path": "client.js",
-      "sha256": "67e658e8cad8e31c7be3b4285c815d4c19398c42f19f08e8307fb8a8c20d38ae",
-      "bytes": 55385
+      "sha256": "e4b20367e82bea163f1e6e2d7e4681f71c5f063c26c8ce6c5f84e91d2a19920c",
+      "bytes": 55166
     },
     {
       "path": "server.mjs",
@@ -104,8 +104,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "8cfdece7f9fc1549c08f15bd62ea93e50a1d811ed868959a6357d3c76ad87e1e",
-      "bytes": 13354
+      "sha256": "dd02edabc685c7580124326fe705a8ab149ea266f8d0570964b201ce6af16f02",
+      "bytes": 12733
     },
     {
       "path": "src/server/index.js",

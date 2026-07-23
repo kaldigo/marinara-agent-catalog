@@ -88,12 +88,26 @@ export function setTextControlValue(control, value) {
 export function getActiveChatIdFromClient() {
   const fromUrl = readChatIdFromLocation();
   if (fromUrl) return fromUrl;
+  const fromStoreApi = readChatIdFromKnownStores();
+  if (fromStoreApi) return fromStoreApi;
+  const fromLocalStorage = readStoredActiveChatId();
+  if (fromLocalStorage) return fromLocalStorage;
   const selected = document.querySelector('[data-chat-id][class*="sidebar-accent"], [data-chat-id][aria-current="true"]');
   if (selected) return selected.getAttribute("data-chat-id") || "";
   const firstDataChat = document.querySelector("[data-chat-id]");
   if (firstDataChat) return firstDataChat.getAttribute("data-chat-id") || "";
-  const fromStore = localStorage.getItem("marinara-active-chat-id");
-  if (fromStore) return fromStore;
+  return "";
+}
+
+function readStoredActiveChatId() {
+  try {
+    return localStorage.getItem("marinara-active-chat-id") || "";
+  } catch {
+    return "";
+  }
+}
+
+function readChatIdFromKnownStores() {
   const stores = [
     window.useChatStore?.getState?.(),
     window.__MARINARA_CHAT_STORE__?.getState?.(),

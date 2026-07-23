@@ -34,8 +34,8 @@
     },
     {
       "path": "bridge/composer-dom.js",
-      "sha256": "2fc31bf7b8f61880263035ad80a5fe0a155905d25e20f26d70a7a5c18155fade",
-      "bytes": 6429
+      "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
+      "bytes": 6719
     },
     {
       "path": "bridge/fetch-intercept.js",
@@ -74,7 +74,7 @@
     },
     {
       "path": "bridge/runtime.js",
-      "sha256": "3def5a902b376e132db9dc158be267a0dbf8da22eb6646a7be5fa9029d6867da",
+      "sha256": "4922b0bd44a4fe0a2c0b38a82dabb34bc07512a3572e4ae7dd21063f715e213c",
       "bytes": 4810
     },
     {
@@ -84,13 +84,13 @@
     },
     {
       "path": "bridge/ui-slots.js",
-      "sha256": "25c11e1a736549953d5acd99f055eb2c9c262f58be9cf0ec36b2b4afad11d7c8",
-      "bytes": 12337
+      "sha256": "d2c9070044f1b1126a753d51e2bab3e1d937d0934e8fb706edcbde3e364abf0d",
+      "bytes": 12472
     },
     {
       "path": "client.js",
-      "sha256": "40a5ab55ddd675cf439c9aa6846503903459a7f6d1909c2b31cca35e3dc500a1",
-      "bytes": 27480
+      "sha256": "2b77eefaa5eb51cde7f4356c86b9678121c70e54a80dc307a4fcb5b4fb97d5ac",
+      "bytes": 27794
     },
     {
       "path": "server.mjs",

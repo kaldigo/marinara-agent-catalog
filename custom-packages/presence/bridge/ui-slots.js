@@ -1,4 +1,4 @@
-import { createDomScope, getActiveChatIdFromClient, isVisibleElement } from "./composer-dom.js";
+import { createDomScope, getActiveChatIdFromClient, isVisibleElement, watchActiveChatId } from "./composer-dom.js";
 import { MARI_BRIDGE_VERSION, claimBridgeSubsystem, isBridgeSubsystemOwner } from "./runtime.js";
 
 // Upstream gap MB-010: packages do not yet have stable composer UI slots.
@@ -122,6 +122,7 @@ function startComposerSlotObservation(state, token) {
   state.scope.on(window, "resize", () => scheduleComposerSlotRender());
   state.scope.on(window, "popstate", () => scheduleComposerSlotRender(0));
   state.scope.on(window, "mari-bridge:generation-state", () => scheduleComposerSlotRender());
+  state.scope.cleanup(watchActiveChatId(() => scheduleComposerSlotRender(0), { debounceMs: 80, intervalMs: 750 }));
   patchHistoryMethod("pushState");
   patchHistoryMethod("replaceState");
   if (document.body) {

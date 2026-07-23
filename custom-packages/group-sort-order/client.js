@@ -3,7 +3,7 @@
   // bridge/runtime.js
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.2";
+  const MARI_BRIDGE_VERSION = "1.0.3";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -229,12 +229,26 @@
   function getActiveChatIdFromClient() {
     const fromUrl = readChatIdFromLocation();
     if (fromUrl) return fromUrl;
+    const fromStoreApi = readChatIdFromKnownStores();
+    if (fromStoreApi) return fromStoreApi;
+    const fromLocalStorage = readStoredActiveChatId();
+    if (fromLocalStorage) return fromLocalStorage;
     const selected = document.querySelector('[data-chat-id][class*="sidebar-accent"], [data-chat-id][aria-current="true"]');
     if (selected) return selected.getAttribute("data-chat-id") || "";
     const firstDataChat = document.querySelector("[data-chat-id]");
     if (firstDataChat) return firstDataChat.getAttribute("data-chat-id") || "";
-    const fromStore = localStorage.getItem("marinara-active-chat-id");
-    if (fromStore) return fromStore;
+    return "";
+  }
+
+  function readStoredActiveChatId() {
+    try {
+      return localStorage.getItem("marinara-active-chat-id") || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function readChatIdFromKnownStores() {
     const stores = [
       window.useChatStore?.getState?.(),
       window.__MARINARA_CHAT_STORE__?.getState?.(),
@@ -550,6 +564,7 @@
     state.scope.on(window, "resize", () => scheduleComposerSlotRender());
     state.scope.on(window, "popstate", () => scheduleComposerSlotRender(0));
     state.scope.on(window, "mari-bridge:generation-state", () => scheduleComposerSlotRender());
+    state.scope.cleanup(watchActiveChatId(() => scheduleComposerSlotRender(0), { debounceMs: 80, intervalMs: 750 }));
     patchHistoryMethod("pushState");
     patchHistoryMethod("replaceState");
     if (document.body) {
@@ -1117,7 +1132,7 @@
     const ROOT_ID = "marinara-group-sort-order-root";
     const STYLE_ID = "marinara-group-sort-order-style";
     const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-    const RUNTIME_VERSION = "1.0.13";
+    const RUNTIME_VERSION = "1.0.15";
 
     const previousState = window[RUNTIME_KEY];
     if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -1140,7 +1155,6 @@
       lastView: null,
       lastRefreshAt: 0,
       barNode: null,
-      propsChatIds: new Map(),
       pollTimer: 0,
       renderTimer: 0,
       slotCleanup: null,
@@ -1167,29 +1181,20 @@
           this.setAttribute("aria-hidden", "true");
           this.style.display = "contents";
           this.addEventListener("marinara-capability-props", this);
-          syncCapabilityProps(this);
+          scheduleComposerSlotRender(0);
         }
 
         disconnectedCallback() {
           this.removeEventListener("marinara-capability-props", this);
-          state.propsChatIds.delete(this);
           scheduleComposerSlotRender(0);
         }
 
         handleEvent(event) {
-          if (event.type === "marinara-capability-props") syncCapabilityProps(this);
+          if (event.type === "marinara-capability-props") scheduleComposerSlotRender(0);
         }
       }
 
       customElements.define(TAG_NAME, GroupSortOrderCapabilityElement);
-    }
-
-    function syncCapabilityProps(element) {
-      const props = normalizeObject(element.capabilityProps);
-      const chatId = typeof props.chatId === "string" && props.chatId.trim() ? props.chatId.trim() : "";
-      if (chatId) state.propsChatIds.set(element, chatId);
-      else state.propsChatIds.delete(element);
-      bindActiveChat(readCapabilityChatId());
     }
 
     function startRuntime() {
@@ -1198,10 +1203,10 @@
         id: "next-speaker",
         slot: COMPOSER_SLOT_ABOVE_INPUT,
         priority: 40,
-        shouldShow: ({ chatId }) => Boolean(readCapabilityChatId() || chatId),
+        shouldShow: ({ chatId }) => Boolean(chatId),
         render: ({ host }) => renderBar(host),
         update: ({ chatId, node }) => {
-          bindActiveChat(readCapabilityChatId() || chatId || "");
+          bindActiveChat(chatId || "");
           updateBar(node, state.lastView);
         },
       });
@@ -1385,13 +1390,6 @@
       if (!response.ok) throw new Error(await response.text());
       if (response.status === 204) return {};
       return response.json();
-    }
-
-    function readCapabilityChatId() {
-      for (const chatId of state.propsChatIds.values()) {
-        if (chatId) return chatId;
-      }
-      return "";
     }
 
     function normalizeObject(value) {

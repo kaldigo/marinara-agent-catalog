@@ -12,7 +12,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.13";
+  const RUNTIME_VERSION = "1.0.15";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -35,7 +35,6 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
     lastView: null,
     lastRefreshAt: 0,
     barNode: null,
-    propsChatIds: new Map(),
     pollTimer: 0,
     renderTimer: 0,
     slotCleanup: null,
@@ -62,29 +61,20 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
         this.setAttribute("aria-hidden", "true");
         this.style.display = "contents";
         this.addEventListener("marinara-capability-props", this);
-        syncCapabilityProps(this);
+        scheduleComposerSlotRender(0);
       }
 
       disconnectedCallback() {
         this.removeEventListener("marinara-capability-props", this);
-        state.propsChatIds.delete(this);
         scheduleComposerSlotRender(0);
       }
 
       handleEvent(event) {
-        if (event.type === "marinara-capability-props") syncCapabilityProps(this);
+        if (event.type === "marinara-capability-props") scheduleComposerSlotRender(0);
       }
     }
 
     customElements.define(TAG_NAME, GroupSortOrderCapabilityElement);
-  }
-
-  function syncCapabilityProps(element) {
-    const props = normalizeObject(element.capabilityProps);
-    const chatId = typeof props.chatId === "string" && props.chatId.trim() ? props.chatId.trim() : "";
-    if (chatId) state.propsChatIds.set(element, chatId);
-    else state.propsChatIds.delete(element);
-    bindActiveChat(readCapabilityChatId());
   }
 
   function startRuntime() {
@@ -93,10 +83,10 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
       id: "next-speaker",
       slot: COMPOSER_SLOT_ABOVE_INPUT,
       priority: 40,
-      shouldShow: ({ chatId }) => Boolean(readCapabilityChatId() || chatId),
+      shouldShow: ({ chatId }) => Boolean(chatId),
       render: ({ host }) => renderBar(host),
       update: ({ chatId, node }) => {
-        bindActiveChat(readCapabilityChatId() || chatId || "");
+        bindActiveChat(chatId || "");
         updateBar(node, state.lastView);
       },
     });
@@ -280,13 +270,6 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
     if (!response.ok) throw new Error(await response.text());
     if (response.status === 204) return {};
     return response.json();
-  }
-
-  function readCapabilityChatId() {
-    for (const chatId of state.propsChatIds.values()) {
-      if (chatId) return chatId;
-    }
-    return "";
   }
 
   function normalizeObject(value) {
