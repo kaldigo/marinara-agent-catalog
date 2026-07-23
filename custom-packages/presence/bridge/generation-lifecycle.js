@@ -1,5 +1,6 @@
 import { apiRequest, streamJsonSse } from "./generation-stream.js";
 import { findActiveComposerContext } from "./ui-slots.js";
+import { MARI_BRIDGE_VERSION, claimBridgeSubsystem, isBridgeSubsystemOwner } from "./runtime.js";
 
 // Upstream gap MB-011: packages do not yet have stable generation lifecycle hooks.
 
@@ -16,13 +17,22 @@ export const GENERATING_AGENT_EVENT = "mari-bridge:generating-agent";
 export function ensureGenerationLifecycleBridge(options = {}) {
   const state = getGenerationState();
   state.nativeTracking = options.nativeTracking !== false;
-  if (state.started) return state;
-  state.started = true;
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => startGenerationObservation(state), { once: true });
-  } else {
-    startGenerationObservation(state);
-  }
+  claimBridgeSubsystem("generation-lifecycle", {
+    version: MARI_BRIDGE_VERSION,
+    ownerId: "mari-bridge:generation-lifecycle",
+    install: ({ token }) => {
+      state.ownerToken = token;
+      state.emitGenerationSnapshot = (entry, active, status, detail) =>
+        emitGenerationSnapshotForOwner(state, entry, active, status, detail, token);
+      const start = () => startGenerationObservation(state, token);
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start, { once: true });
+        return () => document.removeEventListener("DOMContentLoaded", start);
+      }
+      start();
+      return () => stopGenerationObservation(state, token);
+    },
+  });
   return state;
 }
 
@@ -166,20 +176,37 @@ function getGenerationState() {
       nativeActive: false,
       observer: null,
       syncTimer: 0,
+      ownerToken: null,
+      nativeHandlers: null,
+      emitGenerationSnapshot: null,
     };
   }
-  return window[GENERATION_STATE_KEY];
+  const state = window[GENERATION_STATE_KEY];
+  if (!(state.active instanceof Map)) state.active = new Map();
+  if (!("ownerToken" in state)) state.ownerToken = null;
+  if (!("nativeHandlers" in state)) state.nativeHandlers = null;
+  if (!("emitGenerationSnapshot" in state)) state.emitGenerationSnapshot = null;
+  return state;
 }
 
-function startGenerationObservation(state) {
+function startGenerationObservation(state, token) {
+  if (!isBridgeSubsystemOwner("generation-lifecycle", token)) return;
   if (state.nativeTracking) {
-    document.addEventListener("click", () => scheduleNativeGenerationSync(state), true);
-    window.addEventListener("focus", () => scheduleNativeGenerationSync(state));
-    window.addEventListener("pageshow", () => scheduleNativeGenerationSync(state));
-    window.addEventListener("marinara:generation-complete", () => setNativeMainActive(state, false, "complete"));
-    window.addEventListener("marinara:generation-error", () => setNativeMainActive(state, false, "error"));
+    const handlers = {
+      click: () => scheduleNativeGenerationSync(state, token),
+      focus: () => scheduleNativeGenerationSync(state, token),
+      pageshow: () => scheduleNativeGenerationSync(state, token),
+      complete: () => setNativeMainActive(state, false, "complete"),
+      error: () => setNativeMainActive(state, false, "error"),
+    };
+    state.nativeHandlers = handlers;
+    document.addEventListener("click", handlers.click, true);
+    window.addEventListener("focus", handlers.focus);
+    window.addEventListener("pageshow", handlers.pageshow);
+    window.addEventListener("marinara:generation-complete", handlers.complete);
+    window.addEventListener("marinara:generation-error", handlers.error);
     if (document.body) {
-      state.observer = new MutationObserver(() => scheduleNativeGenerationSync(state));
+      state.observer = new MutationObserver(() => scheduleNativeGenerationSync(state, token));
       state.observer.observe(document.body, {
         childList: true,
         subtree: true,
@@ -187,14 +214,35 @@ function startGenerationObservation(state) {
         attributeFilter: ["aria-label", "title", "class", "disabled"],
       });
     }
-    scheduleNativeGenerationSync(state, 0);
+    scheduleNativeGenerationSync(state, token, 0);
   }
 }
 
-function scheduleNativeGenerationSync(state, delay = 80) {
+function stopGenerationObservation(state, token) {
+  if (state.ownerToken !== token) return;
+  const handlers = state.nativeHandlers;
+  if (handlers) {
+    document.removeEventListener("click", handlers.click, true);
+    window.removeEventListener("focus", handlers.focus);
+    window.removeEventListener("pageshow", handlers.pageshow);
+    window.removeEventListener("marinara:generation-complete", handlers.complete);
+    window.removeEventListener("marinara:generation-error", handlers.error);
+  }
+  state.observer?.disconnect?.();
+  if (state.syncTimer) window.clearTimeout(state.syncTimer);
+  state.nativeHandlers = null;
+  state.observer = null;
+  state.syncTimer = 0;
+  state.emitGenerationSnapshot = null;
+  state.ownerToken = null;
+}
+
+function scheduleNativeGenerationSync(state, token, delay = 80) {
+  if (!isBridgeSubsystemOwner("generation-lifecycle", token)) return;
   if (state.syncTimer) window.clearTimeout(state.syncTimer);
   state.syncTimer = window.setTimeout(() => {
     state.syncTimer = 0;
+    if (!isBridgeSubsystemOwner("generation-lifecycle", token)) return;
     setNativeMainActive(state, detectNativeMainGenerationActive(), "detected");
   }, delay);
 }
@@ -257,6 +305,15 @@ function finishDeclaredGeneration(key, status, detail, lock) {
 }
 
 function emitGenerationSnapshot(state, entry, active, status, detail = {}) {
+  if (typeof state.emitGenerationSnapshot === "function") {
+    state.emitGenerationSnapshot(entry, active, status, detail);
+    return;
+  }
+  emitGenerationSnapshotForOwner(state, entry, active, status, detail, state.ownerToken);
+}
+
+function emitGenerationSnapshotForOwner(state, entry, active, status, detail = {}, token = null) {
+  if (token && !isBridgeSubsystemOwner("generation-lifecycle", token)) return;
   const snapshot = buildSnapshot(state);
   const eventDetail = {
     active,

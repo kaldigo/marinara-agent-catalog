@@ -1,3 +1,132 @@
+// bridge/runtime.js
+// Shared runtime coordinator for bridge copies bundled by different packages.
+
+const MARI_BRIDGE_VERSION = "1.0.0";
+
+const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
+const DEFAULT_CAPABILITIES = [
+  "runtime:newest-wins",
+  "commands:register",
+  "fetch:interceptors",
+  "generation:lifecycle-events",
+  "ui-slots:composer-above-input",
+  "ui-slots:quick-actions-menu",
+];
+
+// Returns the page-global Mari bridge runtime shared by every bundled bridge copy.
+function getMariBridgeRuntime() {
+  const root = globalThis;
+  const runtime = root[MARI_BRIDGE_RUNTIME_KEY] || {
+    version: "0.0.0",
+    capabilities: new Set(),
+    subsystems: new Map(),
+    warnings: [],
+  };
+  if (!(runtime.capabilities instanceof Set)) runtime.capabilities = new Set(runtime.capabilities || []);
+  if (!(runtime.subsystems instanceof Map)) runtime.subsystems = new Map();
+  if (!Array.isArray(runtime.warnings)) runtime.warnings = [];
+  if (compareBridgeVersions(MARI_BRIDGE_VERSION, runtime.version) > 0) runtime.version = MARI_BRIDGE_VERSION;
+  for (const capability of DEFAULT_CAPABILITIES) runtime.capabilities.add(capability);
+  root[MARI_BRIDGE_RUNTIME_KEY] = runtime;
+  return runtime;
+}
+
+// Claims a singleton bridge subsystem; newer bridge versions replace older owners.
+function claimBridgeSubsystem(name, definition = {}) {
+  const runtime = getMariBridgeRuntime();
+  const subsystem = String(name || "").trim();
+  if (!subsystem) throw new Error("Bridge subsystem claim requires a name.");
+
+  const version = String(definition.version || MARI_BRIDGE_VERSION);
+  const ownerId = String(definition.ownerId || `${subsystem}@${version}`);
+  const current = runtime.subsystems.get(subsystem) || null;
+  const comparison = current ? compareBridgeVersions(version, current.version) : 1;
+
+  if (current && comparison < 0) {
+    warnBridgeRuntime(`Ignoring older ${subsystem} bridge ${version}; ${current.version} is already active.`);
+    return { active: false, current, runtime, token: null };
+  }
+
+  if (current && comparison === 0 && current.installed) {
+    return { active: false, current, runtime, token: current.token || null };
+  }
+
+  if (current?.cleanup) {
+    try {
+      current.cleanup();
+    } catch (error) {
+      warnBridgeRuntime(`Bridge subsystem ${subsystem} cleanup failed: ${errorMessage(error)}`);
+    }
+  }
+
+  const token = Symbol(`mari-bridge:${subsystem}:${version}`);
+  const next = {
+    name: subsystem,
+    version,
+    ownerId,
+    token,
+    installed: false,
+    installedAt: Date.now(),
+    cleanup: null,
+  };
+  runtime.subsystems.set(subsystem, next);
+
+  if (typeof definition.install === "function") {
+    const cleanup = definition.install({ runtime, previous: current, token });
+    if (typeof cleanup === "function") next.cleanup = cleanup;
+  }
+  next.installed = true;
+  return { active: true, current: next, runtime, token };
+}
+
+// Checks whether a callback still belongs to the active owner of a subsystem.
+function isBridgeSubsystemOwner(name, token) {
+  if (!token) return false;
+  return getMariBridgeRuntime().subsystems.get(name)?.token === token;
+}
+
+// Registers package-neutral bridge capabilities for feature detection.
+function registerBridgeCapabilities(capabilities) {
+  const runtime = getMariBridgeRuntime();
+  for (const capability of Array.isArray(capabilities) ? capabilities : [capabilities]) {
+    const normalized = String(capability || "").trim();
+    if (normalized) runtime.capabilities.add(normalized);
+  }
+  return runtime;
+}
+
+function hasBridgeCapability(capability) {
+  return getMariBridgeRuntime().capabilities.has(String(capability || "").trim());
+}
+
+function compareBridgeVersions(left, right) {
+  const a = parseVersion(left);
+  const b = parseVersion(right);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const delta = (a[index] || 0) - (b[index] || 0);
+    if (delta !== 0) return delta > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+function warnBridgeRuntime(message) {
+  const runtime = getMariBridgeRuntime();
+  runtime.warnings.push({ message, at: Date.now() });
+  if (runtime.warnings.length > 25) runtime.warnings.splice(0, runtime.warnings.length - 25);
+  globalThis.console?.warn?.(`[mari-bridge] ${message}`);
+}
+
+function parseVersion(value) {
+  return String(value || "0")
+    .split(/[.-]/u)
+    .map((part) => Number.parseInt(part, 10))
+    .map((part) => (Number.isFinite(part) ? part : 0));
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // bridge/composer-dom.js
 // Upstream gap MB-010: packages do not yet have stable client DOM lifecycle,
 // style injection, or text-control helpers for package-owned UI surfaces.
@@ -317,25 +446,50 @@ function registerComposerSlotContribution(contribution) {
 // Starts DOM observation for composer slots. Registration calls this automatically.
 function ensureComposerSlotBridge(options = {}) {
   const state = getUiSlotState();
-  if (state.started) return state;
-  state.started = true;
-  state.scope = createDomScope();
   state.renderDelayMs = Number.isFinite(Number(options.renderDelayMs)) ? Number(options.renderDelayMs) : 80;
-  if (document.readyState === "loading") {
-    state.scope.on(document, "DOMContentLoaded", () => startComposerSlotObservation(state), { once: true });
-  } else {
-    startComposerSlotObservation(state);
-  }
+  claimBridgeSubsystem("ui-slots", {
+    version: MARI_BRIDGE_VERSION,
+    ownerId: "mari-bridge:ui-slots",
+    install: ({ token }) => {
+      state.ownerToken = token;
+      state.scope = createDomScope();
+      state.scheduleRender = (delayMs) => scheduleComposerSlotRenderForOwner(state, delayMs, token);
+      if (document.readyState === "loading") {
+        state.scope.on(document, "DOMContentLoaded", () => startComposerSlotObservation(state, token), { once: true });
+      } else {
+        startComposerSlotObservation(state, token);
+      }
+      return () => {
+        unmountAll(state);
+        state.scope?.destroy?.();
+        state.scope = null;
+        state.observer = null;
+        state.renderTimer = 0;
+        state.scheduleRender = null;
+        if (state.ownerToken === token) state.ownerToken = null;
+      };
+    },
+  });
   return state;
 }
 
 // Forces a bridge slot render pass after a package changes its own state.
 function scheduleComposerSlotRender(delayMs) {
   const state = getUiSlotState();
+  ensureComposerSlotBridge();
+  if (typeof state.scheduleRender === "function") {
+    state.scheduleRender(delayMs);
+    return;
+  }
+}
+
+function scheduleComposerSlotRenderForOwner(state, delayMs, token) {
+  if (!isBridgeSubsystemOwner("ui-slots", token)) return;
   if (state.renderTimer) state.scope?.clearTimer?.(state.renderTimer);
   const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : state.renderDelayMs;
   state.renderTimer = (state.scope || createDomScope()).timeout(() => {
     state.renderTimer = 0;
+    if (!isBridgeSubsystemOwner("ui-slots", token)) return;
     renderComposerSlots(state);
   }, delay);
 }
@@ -367,12 +521,20 @@ function getUiSlotState() {
       activeRoot: null,
       contributions: new Map(),
       mounted: new Map(),
+      ownerToken: null,
+      scheduleRender: null,
     };
   }
-  return window[UI_SLOT_STATE_KEY];
+  const state = window[UI_SLOT_STATE_KEY];
+  if (!(state.contributions instanceof Map)) state.contributions = new Map();
+  if (!(state.mounted instanceof Map)) state.mounted = new Map();
+  if (!("ownerToken" in state)) state.ownerToken = null;
+  if (!("scheduleRender" in state)) state.scheduleRender = null;
+  return state;
 }
 
-function startComposerSlotObservation(state) {
+function startComposerSlotObservation(state, token) {
+  if (!isBridgeSubsystemOwner("ui-slots", token)) return;
   state.scope.on(window, "focus", () => scheduleComposerSlotRender(0));
   state.scope.on(window, "resize", () => scheduleComposerSlotRender());
   state.scope.on(window, "popstate", () => scheduleComposerSlotRender(0));
@@ -584,13 +746,22 @@ const GENERATING_AGENT_EVENT = "mari-bridge:generating-agent";
 function ensureGenerationLifecycleBridge(options = {}) {
   const state = getGenerationState();
   state.nativeTracking = options.nativeTracking !== false;
-  if (state.started) return state;
-  state.started = true;
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => startGenerationObservation(state), { once: true });
-  } else {
-    startGenerationObservation(state);
-  }
+  claimBridgeSubsystem("generation-lifecycle", {
+    version: MARI_BRIDGE_VERSION,
+    ownerId: "mari-bridge:generation-lifecycle",
+    install: ({ token }) => {
+      state.ownerToken = token;
+      state.emitGenerationSnapshot = (entry, active, status, detail) =>
+        emitGenerationSnapshotForOwner(state, entry, active, status, detail, token);
+      const start = () => startGenerationObservation(state, token);
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start, { once: true });
+        return () => document.removeEventListener("DOMContentLoaded", start);
+      }
+      start();
+      return () => stopGenerationObservation(state, token);
+    },
+  });
   return state;
 }
 
@@ -734,20 +905,37 @@ function getGenerationState() {
       nativeActive: false,
       observer: null,
       syncTimer: 0,
+      ownerToken: null,
+      nativeHandlers: null,
+      emitGenerationSnapshot: null,
     };
   }
-  return window[GENERATION_STATE_KEY];
+  const state = window[GENERATION_STATE_KEY];
+  if (!(state.active instanceof Map)) state.active = new Map();
+  if (!("ownerToken" in state)) state.ownerToken = null;
+  if (!("nativeHandlers" in state)) state.nativeHandlers = null;
+  if (!("emitGenerationSnapshot" in state)) state.emitGenerationSnapshot = null;
+  return state;
 }
 
-function startGenerationObservation(state) {
+function startGenerationObservation(state, token) {
+  if (!isBridgeSubsystemOwner("generation-lifecycle", token)) return;
   if (state.nativeTracking) {
-    document.addEventListener("click", () => scheduleNativeGenerationSync(state), true);
-    window.addEventListener("focus", () => scheduleNativeGenerationSync(state));
-    window.addEventListener("pageshow", () => scheduleNativeGenerationSync(state));
-    window.addEventListener("marinara:generation-complete", () => setNativeMainActive(state, false, "complete"));
-    window.addEventListener("marinara:generation-error", () => setNativeMainActive(state, false, "error"));
+    const handlers = {
+      click: () => scheduleNativeGenerationSync(state, token),
+      focus: () => scheduleNativeGenerationSync(state, token),
+      pageshow: () => scheduleNativeGenerationSync(state, token),
+      complete: () => setNativeMainActive(state, false, "complete"),
+      error: () => setNativeMainActive(state, false, "error"),
+    };
+    state.nativeHandlers = handlers;
+    document.addEventListener("click", handlers.click, true);
+    window.addEventListener("focus", handlers.focus);
+    window.addEventListener("pageshow", handlers.pageshow);
+    window.addEventListener("marinara:generation-complete", handlers.complete);
+    window.addEventListener("marinara:generation-error", handlers.error);
     if (document.body) {
-      state.observer = new MutationObserver(() => scheduleNativeGenerationSync(state));
+      state.observer = new MutationObserver(() => scheduleNativeGenerationSync(state, token));
       state.observer.observe(document.body, {
         childList: true,
         subtree: true,
@@ -755,14 +943,35 @@ function startGenerationObservation(state) {
         attributeFilter: ["aria-label", "title", "class", "disabled"],
       });
     }
-    scheduleNativeGenerationSync(state, 0);
+    scheduleNativeGenerationSync(state, token, 0);
   }
 }
 
-function scheduleNativeGenerationSync(state, delay = 80) {
+function stopGenerationObservation(state, token) {
+  if (state.ownerToken !== token) return;
+  const handlers = state.nativeHandlers;
+  if (handlers) {
+    document.removeEventListener("click", handlers.click, true);
+    window.removeEventListener("focus", handlers.focus);
+    window.removeEventListener("pageshow", handlers.pageshow);
+    window.removeEventListener("marinara:generation-complete", handlers.complete);
+    window.removeEventListener("marinara:generation-error", handlers.error);
+  }
+  state.observer?.disconnect?.();
+  if (state.syncTimer) window.clearTimeout(state.syncTimer);
+  state.nativeHandlers = null;
+  state.observer = null;
+  state.syncTimer = 0;
+  state.emitGenerationSnapshot = null;
+  state.ownerToken = null;
+}
+
+function scheduleNativeGenerationSync(state, token, delay = 80) {
+  if (!isBridgeSubsystemOwner("generation-lifecycle", token)) return;
   if (state.syncTimer) window.clearTimeout(state.syncTimer);
   state.syncTimer = window.setTimeout(() => {
     state.syncTimer = 0;
+    if (!isBridgeSubsystemOwner("generation-lifecycle", token)) return;
     setNativeMainActive(state, detectNativeMainGenerationActive(), "detected");
   }, delay);
 }
@@ -825,6 +1034,15 @@ function finishDeclaredGeneration(key, status, detail, lock) {
 }
 
 function emitGenerationSnapshot(state, entry, active, status, detail = {}) {
+  if (typeof state.emitGenerationSnapshot === "function") {
+    state.emitGenerationSnapshot(entry, active, status, detail);
+    return;
+  }
+  emitGenerationSnapshotForOwner(state, entry, active, status, detail, state.ownerToken);
+}
+
+function emitGenerationSnapshotForOwner(state, entry, active, status, detail = {}, token = null) {
+  if (token && !isBridgeSubsystemOwner("generation-lifecycle", token)) return;
   const snapshot = buildSnapshot(state);
   const eventDetail = {
     active,
@@ -886,7 +1104,7 @@ function errorMessage(error) {
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.8";
+  const RUNTIME_VERSION = "1.0.9";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {

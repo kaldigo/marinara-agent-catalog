@@ -1,4 +1,5 @@
 import { createDomScope, getActiveChatIdFromClient, isVisibleElement } from "./composer-dom.js";
+import { MARI_BRIDGE_VERSION, claimBridgeSubsystem, isBridgeSubsystemOwner } from "./runtime.js";
 
 // Upstream gap MB-010: packages do not yet have stable composer UI slots.
 
@@ -28,25 +29,50 @@ export function registerComposerSlotContribution(contribution) {
 // Starts DOM observation for composer slots. Registration calls this automatically.
 export function ensureComposerSlotBridge(options = {}) {
   const state = getUiSlotState();
-  if (state.started) return state;
-  state.started = true;
-  state.scope = createDomScope();
   state.renderDelayMs = Number.isFinite(Number(options.renderDelayMs)) ? Number(options.renderDelayMs) : 80;
-  if (document.readyState === "loading") {
-    state.scope.on(document, "DOMContentLoaded", () => startComposerSlotObservation(state), { once: true });
-  } else {
-    startComposerSlotObservation(state);
-  }
+  claimBridgeSubsystem("ui-slots", {
+    version: MARI_BRIDGE_VERSION,
+    ownerId: "mari-bridge:ui-slots",
+    install: ({ token }) => {
+      state.ownerToken = token;
+      state.scope = createDomScope();
+      state.scheduleRender = (delayMs) => scheduleComposerSlotRenderForOwner(state, delayMs, token);
+      if (document.readyState === "loading") {
+        state.scope.on(document, "DOMContentLoaded", () => startComposerSlotObservation(state, token), { once: true });
+      } else {
+        startComposerSlotObservation(state, token);
+      }
+      return () => {
+        unmountAll(state);
+        state.scope?.destroy?.();
+        state.scope = null;
+        state.observer = null;
+        state.renderTimer = 0;
+        state.scheduleRender = null;
+        if (state.ownerToken === token) state.ownerToken = null;
+      };
+    },
+  });
   return state;
 }
 
 // Forces a bridge slot render pass after a package changes its own state.
 export function scheduleComposerSlotRender(delayMs) {
   const state = getUiSlotState();
+  ensureComposerSlotBridge();
+  if (typeof state.scheduleRender === "function") {
+    state.scheduleRender(delayMs);
+    return;
+  }
+}
+
+function scheduleComposerSlotRenderForOwner(state, delayMs, token) {
+  if (!isBridgeSubsystemOwner("ui-slots", token)) return;
   if (state.renderTimer) state.scope?.clearTimer?.(state.renderTimer);
   const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : state.renderDelayMs;
   state.renderTimer = (state.scope || createDomScope()).timeout(() => {
     state.renderTimer = 0;
+    if (!isBridgeSubsystemOwner("ui-slots", token)) return;
     renderComposerSlots(state);
   }, delay);
 }
@@ -78,12 +104,20 @@ function getUiSlotState() {
       activeRoot: null,
       contributions: new Map(),
       mounted: new Map(),
+      ownerToken: null,
+      scheduleRender: null,
     };
   }
-  return window[UI_SLOT_STATE_KEY];
+  const state = window[UI_SLOT_STATE_KEY];
+  if (!(state.contributions instanceof Map)) state.contributions = new Map();
+  if (!(state.mounted instanceof Map)) state.mounted = new Map();
+  if (!("ownerToken" in state)) state.ownerToken = null;
+  if (!("scheduleRender" in state)) state.scheduleRender = null;
+  return state;
 }
 
-function startComposerSlotObservation(state) {
+function startComposerSlotObservation(state, token) {
+  if (!isBridgeSubsystemOwner("ui-slots", token)) return;
   state.scope.on(window, "focus", () => scheduleComposerSlotRender(0));
   state.scope.on(window, "resize", () => scheduleComposerSlotRender());
   state.scope.on(window, "popstate", () => scheduleComposerSlotRender(0));

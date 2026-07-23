@@ -1,6 +1,8 @@
 // Upstream gap MB-011: packages do not yet have a first-class client-side
 // generate request observation/mutation hook.
 
+import { MARI_BRIDGE_VERSION, claimBridgeSubsystem, isBridgeSubsystemOwner } from "./runtime.js";
+
 const FETCH_INTERCEPT_STATE_KEY = "__mariBridgeFetchInterceptState";
 
 export function getApiPath(input) {
@@ -56,7 +58,11 @@ export function installFetchInterceptor(definition = {}) {
     route: typeof definition.route === "string" ? definition.route : "",
     handler: definition.handler,
   });
-  installFetchPatch(state);
+  claimBridgeSubsystem("fetch-intercept", {
+    version: MARI_BRIDGE_VERSION,
+    ownerId: "mari-bridge:fetch-intercept",
+    install: ({ token }) => installFetchPatch(state, token),
+  });
 
   return () => {
     const current = state.interceptors.get(id);
@@ -70,16 +76,33 @@ function fetchInterceptState() {
       originalFetch: null,
       patchedFetch: null,
       interceptors: new Map(),
+      ownerToken: null,
     };
   }
-  return window[FETCH_INTERCEPT_STATE_KEY];
+  const state = window[FETCH_INTERCEPT_STATE_KEY];
+  if (!(state.interceptors instanceof Map)) state.interceptors = new Map();
+  if (!("ownerToken" in state)) state.ownerToken = null;
+  return state;
 }
 
-function installFetchPatch(state) {
-  if (state.patchedFetch && window.fetch === state.patchedFetch) return;
+function installFetchPatch(state, token) {
   if (typeof state.originalFetch !== "function") state.originalFetch = window.fetch.bind(window);
-  state.patchedFetch = (input, init = {}) => runFetchPipeline(state, input, init);
+  state.ownerToken = token;
+  state.patchedFetch = (input, init = {}) => {
+    if (!isBridgeSubsystemOwner("fetch-intercept", token)) {
+      return (state.originalFetch || window.fetch.bind(window))(input, init);
+    }
+    return runFetchPipeline(state, input, init);
+  };
   window.fetch = state.patchedFetch;
+  return () => {
+    if (state.ownerToken !== token) return;
+    if (window.fetch === state.patchedFetch && typeof state.originalFetch === "function") {
+      window.fetch = state.originalFetch;
+    }
+    state.patchedFetch = null;
+    state.ownerToken = null;
+  };
 }
 
 async function runFetchPipeline(state, input, init = {}) {

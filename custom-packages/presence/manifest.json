@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
@@ -24,8 +24,8 @@
     },
     {
       "path": "bridge/commands.js",
-      "sha256": "e75187ae5141e3777b1d2fb8d1eb6bf95a455c02037bcc03ef9b54b15ec7c665",
-      "bytes": 8267
+      "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
+      "bytes": 9153
     },
     {
       "path": "bridge/composer-actions.js",
@@ -39,13 +39,13 @@
     },
     {
       "path": "bridge/fetch-intercept.js",
-      "sha256": "094d06962dae754dddaa7afffc2ce013608b053a1a63e5e669f281b4d8bdae36",
-      "bytes": 4889
+      "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
+      "bytes": 5720
     },
     {
       "path": "bridge/generation-lifecycle.js",
-      "sha256": "eb57b8e673c6104136724b610b46ddbf143984a29c6fd3d6a4656818283c1f15",
-      "bytes": 11220
+      "sha256": "3671ed0fc05d7d1a6b50eb855bbf21238e5836e203f13b465e655d566a22e58e",
+      "bytes": 13791
     },
     {
       "path": "bridge/generation-stream.js",
@@ -59,8 +59,8 @@
     },
     {
       "path": "bridge/index.js",
-      "sha256": "c412889a03fabdeb63825459f7e281e476476a29fbacd6477cbd42f1bab57619",
-      "bytes": 401
+      "sha256": "c6d5e1b8daca55e76d0073dd5e35e5e34e8f1945fdb00b8858fb354adf1aae92",
+      "bytes": 431
     },
     {
       "path": "bridge/prompt-contribution.js",
@@ -73,19 +73,24 @@
       "bytes": 2012
     },
     {
+      "path": "bridge/runtime.js",
+      "sha256": "f9796b5dcee8254342922f4a5042958d5966bf98deb9561dc3f66a8ca49a5d7d",
+      "bytes": 4552
+    },
+    {
       "path": "bridge/summary-tracking.js",
       "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
       "bytes": 2620
     },
     {
       "path": "bridge/ui-slots.js",
-      "sha256": "2a009170e56f5d9f360bde22d509750fa5dfb169e96e4ebd2adc88f766a082eb",
-      "bytes": 10825
+      "sha256": "cced19a94658f90eb45dc14ea3602f3794d64be5e534c0d0ddf965a0a315e354",
+      "bytes": 12198
     },
     {
       "path": "client.js",
-      "sha256": "007cfd82777e5922874c1dd1bb54ac1212a8c9c72bfd8aed3225ce24554cd507",
-      "bytes": 20577
+      "sha256": "b7e72eb2d11a490d6a8f5fffffce9771399d49e5c57d4666d56fe26e101a1223",
+      "bytes": 25863
     },
     {
       "path": "server.mjs",
