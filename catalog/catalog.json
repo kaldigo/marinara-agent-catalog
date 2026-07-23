@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-23T19:41:20.345Z",
+  "generatedAt": "2026-07-23T19:45:50.390Z",
   "packages": [
     {
       "manifest": {
@@ -1445,7 +1445,7 @@
         "schemaVersion": 1,
         "id": "group-sort-order",
         "name": "Group Sort Order",
-        "version": "1.0.9",
+        "version": "1.0.10",
         "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
         "engine": {
           "min": "2.3.3",
@@ -1537,8 +1537,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "bb123c07440da53795d5e8ad443709a6855281d360dfb291f149dff692099491",
-            "bytes": 52039
+            "sha256": "630847bb941847a14bdad110186830d25c5ce81c1c89615ae9ad6e822a373f10",
+            "bytes": 54679
           },
           {
             "path": "server.mjs",
@@ -1547,8 +1547,8 @@
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "1bd44a042f166304a7c12bdfa30fae54a9458e35bb46337f08ea75f8198a3532",
-            "bytes": 13068
+            "sha256": "284dfc3bf4bd1dcbd56ed5cb0b8e3c6a79e65af249a5d3915ad568fab6c2106e",
+            "bytes": 13069
           },
           {
             "path": "src/server/index.js",
@@ -1579,9 +1579,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.9.zip",
-        "sha256": "a6b7245fa0b4dab1ced041a66b21b17076288da65d4df6ea90799725c0144a5e",
-        "bytes": 49646
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.10.zip",
+        "sha256": "f682735d968ff20e9db342837b2cbf7889a3e9b676bc2ef59297848ffbe93fc9",
+        "bytes": 49803
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
     },
@@ -1627,7 +1627,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.1.zip",
-        "sha256": "e67c669c6714b6838083c31ab6153ed73dc20c91ad4903580b1aef33ed70d4e9",
+        "sha256": "2d24bea42e53c5777b974a1c79b7eb0a784fd8d0df45c554175b9fd2b84dc6c6",
         "bytes": 20640
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -1637,7 +1637,7 @@
         "schemaVersion": 1,
         "id": "presence",
         "name": "Presence",
-        "version": "1.0.6",
+        "version": "1.0.7",
         "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
         "engine": {
           "min": "2.3.3",
@@ -1724,8 +1724,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "b7e72eb2d11a490d6a8f5fffffce9771399d49e5c57d4666d56fe26e101a1223",
-            "bytes": 25863
+            "sha256": "bebd1cce0d7a3d358b26114bec4214e1a3eb140d23a78871ae36432a577ef594",
+            "bytes": 27204
           },
           {
             "path": "server.mjs",
@@ -1796,9 +1796,9 @@
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.6.zip",
-        "sha256": "b37fee288d201e5b8e765762465dc727ce0fbf73176d01ae62a92aa1e1ce3754",
-        "bytes": 43848
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.7.zip",
+        "sha256": "3dacdc792b7c9f624b2c1f3372fbaa1ed9cd4e1627cb1273940ee8595a301939",
+        "bytes": 43942
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     },
@@ -1840,7 +1840,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.4.zip",
-        "sha256": "d37b62107e5c979ff31bd8d9c3a457424a224533c2bd36f150c485b4601ca812",
+        "sha256": "9fba3ecb18643a3fa6a461529f982f74447ec541962c6e90daca8de799d21a33",
         "bytes": 14310
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
