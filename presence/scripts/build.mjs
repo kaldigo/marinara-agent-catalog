@@ -35,7 +35,7 @@ function manifest() {
     version,
     description:
       "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
-    engine: { min: "2.3.3", maxExclusive: "3.0.0" },
+    engine: { min: "2.3.3", maxExclusive: "4.0.0" },
     kind: ["agent"],
     entrypoints: {
       server: "server.mjs",
@@ -54,7 +54,7 @@ function agentDefinitions() {
       id: "presence",
       name: "Presence",
       description: "Feature runtime for per-message character presence and scoped chat summaries.",
-      category: "tracker",
+      category: "misc",
       execution: "feature",
       enabledByDefault: false,
       modeAllowlist: ["roleplay", "visual_novel"],

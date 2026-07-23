@@ -7,10 +7,13 @@ const manifestPath = path.join(packageRoot, "manifest.json");
 
 assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "presence", "manifest id is presence");
+assert(manifest.engine?.maxExclusive === "4.0.0", "manifest includes Presence in the v3 catalog lane");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint declared");
+assert(agents[0]?.category === "misc", "Presence is a misc capability, not a tracker agent");
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);
