@@ -1,10 +1,16 @@
 import { createPresenceCommandRouter } from "../client/command-handler.js";
-import { buildPresenceLorebookName, readPresenceChatState, writePresenceChatState } from "../shared/chat-state.js";
-import { PRESENCE_PACKAGE_ID } from "../shared/constants.js";
+import {
+  buildExtensionMigrationMarker,
+  buildPresenceLorebookName,
+  readPresenceChatState,
+  writePresenceChatState,
+} from "../shared/chat-state.js";
+import { PRESENCE_MIGRATION_VERSION, PRESENCE_PACKAGE_ID } from "../shared/constants.js";
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
 import { parseMessageRange } from "../../../_mari-bridge/src/ranges.js";
 import { readSummaryEntries } from "../../../_mari-bridge/src/summary-tracking.js";
+import { planExtensionMigration } from "./migration.js";
 import { buildSummaryAudience, buildSummaryLorebookEntries } from "./summary-mirror.js";
 
 const MESSAGE_CREATE_HOOK_KEY = Symbol.for("marinara.presence.messageCreateHook");
@@ -99,6 +105,13 @@ export function createPresenceRoutes({ app, runtime }) {
     return { ok: true, addedCharacterIds: backfill.addedCharacterIds, patchedMessages: backfill.messagePatches.length };
   });
 
+  app.post("/chat/:chatId/migrate-extension", async (req, reply) => {
+    const chat = await persistence.getChat(req.params.chatId);
+    if (!chat) return reply.status(404).send({ error: "Chat not found" });
+    const result = await migrateExtensionChat({ app, runtime, chat });
+    return { ok: true, ...result };
+  });
+
   app.post("/chat/:chatId/summaries/reconcile", async (req, reply) => {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
@@ -129,9 +142,20 @@ async function stampCreatedUserMessage({ app, runtime, request, reply, payload }
 }
 
 async function runPresenceCommand({ tokens, app, runtime, chat }) {
-  const [action, characterName, ...rangeTokens] = tokens;
+  const [rawAction, characterName, ...rangeTokens] = tokens;
+  const action = String(rawAction || "").toLowerCase();
+  if (action === "migrate") {
+    const result = await migrateExtensionChat({ app, runtime, chat });
+    return {
+      ...result,
+      ok: true,
+      feedback: result.skipped
+        ? "Presence migration already ran for this chat."
+        : `Migrated ${result.patchedMessages} message${result.patchedMessages === 1 ? "" : "s"} from the Presence extension.`,
+    };
+  }
   if (action !== "set" && action !== "unset") {
-    return { ok: false, feedback: "Usage: /presence <set|unset> <character> <range>" };
+    return { ok: false, feedback: "Usage: /presence <set|unset> <character> <range> or /presence migrate" };
   }
   return setPresenceForRange({
     app,
@@ -141,6 +165,39 @@ async function runPresenceCommand({ tokens, app, runtime, chat }) {
     characterName,
     rangeTokens,
   });
+}
+
+async function migrateExtensionChat({ app, runtime, chat }) {
+  const state = readPresenceChatState(chat);
+  if (state.extensionMigrationVersion >= PRESENCE_MIGRATION_VERSION) {
+    return {
+      skipped: true,
+      patchedMessages: 0,
+      unresolved: state.extensionMigrationUnresolved,
+      migratedAt: state.extensionMigratedAt,
+    };
+  }
+  const now = new Date().toISOString();
+  const [messages, roster] = await Promise.all([
+    runtime.persistence.listMessages(chat.id),
+    resolveRoster(runtime, chat),
+  ]);
+  const migration = planExtensionMigration({ messages, roster, now });
+  for (const patch of migration.patches) {
+    await patchMessageExtra(app, chat.id, patch.messageId, patch.patch);
+  }
+  const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
+  await patchChatState(
+    runtime.persistence,
+    freshChat,
+    buildExtensionMigrationMarker({ unresolved: migration.unresolved, now }),
+  );
+  return {
+    skipped: false,
+    patchedMessages: migration.patches.length,
+    unresolved: migration.unresolved,
+    migratedAt: now,
+  };
 }
 
 async function runScopedHideCommand({ hidden, tokens, app, runtime, chat }) {

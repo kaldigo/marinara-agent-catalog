@@ -125,6 +125,7 @@ await activate({
 });
 assert(registeredRoutes.includes("GET /chat/:chatId/state"), "activate registers state route");
 assert(registeredRoutes.includes("POST /chat/:chatId/command"), "activate registers command route");
+assert(registeredRoutes.includes("POST /chat/:chatId/migrate-extension"), "activate registers extension migration route");
 assert(registeredHooks.some((hook) => hook.name === "onSend"), "activate registers message save hook");
 await registeredHooks
   .find((hook) => hook.name === "onSend")

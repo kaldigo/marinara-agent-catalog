@@ -25,8 +25,26 @@ if (!state.initialized) {
     runPresenceCommand: ({ raw, context }) => runServerCommand(raw, context),
     runScopedHideCommand: ({ raw, context }) => runServerCommand(raw, context),
   });
+  exposeConsoleApi();
   document.addEventListener("keydown", onKeyDownCapture, true);
   document.addEventListener("submit", onSubmitCapture, true);
+}
+
+function exposeConsoleApi() {
+  const api = window.marinaraPresence || {};
+  window.marinaraPresence = {
+    ...api,
+    migrateCurrentChat: async () => {
+      const chatId = resolveActiveChatId();
+      if (!chatId) throw new Error("No active chat detected.");
+      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/migrate-extension`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+      return data;
+    },
+  };
 }
 
 async function onKeyDownCapture(event) {

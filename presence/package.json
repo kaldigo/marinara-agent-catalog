@@ -1,6 +1,6 @@
 {
   "name": "marinara-presence-package",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Package-era Presence source for Marinara Engine.",
