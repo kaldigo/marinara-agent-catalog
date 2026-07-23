@@ -7,9 +7,9 @@
     "buildCommand": ["npm", "run", "build"]
   },
   "package": {
-    "id": "impersonate-button",
-    "name": "Impersonate Button",
-    "description": "Adds a scoped dry-run impersonate button with continue, restore, stop, settings sync, and external-generation disabled state.",
+    "id": "presence",
+    "name": "Presence (Extension)",
+    "description": "Tracks per-message character presence and temporarily filters prompt history during generation.",
     "engine": {
       "min": "2.3.0",
       "maxExclusive": "3.0.0"

@@ -8,7 +8,7 @@
   },
   "package": {
     "id": "group-smart-order",
-    "name": "Group Smart Order",
+    "name": "Group Smart Order (Extension)",
     "description": "Shows and directs a group Smart response queue with selectable main or agent selector connection.",
     "engine": {
       "min": "2.3.0",

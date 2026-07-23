@@ -7,15 +7,15 @@
     "buildCommand": ["npm", "run", "build"]
   },
   "package": {
-    "id": "presence",
-    "name": "Presence",
-    "description": "Tracks per-message character presence and temporarily filters prompt history during generation.",
+    "id": "pwa-helper",
+    "name": "PWA Helper (Extension)",
+    "description": "Keeps mobile and tablet screens awake while Marinara generation is running.",
     "engine": {
       "min": "2.3.0",
       "maxExclusive": "3.0.0"
     },
     "kind": ["agent"],
-    "permissions": ["chat-read", "chat-write", "network", "storage", "ui"],
+    "permissions": ["ui"],
     "restartRequired": false
   }
 }

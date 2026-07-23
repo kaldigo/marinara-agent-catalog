@@ -7,15 +7,15 @@
     "buildCommand": ["npm", "run", "build"]
   },
   "package": {
-    "id": "pwa-helper",
-    "name": "PWA Helper",
-    "description": "Keeps mobile and tablet screens awake while Marinara generation is running.",
+    "id": "impersonate-button",
+    "name": "Impersonate Button (Extension)",
+    "description": "Adds a scoped dry-run impersonate button with continue, restore, stop, settings sync, and external-generation disabled state.",
     "engine": {
       "min": "2.3.0",
       "maxExclusive": "3.0.0"
     },
     "kind": ["agent"],
-    "permissions": ["ui"],
+    "permissions": ["chat-read", "chat-write", "network", "storage", "ui"],
     "restartRequired": false
   }
 }
