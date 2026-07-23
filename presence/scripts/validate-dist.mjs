@@ -14,6 +14,7 @@ assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declare
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint declared");
 assert(agents[0]?.category === "misc", "Presence is a misc capability, not a tracker agent");
+assert(agents[0]?.phase === "pre_generation", "Presence declares the required packaged agent phase");
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);

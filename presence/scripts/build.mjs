@@ -55,6 +55,7 @@ function agentDefinitions() {
       name: "Presence",
       description: "Feature runtime for per-message character presence and scoped chat summaries.",
       category: "misc",
+      phase: "pre_generation",
       execution: "feature",
       enabledByDefault: false,
       modeAllowlist: ["roleplay", "visual_novel"],
