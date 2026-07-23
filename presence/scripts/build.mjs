@@ -21,7 +21,7 @@ await copyTree(bridgeRoot, path.join(packageRoot, "bridge"));
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
 await writeFile(path.join(packageRoot, "server.mjs"), `export { activate, selfCheck } from "./src/server/index.js";\n`);
-await writeFile(path.join(packageRoot, "client.js"), `import "./src/client/runtime.js";\n`);
+await writeFile(path.join(packageRoot, "client.js"), await fs.readFile(path.join(projectRoot, "src/client/runtime.js"), "utf8"));
 await writeFile(path.join(packageRoot, "agents.json"), `${JSON.stringify(agentDefinitions(), null, 2)}\n`);
 await writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify(manifest(), null, 2)}\n`);
 
