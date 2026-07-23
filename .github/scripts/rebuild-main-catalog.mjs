@@ -17,10 +17,12 @@ import path from "node:path";
 const root = process.cwd();
 const upstreamBranch = process.env.UPSTREAM_BRANCH || "origin/upstream-marinara";
 const agentsBranch = process.env.AGENTS_BRANCH || "origin/agents";
+const packagesBranch = process.env.PACKAGES_BRANCH || "origin/packages";
 const repository = process.env.CATALOG_REPOSITORY || process.env.GITHUB_REPOSITORY || "OWNER/REPO";
 const workDir = path.join(root, ".catalog-merge-work");
 const upstreamDir = path.join(workDir, "upstream");
 const agentsDir = path.join(workDir, "agents");
+const packagesDir = path.join(workDir, "packages");
 const nextDir = path.join(workDir, "next");
 
 function run(command, args, options = {}) {
@@ -239,7 +241,7 @@ function ensureLegacyMarinaraBridge() {
 
 function wrapLegacyExtensionClient({ id, legacyJs, css }) {
   const tagName = `marinara-capability-${id}`;
-  return `// Generated from agents/extensions source by the catalog rebuild workflow.
+  return `// Generated from packages branch source by the catalog rebuild workflow.
 const PACKAGE_ID = ${JSON.stringify(id)};
 const TAG_NAME = ${JSON.stringify(tagName)};
 const LEGACY_CSS = ${JSON.stringify(css || "")};
@@ -313,31 +315,63 @@ function findLegacyManifest(extensionDir) {
   return match;
 }
 
-function buildExtensionSourcePackages() {
-  const extensionsDir = path.join(agentsDir, "extensions");
-  if (!existsSync(extensionsDir)) {
+function isSourceFolder(entry) {
+  return entry.isDirectory() && !entry.name.startsWith(".") && !entry.name.startsWith("_");
+}
+
+function sourceMetadata(sourceDir) {
+  const metadataPath = path.join(sourceDir, "marinara-source.json");
+  return existsSync(metadataPath) ? readJson(metadataPath) : null;
+}
+
+function copySharedSources(branchDir, targetDir) {
+  const sharedDir = path.join(branchDir, "_shared");
+  if (existsSync(sharedDir)) {
+    copyIfExists(sharedDir, path.join(targetDir, "_shared"));
+  }
+}
+
+function buildPackageSourceFolders() {
+  if (!existsSync(packagesDir)) {
     return;
   }
 
   const customPackagesDir = path.join(nextDir, "custom-packages");
   mkdirSync(customPackagesDir, { recursive: true });
+  copySharedSources(packagesDir, customPackagesDir);
 
-  for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith("_")) {
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    if (!isSourceFolder(entry)) {
       continue;
     }
 
-    const extensionDir = path.join(extensionsDir, entry.name);
+    const extensionDir = path.join(packagesDir, entry.name);
+    const metadata = sourceMetadata(extensionDir);
+    if (!metadata || metadata.includeInMain === false || metadata.type !== "capability-package") {
+      continue;
+    }
+
+    if (metadata.processing?.kind !== "legacy-extension") {
+      throw new Error(`${entry.name} has unsupported package processing kind: ${metadata.processing?.kind}`);
+    }
+
     const packageJsonPath = path.join(extensionDir, "package.json");
-    const capabilityJsonPath = path.join(extensionDir, "capability-package.json");
-    if (!existsSync(packageJsonPath) || !existsSync(capabilityJsonPath)) {
-      continue;
+    if (!existsSync(packageJsonPath)) {
+      throw new Error(`${entry.name} package source is missing package.json`);
     }
 
-    run("npm", ["run", "build"], { cwd: extensionDir });
+    const buildCommand = metadata.processing.buildCommand || ["npm", "run", "build"];
+    if (!Array.isArray(buildCommand) || buildCommand.length === 0) {
+      throw new Error(`${entry.name} buildCommand must be a non-empty array`);
+    }
+
+    run(String(buildCommand[0]), buildCommand.slice(1).map(String), { cwd: extensionDir });
 
     const packageJson = readJson(packageJsonPath);
-    const capability = readJson(capabilityJsonPath);
+    const capability = metadata.package || {};
+    if (!capability.id) {
+      throw new Error(`${entry.name} package metadata is missing package.id`);
+    }
     const legacy = findLegacyManifest(extensionDir);
     const legacyDir = path.dirname(legacy.file);
     const legacyConfig = legacy.manifest.config || {};
@@ -374,7 +408,7 @@ function buildExtensionSourcePackages() {
       description: capability.description || legacyConfig.description || "",
       engine: capability.engine || { min: "2.3.0", maxExclusive: "3.0.0" },
       kind: capability.kind || ["agent"],
-      entrypoints: { client: "client.js" },
+      entrypoints: capability.entrypoints || { client: "client.js" },
       files: [
         {
           path: "client.js",
@@ -387,8 +421,62 @@ function buildExtensionSourcePackages() {
     };
 
     writeJson(path.join(packageDir, "manifest.json"), manifest);
-    console.log(`Built ${entry.name} -> custom-packages/${capability.id}`);
+    console.log(`Built package ${entry.name} -> custom-packages/${capability.id}`);
   }
+}
+
+function buildCustomAgentsFile() {
+  if (!existsSync(agentsDir)) {
+    return 0;
+  }
+
+  const definitions = [];
+  for (const entry of readdirSync(agentsDir, { withFileTypes: true })) {
+    if (!isSourceFolder(entry)) {
+      continue;
+    }
+
+    const sourceDir = path.join(agentsDir, entry.name);
+    const metadata = sourceMetadata(sourceDir);
+    if (!metadata || metadata.includeInMain === false || metadata.type !== "custom-agents") {
+      continue;
+    }
+
+    const agentsFile = metadata.processing?.agentsFile || "agents.json";
+    const definitionsPath = path.join(sourceDir, agentsFile);
+    if (!existsSync(definitionsPath)) {
+      throw new Error(`${entry.name} custom agent source is missing ${agentsFile}`);
+    }
+
+    const sourceDefinitions = readJson(definitionsPath);
+    if (!Array.isArray(sourceDefinitions)) {
+      throw new Error(`${entry.name}/${agentsFile} must contain an array`);
+    }
+
+    for (const definition of sourceDefinitions) {
+      if (definition?.execution === "feature") {
+        throw new Error(`Custom agent ${definition.id || "<unknown>"} requires a package runtime; move it to packages`);
+      }
+      definitions.push(definition);
+    }
+  }
+
+  const seen = new Set();
+  for (const definition of definitions) {
+    if (!definition?.id) {
+      throw new Error("Custom agent definition is missing id");
+    }
+    if (seen.has(definition.id)) {
+      throw new Error(`Duplicate custom agent id ${definition.id}`);
+    }
+    seen.add(definition.id);
+  }
+
+  if (definitions.length > 0) {
+    writeJson(path.join(nextDir, "agents.json"), definitions);
+  }
+
+  return definitions.length;
 }
 
 function listPackageFiles(packageDir) {
@@ -583,15 +671,19 @@ mkdirSync(workDir, { recursive: true });
 
 extractRef(resolveRef(upstreamBranch), upstreamDir);
 extractRef(resolveRef(agentsBranch), agentsDir);
+extractRef(resolveRef(packagesBranch), packagesDir);
 cpSync(upstreamDir, nextDir, { recursive: true });
 
 copyIfExists(path.join(root, ".github"), path.join(nextDir, ".github"));
 copyIfExists(path.join(root, "CUSTOM-CATALOG.md"), path.join(nextDir, "CUSTOM-CATALOG.md"));
-copyIfExists(path.join(agentsDir, "custom-packages"), path.join(nextDir, "custom-packages"));
-copyIfExists(path.join(agentsDir, "custom-artifacts"), path.join(nextDir, "custom-artifacts"));
-copyIfExists(path.join(agentsDir, "custom-artwork"), path.join(nextDir, "custom-artwork"));
+copyIfExists(path.join(packagesDir, "custom-packages"), path.join(nextDir, "custom-packages"));
+copyIfExists(path.join(packagesDir, "custom-artifacts"), path.join(nextDir, "custom-artifacts"));
+copyIfExists(path.join(packagesDir, "custom-artwork"), path.join(nextDir, "custom-artwork"));
+copyIfExists(path.join(packagesDir, "catalog-overrides"), path.join(nextDir, "catalog-overrides"));
 copyIfExists(path.join(agentsDir, "catalog-overrides"), path.join(nextDir, "catalog-overrides"));
-buildExtensionSourcePackages();
+
+buildPackageSourceFolders();
+const customAgentCount = buildCustomAgentsFile();
 
 copyIfExists(
   path.join(nextDir, "custom-artwork", "agent-covers"),
@@ -607,3 +699,4 @@ replaceWorkingTree();
 rmSync(workDir, { recursive: true, force: true });
 
 console.log(`Merged ${customEntries.length} custom package(s) into main catalog output.`);
+console.log(`Generated ${customAgentCount} custom agent definition(s).`);
