@@ -1,39 +1,26 @@
-import { PRESENCE_PACKAGE_KEY, PRESENCE_SCHEMA_VERSION } from "./constants.js";
-
-export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds, now = new Date().toISOString() }) {
+export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds }) {
   const normalizedExtra = normalizeObject(extra);
   const roster = uniqueStrings(rosterIds);
   const rosterSet = new Set(roster);
   const present = uniqueStrings(presentCharacterIds).filter((id) => rosterSet.has(id));
   const presentSet = new Set(present);
-  const previousPresence = normalizeObject(normalizedExtra[PRESENCE_PACKAGE_KEY]);
-  const previousOwned = new Set(uniqueStrings(previousPresence.ownedHiddenFromAICharacterIds));
   const currentHidden = uniqueStrings(normalizedExtra.hiddenFromAICharacterIds);
-  const manualHidden = currentHidden.filter((id) => !previousOwned.has(id));
-  const ownedHidden = roster.filter((id) => !presentSet.has(id));
-  const hiddenFromAICharacterIds = uniqueStrings([...manualHidden, ...ownedHidden]);
+  const nonRosterHidden = currentHidden.filter((id) => !rosterSet.has(id));
+  const hiddenRosterIds = roster.filter((id) => !presentSet.has(id));
+  const hiddenFromAICharacterIds = uniqueStrings([...nonRosterHidden, ...hiddenRosterIds]);
 
   return {
     hiddenFromAI: normalizedExtra.hiddenFromAI === true ? true : false,
     hiddenFromAICharacterIds,
-    [PRESENCE_PACKAGE_KEY]: {
-      version: PRESENCE_SCHEMA_VERSION,
-      presentCharacterIds: present,
-      ownedHiddenFromAICharacterIds: ownedHidden,
-      updatedAt: now,
-    },
   };
 }
 
 export function readPresenceState(message, rosterIds) {
   const extra = normalizeObject(message?.extra);
-  const presence = normalizeObject(extra[PRESENCE_PACKAGE_KEY]);
   const roster = uniqueStrings(rosterIds);
   const rosterSet = new Set(roster);
-  if (Array.isArray(presence.presentCharacterIds)) {
-    return new Set(uniqueStrings(presence.presentCharacterIds).filter((id) => rosterSet.has(id)));
-  }
-  return new Set(roster);
+  const hidden = new Set(uniqueStrings(extra.hiddenFromAICharacterIds).filter((id) => rosterSet.has(id)));
+  return new Set(roster.filter((id) => !hidden.has(id)));
 }
 
 export function normalizeObject(value) {

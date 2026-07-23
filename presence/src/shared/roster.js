@@ -1,6 +1,6 @@
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "./presence-state.js";
 
-export function planRosterBackfill({ previousRosterIds, currentRosterIds, messages, now = new Date().toISOString() }) {
+export function planRosterBackfill({ previousRosterIds, currentRosterIds, messages }) {
   const previous = uniqueStrings(previousRosterIds);
   const current = uniqueStrings(currentRosterIds);
   if (!previous.length) return { addedCharacterIds: [], messagePatches: [] };
@@ -19,7 +19,6 @@ export function planRosterBackfill({ previousRosterIds, currentRosterIds, messag
       extra,
       rosterIds: current,
       presentCharacterIds: [...present],
-      now,
     });
     messagePatches.push({ messageId: message.id, patch });
   }

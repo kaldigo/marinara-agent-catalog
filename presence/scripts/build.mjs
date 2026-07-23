@@ -54,7 +54,7 @@ function agentDefinitions() {
       id: "presence",
       name: "Presence",
       description: "Feature runtime for per-message character presence and scoped chat summaries.",
-      category: "misc",
+      category: "tracker",
       phase: "pre_generation",
       execution: "feature",
       enabledByDefault: false,

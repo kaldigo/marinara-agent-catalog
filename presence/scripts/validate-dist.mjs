@@ -14,17 +14,11 @@ assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps Presence before
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint declared");
-assert(agents[0]?.category === "misc", "Presence is a misc capability, not a tracker agent");
+assert(agents[0]?.category === "tracker", "Presence is exposed as a tracker agent");
 assert(agents[0]?.phase === "pre_generation", "Presence declares the required packaged agent phase");
+assert(agents[0]?.execution === "feature", "Presence remains a feature runtime agent");
 assert(!fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("import "), "client entrypoint is self-contained");
-assert(
-  fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("reconcileCurrentChatSummaries"),
-  "client exposes the summary reconcile console helper",
-);
-assert(
-  fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("reconcileCurrentChat: async"),
-  "client exposes the roster reconcile console helper",
-);
+assert(fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("/ensure"), "client ensures chats on load");
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);

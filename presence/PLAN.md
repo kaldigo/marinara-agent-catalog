@@ -2,27 +2,25 @@
 
 ## 1. Package Source
 
-- Keep `packages/presence-extension` as migration/reference source.
+- Keep `packages/presence-extension` as legacy reference source.
 - Build `packages/presence` as the clean package-era implementation.
-- Keep `includeInMain: false` until it intentionally replaces the published
-  `presence-extension` package that currently owns the same install id.
+- Expose Presence as a tracker-category feature agent.
+- Run only for chats where the Presence tracker is enabled in active agents.
 
 ## 2. Data Model
 
-Store Presence-owned metadata under `message.extra.marinaraPresencePackage`.
+Use Marinara's native per-character Hide From AI field as the message presence
+state.
 
 ```json
 {
-  "version": 1,
-  "presentCharacterIds": ["char-a"],
-  "ownedHiddenFromAICharacterIds": ["char-b"],
-  "updatedAt": "2026-07-23T00:00:00.000Z"
+  "hiddenFromAICharacterIds": ["char-b"]
 }
 ```
 
-`hiddenFromAICharacterIds` remains Marinara's source of truth for prompt scoping.
-Presence removes only IDs it previously owned, then adds the IDs absent from
-`presentCharacterIds`.
+Characters listed in `hiddenFromAICharacterIds` are absent from that message.
+Characters in the current roster that are not listed are present. Presence does
+not stamp per-message shadow metadata.
 
 ## 3. Message Save
 
@@ -45,8 +43,8 @@ When a chat gains characters:
 
 ## 5. Summaries
 
-- Detect summary creation, generation, edit, toggle, and delete via bridge diffing
-  plus route/SSE hints where available.
+- Detect summary creation, generation, edit, and delete via bridge diffing plus
+  route/generation-completion hints where available.
 - Mirror summaries into a Presence-owned lorebook keyed by summary entry ID.
 - Store mirror enabled preferences per chat by summary ID.
 - Disable native summary entries only after a successful mirror rebuild.
@@ -58,15 +56,7 @@ When a chat gains characters:
 - Hijack `/hide <character> <range>` and `/unhide <character> <range>` only when
   the first argument is not a native message range.
 
-## 7. Migration
-
-- Detect `message.extra.marinaraPresence` from the extension.
-- Map old character names to current roster IDs where needed.
-- Convert into `marinaraPresencePackage`.
-- Preserve existing global and manual hidden state.
-- Write a migration marker so the same chat is not migrated twice.
-
-## 8. Upstream Replacement Points
+## 7. Upstream Replacement Points
 
 Tracked in `packages/_mari-bridge/UPSTREAM-GAPS.md`:
 

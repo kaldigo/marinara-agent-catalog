@@ -1,7 +1,6 @@
 import { createPresenceRoutes, registerPresenceMessageCreateHook } from "./routes.js";
 
 export { buildSummaryAudience, buildSummaryLorebookEntries, buildSummaryLorebookName } from "./summary-mirror.js";
-export { planExtensionMigration } from "./migration.js";
 export { createPresenceRoutes, registerPresenceMessageCreateHook } from "./routes.js";
 
 export async function activate(context) {
