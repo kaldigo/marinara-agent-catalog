@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-24T19:50:40.664Z",
+  "generatedAt": "2026-07-24T21:31:31.825Z",
   "packages": [
     {
       "manifest": {
@@ -120,7 +120,7 @@
         "schemaVersion": 1,
         "id": "conversation-calls",
         "name": "Calls",
-        "version": "1.0.5",
+        "version": "1.0.6",
         "description": "Adds live audio and video calls with Conversation characters. Add as both a Command and an Agent in Chat Settings → Agents → Commands/Calls for Conversation mode.",
         "engine": {
           "min": "2.3.0",
@@ -150,13 +150,13 @@
           },
           {
             "path": "server.mjs",
-            "sha256": "8bdd369450883f33f9b9fd0ba014dfb5c5cbade6da7a8650bd98ca91c4a1dbd8",
-            "bytes": 2375896
+            "sha256": "942dc38a1e6c3778e51dfcb1626831fdf3bf886cbdc99a8ab6bcc2a6db903f00",
+            "bytes": 2380552
           },
           {
             "path": "client.js",
-            "sha256": "4f1342ccb66d62b35228426cdf429d69d67d0422347e7136afcffa4b5a0df5e4",
-            "bytes": 902321
+            "sha256": "5bb6f28a85542eb3cdb25f8829de6699ff0a170cec939d965637fec1a8bbf039",
+            "bytes": 901815
           }
         ],
         "permissions": [
@@ -173,9 +173,9 @@
       "category": "misc",
       "iconUrl": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artwork/agent-covers/conversation-calls.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/conversation-calls-1.0.5.zip",
-        "sha256": "fc4889c7a712ae1b50fdd33b3ecfeda71f7e1b3b994225f2b8d7fc9251586f14",
-        "bytes": 914400
+        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/conversation-calls-1.0.6.zip",
+        "sha256": "58c03b571bd1b0c6510b760053649b4542706df0c7f8c1fcc21807f2cb8d6080",
+        "bytes": 915466
       },
       "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Agents#conversation-calls"
     },
@@ -1580,7 +1580,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.15.zip",
-        "sha256": "2d72d82ca3fe5cc2a950e90fc1e00ff21b11716b961d3ab43dd5cc9476f16d63",
+        "sha256": "0b75d447907464ca5fd8eb726dce1863e440a6491f1069da65498d55ca0ce090",
         "bytes": 49900
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1627,7 +1627,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.3.zip",
-        "sha256": "9b1dfca69ce7715ef36b27fbc3ec9261d34ac94f14746fa0fa118653eac487ef",
+        "sha256": "954bb1b1d518d4b0d093a3ebeef5b07d29c065b84c7396aef168da5e95349bc5",
         "bytes": 20837
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -1797,7 +1797,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.7.zip",
-        "sha256": "701a2aa455348b5a494f3f6b9d301969ba30ac38e82d3911ead1d579f4300731",
+        "sha256": "eb586d7aae9ec5eeb7f31d1d58065c293c4eb1a01c2a942a33302cd1d92f8ff0",
         "bytes": 44215
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -1840,7 +1840,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.4.zip",
-        "sha256": "433c8867ada8851e68781c69e90827ff7e63b84d9fe831337e84e1d674cef9a9",
+        "sha256": "eba926a6d1d510388ff7fff26f068538968438c9c1017ce493a25cb2c1432156",
         "bytes": 14472
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
