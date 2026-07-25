@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-25T21:11:29.917Z",
+  "generatedAt": "2026-07-25T22:13:15.062Z",
   "packages": [
     {
       "manifest": {
@@ -637,7 +637,7 @@
         },
         "id": "hierarchical-maps",
         "name": "Hierarchical Maps",
-        "version": "1.1.9",
+        "version": "1.1.10",
         "description": "Adds persistent hierarchical locations, spatial context, map authoring, and movement to Roleplay and Game. Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay and Game modes.",
         "engine": {
           "min": "2.3.3",
@@ -673,13 +673,13 @@
           },
           {
             "path": "server.mjs",
-            "sha256": "07bd96b57867e94db432145a9ebd524543443979fe86622b26a6a42c8f48f6b2",
-            "bytes": 318840
+            "sha256": "6dc8cf91e91e8704eacea0c7e185efb14a857ba474cd42e6c9b992887268fff5",
+            "bytes": 319983
           },
           {
             "path": "client.js",
-            "sha256": "5e402ed8eb0065e8e5a41f6cc9ea61a6c1d49fc60d31be583d33a0c798f06b5a",
-            "bytes": 797981
+            "sha256": "10b54430bdd732b5b3bf05dc7dc802d8e847e17cbe1948c1578d7d1d0559804d",
+            "bytes": 804356
           }
         ],
         "permissions": [
@@ -697,9 +697,9 @@
       "category": "tracker",
       "iconUrl": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artwork/agent-covers/hierarchical-maps.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/hierarchical-maps-1.1.9.zip",
-        "sha256": "cc1c073d669497fb68358f9d9db2a5a3d2596c26aa62d843149ba7d226993449",
-        "bytes": 298648
+        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/hierarchical-maps-1.1.10.zip",
+        "sha256": "b57b62a91b5ba487f006ca33aa9673ecefdf6aaa8f83d803ae6676216fb97dc9",
+        "bytes": 300708
       },
       "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Agents#hierarchical-maps"
     },
@@ -1580,7 +1580,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.15.zip",
-        "sha256": "9ab803fe9aff3489101c134fa53bdec3bdecc12cdf3557d79be48afaaeef5d67",
+        "sha256": "eb7a9dd8e3dddd6ad18cf91d6eb76d52a23aee4ee2fd5b981df4fd7ce259b876",
         "bytes": 49900
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1627,7 +1627,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.3.zip",
-        "sha256": "54cb7dfde5478b537be9a173dad6c534eb327930779233972ce94d87838f8e95",
+        "sha256": "cebc04cac6e04f90800e5238b0e634f9b6db2a975fe865f6924bed7dda3f606d",
         "bytes": 20837
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -1797,7 +1797,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.7.zip",
-        "sha256": "5816df64b52391ea03144d451c620d64a0517536b67308eb35eb394441ce5b0f",
+        "sha256": "ec67fd7cbb0dbf7aff2f407bb1df51d9013e0105aef1a373955798bca74539d6",
         "bytes": 44215
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -1840,7 +1840,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.4.zip",
-        "sha256": "57b7c52147ba3c3a745c88b894271ef69042b311aed88eec3b7f4803fcd414bc",
+        "sha256": "2951b4ddb35aedb84b11c6fb4dfa3849bf12a1f552826e4633098c7417cd50a7",
         "bytes": 14472
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
