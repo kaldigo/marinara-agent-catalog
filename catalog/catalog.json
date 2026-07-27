@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-27T15:18:09.770Z",
+  "generatedAt": "2026-07-27T17:58:17.530Z",
   "packages": [
     {
       "manifest": {
@@ -1580,7 +1580,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.15.zip",
-        "sha256": "292f8813488e65fe25220562dcddf5a2c79e55a6ea7447d8317faa2acb6828a9",
+        "sha256": "c0dc3df6f443efb698dd082dd576f5849100af10ac236d3d13d8be2d1bc0bc6b",
         "bytes": 49900
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1627,7 +1627,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.3.zip",
-        "sha256": "4dbaf4011f2dae6bae0258a3a0d84f250d4c4583860407cba9151f4a1f75a35c",
+        "sha256": "7b5703c2393ea2575ccb2d75e02060717d42441a62d9c1d61335ff633f836a96",
         "bytes": 20837
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -1797,7 +1797,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.7.zip",
-        "sha256": "d9cf847fe6a025db634ef9eddfe3c906d862eab4b28a92922762baf589df6666",
+        "sha256": "1cf2b691960dcaed38a70fe2df9f1572f7f5c332609a0b8cdb1ef507eb2e9c73",
         "bytes": 44215
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -1840,7 +1840,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.4.zip",
-        "sha256": "329db4c55188970eafc0c1e94b73aeeb36fe53ec6a6d063da234b13135caf510",
+        "sha256": "e9492c9c3e3900d338ffc5e46790b53d76dbd9e5ff4b59c72770da55b8c34bfa",
         "bytes": 14472
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
