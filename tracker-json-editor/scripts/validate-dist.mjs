@@ -12,13 +12,14 @@ const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const client = fs.readFileSync(clientPath, "utf8");
 
 assert(manifest.id === "tracker-json-editor", "manifest id is tracker-json-editor");
-assert(manifest.version === "1.0.1", "manifest version is 1.0.1");
+assert(manifest.version === "1.0.2", "manifest version is 1.0.2");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
 assert(!manifest.entrypoints?.server, "server entrypoint is not declared");
 assert(manifest.permissions.includes("chat-read"), "manifest requests chat-read");
 assert(manifest.permissions.includes("chat-write"), "manifest requests chat-write");
 assert(manifest.permissions.includes("ui"), "manifest requests ui");
-assert(client.includes("TRACKER_JSON_EDITOR_VERSION = \"1.0.1\""), "client version is stamped");
+assert(client.includes("TRACKER_JSON_EDITOR_VERSION = \"1.0.2\""), "client version is stamped");
+assert(client.includes("marinara-capability-tracker-json-editor"), "client registers package element");
 assert(client.includes("mergeSectionPatchForSave"), "client merges partial playerStats patches before saving");
 assert(client.includes("activeQuests: playerStats.activeQuests"), "client exposes quest-only playerStats patches");
 assert(client.includes("/api/chats/"), "client uses chat game-state endpoints");

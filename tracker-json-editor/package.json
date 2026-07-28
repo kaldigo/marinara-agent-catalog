@@ -1,6 +1,6 @@
 {
   "name": "marinara-tracker-json-editor-package",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "Per-section tracker JSON editor package for Marinara.",
