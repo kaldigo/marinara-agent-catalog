@@ -233,9 +233,12 @@
     state.saveButton.disabled = true;
     setStatus("Saving tracker JSON...", "muted");
     try {
-      await patchGameState(chatId, patch);
+      const savePatch = await mergeSectionPatchForSave(chatId, section, patch);
+      await patchGameState(chatId, savePatch);
       setStatus("Saved. Refreshing visible tracker state...", "ok");
-      window.dispatchEvent(new CustomEvent("marinara:tracker-json-editor-saved", { detail: { chatId, section, patch } }));
+      window.dispatchEvent(
+        new CustomEvent("marinara:tracker-json-editor-saved", { detail: { chatId, section, patch: savePatch } }),
+      );
       window.setTimeout(() => {
         closeModal();
         window.location.reload();
@@ -262,7 +265,6 @@
         return {
           personaStats: Array.isArray(gameState?.personaStats) ? gameState.personaStats : [],
           playerStats: {
-            ...playerStats,
             status: playerStats.status,
             inventory: playerStats.inventory,
           },
@@ -274,14 +276,12 @@
       case "quests":
         return {
           playerStats: {
-            ...playerStats,
             activeQuests: playerStats.activeQuests,
           },
         };
       case "custom":
         return {
           playerStats: {
-            ...playerStats,
             customTrackerFields: playerStats.customTrackerFields,
           },
         };
@@ -318,7 +318,14 @@
         patch.personaStats = parsed.personaStats;
       }
       if (Object.prototype.hasOwnProperty.call(parsed, "playerStats")) {
-        patch.playerStats = normalizePlayerStats(parsed.playerStats);
+        const playerStatsPatch = normalizePlayerStatsPatch(parsed.playerStats, ["status", "inventory"]);
+        if (Object.prototype.hasOwnProperty.call(playerStatsPatch, "status") && typeof playerStatsPatch.status !== "string") {
+          throw new Error("playerStats.status must be a string.");
+        }
+        if (Object.prototype.hasOwnProperty.call(playerStatsPatch, "inventory")) {
+          assertArray(playerStatsPatch.inventory, "playerStats.inventory");
+        }
+        patch.playerStats = playerStatsPatch;
       }
       if (!Object.keys(patch).length) throw new Error("Persona patch must include personaStats or playerStats.");
       return patch;
@@ -329,7 +336,7 @@
         throw new Error("Quest patch must include playerStats.");
       }
       assertArray(parsed.playerStats.activeQuests, "playerStats.activeQuests");
-      return { playerStats: normalizePlayerStats(parsed.playerStats) };
+      return { playerStats: { activeQuests: parsed.playerStats.activeQuests } };
     }
 
     if (section === "custom") {
@@ -337,10 +344,43 @@
         throw new Error("Custom tracker patch must include playerStats.");
       }
       assertArray(parsed.playerStats.customTrackerFields, "playerStats.customTrackerFields");
-      return { playerStats: normalizePlayerStats(parsed.playerStats) };
+      return { playerStats: { customTrackerFields: parsed.playerStats.customTrackerFields } };
     }
 
     throw new Error(`Unsupported tracker section: ${section}`);
+  }
+
+  async function mergeSectionPatchForSave(chatId, section, patch) {
+    if (!patch.playerStats) return patch;
+
+    const latest = await fetchGameState(chatId);
+    const latestPlayerStats = normalizePlayerStats(latest?.playerStats);
+    const playerStats = {
+      ...latestPlayerStats,
+      ...patch.playerStats,
+    };
+    const savePatch = { ...patch, playerStats };
+
+    if (section === "persona") {
+      if (!Object.prototype.hasOwnProperty.call(patch.playerStats, "status")) {
+        savePatch.playerStats.status = latestPlayerStats.status;
+      }
+      if (!Object.prototype.hasOwnProperty.call(patch.playerStats, "inventory")) {
+        savePatch.playerStats.inventory = latestPlayerStats.inventory;
+      }
+    }
+
+    return savePatch;
+  }
+
+  function normalizePlayerStatsPatch(value, allowedKeys) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const source = value;
+    const patch = {};
+    for (const key of allowedKeys) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) patch[key] = source[key];
+    }
+    return patch;
   }
 
   function normalizePlayerStats(value) {
