@@ -2,7 +2,8 @@
   "use strict";
 
   const PACKAGE_ID = "tracker-json-editor";
-  const TRACKER_JSON_EDITOR_VERSION = "1.0.1";
+  const CAPABILITY_ELEMENT_TAG = "marinara-capability-tracker-json-editor";
+  const TRACKER_JSON_EDITOR_VERSION = "1.0.2";
   const BUTTON_ATTR = "data-tracker-json-editor-button";
   const RERUN_MARK_ATTR = "data-tracker-json-editor-rerun";
   const STYLE_ID = "tracker-json-editor-styles";
@@ -37,7 +38,21 @@
     currentChatId: null,
   };
 
+  defineCapabilityElement();
   start();
+
+  function defineCapabilityElement() {
+    if (customElements.get(CAPABILITY_ELEMENT_TAG)) return;
+
+    class TrackerJsonEditorCapabilityElement extends HTMLElement {
+      connectedCallback() {
+        this.hidden = true;
+        this.setAttribute("aria-hidden", "true");
+      }
+    }
+
+    customElements.define(CAPABILITY_ELEMENT_TAG, TrackerJsonEditorCapabilityElement);
+  }
 
   function start() {
     if (window.__trackerJsonEditorStarted) return;

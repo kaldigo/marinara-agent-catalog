@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "tracker-json-editor",
   "name": "Tracker JSON Editor",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Adds per-section tracker JSON export/import buttons beside tracker rerun controls.",
   "engine": {
     "min": "2.3.3",
@@ -17,8 +17,8 @@
   "files": [
     {
       "path": "client.js",
-      "sha256": "b7d320cd5f54e82c00c76c6d59ce1007be0b0031f30d4c00333a850fbd13f6e6",
-      "bytes": 21548
+      "sha256": "f5c51ea96c622c7b59535466f23ebf713571eb9e51a14c54bad3c658c0943ae9",
+      "bytes": 22033
     }
   ],
   "permissions": [
