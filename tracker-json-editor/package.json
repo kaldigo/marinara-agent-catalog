@@ -1,0 +1,11 @@
+{
+  "name": "marinara-tracker-json-editor-package",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Per-section tracker JSON editor package for Marinara.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run build && node --check dist/package/client.js && node scripts/validate-dist.mjs"
+  }
+}

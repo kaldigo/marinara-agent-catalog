@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package"
+  },
+  "package": {
+    "id": "tracker-json-editor",
+    "name": "Tracker JSON Editor",
+    "description": "Adds per-section tracker JSON export/import buttons beside tracker rerun controls.",
+    "engine": {
+      "min": "2.3.3",
+      "maxExclusive": "3.0.0"
+    },
+    "kind": ["agent"],
+    "permissions": ["chat-read", "chat-write", "ui"],
+    "restartRequired": false
+  }
+}
