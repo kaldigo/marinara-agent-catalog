@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-02T04:43:01.614Z",
+  "generatedAt": "2026-08-02T07:41:50.887Z",
   "packages": [
     {
       "manifest": {
@@ -805,7 +805,7 @@
         },
         "id": "long-term-memory",
         "name": "Long-Term Memory",
-        "version": "1.0.7",
+        "version": "1.0.8",
         "description": "Extracts durable memories from chat summaries, character records, and lorebooks, then recalls relevant context from a package-owned vault. Add the Agent in Chat Settings → Agents → Misc Agents for Conversation, Roleplay, and Game modes.",
         "engine": {
           "min": "2.3.5",
@@ -842,8 +842,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "062ebbdf69bda1f0a5491267dcd930ff2c539728b6cc2a90c5c6eb72757b8ee5",
-            "bytes": 547764
+            "sha256": "ceb8992a161068fadcb2349fac95ece88f4c5b3e83579e83c5ba17d2ffe0a078",
+            "bytes": 561428
           }
         ],
         "permissions": [
@@ -859,9 +859,9 @@
       "category": "misc",
       "iconUrl": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artwork/agent-covers/long-term-memory.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/long-term-memory-1.0.7.zip",
-        "sha256": "638ffe639951a3a35303b7b60214d289701756f2c7fdc4dd9fa5175176b335fe",
-        "bytes": 247960
+        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/long-term-memory-1.0.8.zip",
+        "sha256": "790f14191046a1afc6bf3b8999f202355719c4c49543c7630354666407e0259a",
+        "bytes": 251772
       },
       "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Agents#long-term-memory"
     },
@@ -1695,7 +1695,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.15.zip",
-        "sha256": "f3958933d6c80419a7b27963e5bc93e341b5763a5d4e44bbe98608b7c91bf8d0",
+        "sha256": "84210bcb4e1747e8250cd15925c63f347aefc73f20b68390563ce4859ea84d35",
         "bytes": 49900
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1742,7 +1742,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.3.zip",
-        "sha256": "eac8d1ef29fa2eaff57df23c49ff602cdb205a0cc62cbb4cc319d4b393d28976",
+        "sha256": "88ed9b4bd60dc7524e4fae42a9b859c604abde6d5e4c7637597141d34f644fe2",
         "bytes": 20837
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -1912,7 +1912,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.7.zip",
-        "sha256": "97ef5a4906622df81b61a40a936365224e8762c755568807fd545a7fcc115050",
+        "sha256": "8cd329a16dcd6c150405dce0b1ac6bcd55be997be5c7c402a8ae9eff23a5f056",
         "bytes": 44215
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -1955,7 +1955,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.4.zip",
-        "sha256": "d386e0f8babb937b03eb50bebe8e9dc9a47ae783af3ccd3c5912169ad003afd3",
+        "sha256": "a9020279f1ea54afcd4b248070834c9fdfac3c7914a0de0c6aa771be4851742f",
         "bytes": 14472
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -1994,7 +1994,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/tracker-json-editor-1.0.2.zip",
-        "sha256": "a166ed7e85a0191d3e95f79e3d2bb8af1003fe242646b432baa400fcbe44b8c3",
+        "sha256": "475809dd16f961a7271466e275187335a6a06b656399607d72877dcd8ad14ebb",
         "bytes": 6002
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#tracker-json-editor"
