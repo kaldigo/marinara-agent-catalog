@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "id": "world-map-background",
+  "name": "World Map Background",
+  "version": "1.0.0",
+  "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
+  "engine": {
+    "min": "2.3.5",
+    "maxExclusive": "4.0.0"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "client": "client.js",
+    "agents": "agents.json"
+  },
+  "contributions": {
+    "slots": [
+      "chat-runtime"
+    ]
+  },
+  "files": [
+    {
+      "path": "agents.json",
+      "sha256": "d31a7d2d4c516088d251c6ce8831400334aae14e1c0f2113cc72a8ba1328c4d2",
+      "bytes": 465
+    },
+    {
+      "path": "bridge/commands.js",
+      "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
+      "bytes": 9153
+    },
+    {
+      "path": "bridge/composer-actions.js",
+      "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
+      "bytes": 3635
+    },
+    {
+      "path": "bridge/composer-dom.js",
+      "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
+      "bytes": 6719
+    },
+    {
+      "path": "bridge/fetch-intercept.js",
+      "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
+      "bytes": 5720
+    },
+    {
+      "path": "bridge/generation-lifecycle.js",
+      "sha256": "3671ed0fc05d7d1a6b50eb855bbf21238e5836e203f13b465e655d566a22e58e",
+      "bytes": 13791
+    },
+    {
+      "path": "bridge/generation-stream.js",
+      "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
+      "bytes": 2807
+    },
+    {
+      "path": "bridge/host-routes.js",
+      "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
+      "bytes": 1847
+    },
+    {
+      "path": "bridge/index.js",
+      "sha256": "c6d5e1b8daca55e76d0073dd5e35e5e34e8f1945fdb00b8858fb354adf1aae92",
+      "bytes": 431
+    },
+    {
+      "path": "bridge/prompt-contribution.js",
+      "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
+      "bytes": 6771
+    },
+    {
+      "path": "bridge/ranges.js",
+      "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
+      "bytes": 2012
+    },
+    {
+      "path": "bridge/runtime.js",
+      "sha256": "4922b0bd44a4fe0a2c0b38a82dabb34bc07512a3572e4ae7dd21063f715e213c",
+      "bytes": 4810
+    },
+    {
+      "path": "bridge/summary-tracking.js",
+      "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
+      "bytes": 2620
+    },
+    {
+      "path": "bridge/ui-slots.js",
+      "sha256": "d2c9070044f1b1126a753d51e2bab3e1d937d0934e8fb706edcbde3e364abf0d",
+      "bytes": 12472
+    },
+    {
+      "path": "client.js",
+      "sha256": "e7324ed01cfa22b2699808520bc6dd4df2266d872b653be2c658c4279eb0ac35",
+      "bytes": 23310
+    },
+    {
+      "path": "src/client/runtime.js",
+      "sha256": "d4a11cef8b647674c44a6a6a3c2e6f0b20b898e025670b314267fe3825e772a5",
+      "bytes": 10685
+    }
+  ],
+  "permissions": [
+    "agent-runtime",
+    "chat-read",
+    "chat-write",
+    "ui"
+  ],
+  "restartRequired": true
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "world-map-background",
+    "name": "World Map Background",
+    "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
+    "category": "tracker",
+    "phase": "pre_generation",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "runtimeDisabled": true,
+    "modeAllowlist": [
+      "roleplay"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]
