@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package",
+    "sharedRoots": ["_mari-bridge"]
+  },
+  "package": {
+    "id": "world-map-background",
+    "name": "World Map Background",
+    "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
+    "kind": ["agent"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "ui"],
+    "restartRequired": true
+  }
+}
