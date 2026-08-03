@@ -19,6 +19,7 @@ assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-
 assert(buildSource.includes("runtimeDisabled: true"), "feature marker is runtime-disabled");
 assert(buildSource.includes('modeAllowlist: ["roleplay"]'), "agent is Roleplay-only");
 assert(buildSource.includes('"chat-write"'), "manifest declares chat-write permission");
+assert(buildSource.includes("restartRequired: false"), "client-only package installs without restart gating");
 
 function assert(condition, message) {
   if (!condition) throw new Error(`Check failed: ${message}`);

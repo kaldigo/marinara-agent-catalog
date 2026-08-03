@@ -14,6 +14,6 @@
     "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
     "kind": ["agent"],
     "permissions": ["agent-runtime", "chat-read", "chat-write", "ui"],
-    "restartRequired": true
+    "restartRequired": false
   }
 }

@@ -13,6 +13,7 @@ assert(manifest.entrypoints?.agents === "agents.json", "manifest has agent entry
 assert(!manifest.entrypoints?.server, "manifest has no server entrypoint");
 assert(manifest.contributions?.slots?.includes("chat-runtime"), "manifest declares chat-runtime slot");
 assert(manifest.permissions?.includes("chat-write"), "manifest includes chat-write permission");
+assert(manifest.restartRequired === false, "client-only package is ready immediately after install");
 
 const agents = JSON.parse(await fs.readFile(path.join(packageRoot, "agents.json"), "utf8"));
 assert(agents[0]?.id === "world-map-background", "agent id matches package");

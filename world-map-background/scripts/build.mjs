@@ -46,7 +46,7 @@ function manifest() {
     },
     files: [],
     permissions: ["agent-runtime", "chat-read", "chat-write", "ui"],
-    restartRequired: true
+    restartRequired: false
   };
 }
 
