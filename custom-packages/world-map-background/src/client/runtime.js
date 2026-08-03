@@ -7,7 +7,7 @@ import { injectStyle, watchActiveChatId } from "../../bridge/composer-dom.js";
   const STYLE_ID = "marinara-world-map-background-style";
   const RUNTIME_KEY = "__marinaraWorldMapBackgroundRuntime";
   const OWNER_STORAGE_KEY = "marinara-world-map-background-owner";
-  const RUNTIME_VERSION = "1.0.0";
+  const RUNTIME_VERSION = "1.0.1";
   const GLOBAL_GALLERY_PREFIX = "global-gallery:";
   const SYNC_INTERVAL_MS = 2500;
 

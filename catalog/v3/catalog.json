@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-03T05:43:29.821Z",
+  "generatedAt": "2026-08-03T05:49:40.473Z",
   "packages": [
     {
       "manifest": {
@@ -1560,7 +1560,7 @@
         "schemaVersion": 1,
         "id": "world-map-background",
         "name": "World Map Background",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
         "engine": {
           "min": "2.3.5",
@@ -1651,12 +1651,12 @@
           },
           {
             "path": "client.js",
-            "sha256": "e7324ed01cfa22b2699808520bc6dd4df2266d872b653be2c658c4279eb0ac35",
+            "sha256": "326a665061357d7da707281d25f3334e0d1175a61e2dae17c921e1f7809d3994",
             "bytes": 23310
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "d4a11cef8b647674c44a6a6a3c2e6f0b20b898e025670b314267fe3825e772a5",
+            "sha256": "f2f8047215ca151d28a1e0a8449a7b0cf06db32dab885a81a131afe8363ef83f",
             "bytes": 10685
           }
         ],
@@ -1666,13 +1666,13 @@
           "chat-write",
           "ui"
         ],
-        "restartRequired": true
+        "restartRequired": false
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.0.zip",
-        "sha256": "32c922651474cd953ce1a6f66a69da7dcf8d4ff85a156f5f684a22bb6199e3fa",
-        "bytes": 34657
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.1.zip",
+        "sha256": "004bda9ca101233ffeceeb4b36d47fd56d16fabcdc1804c43427c04a551e0361",
+        "bytes": 34662
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"
     }
