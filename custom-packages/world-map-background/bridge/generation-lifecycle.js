@@ -44,6 +44,10 @@ export function declarePackageGeneration(input = {}) {
   state.active.set(entry.key, entry);
   let lock = null;
   if (entry.lockComposer) {
+    if (isNativeMainGenerationActive(entry.chatId)) {
+      state.active.delete(entry.key);
+      throw new Error("The native chat generation is already running.");
+    }
     lock = createComposerGenerationLock({
       packageId: entry.packageId,
       chatId: entry.chatId,
@@ -266,6 +270,32 @@ function setNativeMainActive(state, active, reason) {
 
 function detectNativeMainGenerationActive() {
   return collectCandidateButtons().some(isGenerationStopButton);
+}
+
+function isNativeMainGenerationActive(chatId = "") {
+  if (isNativeMainGenerationActiveFromStore(chatId)) return true;
+  return detectNativeMainGenerationActive();
+}
+
+function isNativeMainGenerationActiveFromStore(chatId = "") {
+  const stores = [
+    window.useChatStore?.getState?.(),
+    window.__MARINARA_CHAT_STORE__?.getState?.(),
+    window.__marinara?.chatStore?.getState?.(),
+  ];
+  const targetChatId = typeof chatId === "string" ? chatId.trim() : "";
+  for (const store of stores) {
+    if (!store) continue;
+    const controllers = store.abortControllers;
+    if (controllers instanceof Map) {
+      if (targetChatId ? controllers.has(targetChatId) : controllers.size > 0) return true;
+    }
+    const streamingChatId = typeof store.streamingChatId === "string" ? store.streamingChatId.trim() : "";
+    if (targetChatId && streamingChatId === targetChatId) return true;
+    if (!targetChatId && streamingChatId) return true;
+    if (store.isStreaming === true && (!targetChatId || !streamingChatId || streamingChatId === targetChatId)) return true;
+  }
+  return false;
 }
 
 function collectCandidateButtons() {

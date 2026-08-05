@@ -44,8 +44,8 @@
     },
     {
       "path": "bridge/generation-lifecycle.js",
-      "sha256": "3671ed0fc05d7d1a6b50eb855bbf21238e5836e203f13b465e655d566a22e58e",
-      "bytes": 13791
+      "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
+      "bytes": 15046
     },
     {
       "path": "bridge/generation-stream.js",
@@ -74,7 +74,7 @@
     },
     {
       "path": "bridge/runtime.js",
-      "sha256": "dd22d85dd0d3361fb6a70e61b62ff4976cb161870a5b7cf48eee7d3c3318bb25",
+      "sha256": "4c32e5b70322a27632b811dc165117d826885598dc1ff0231534920c078824fa",
       "bytes": 4810
     },
     {
@@ -89,7 +89,7 @@
     },
     {
       "path": "client.js",
-      "sha256": "8ee1d642c739c73772db22effe2abbb83069d394bef4c0c936864d83a95cfb31",
+      "sha256": "06debe874c88a306270671106fa30040e70482740a38e1d38eb07ffbe897cc25",
       "bytes": 27794
     },
     {
