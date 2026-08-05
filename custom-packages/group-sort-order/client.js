@@ -736,14 +736,58 @@
 
   function findOpenQuickActionsMenu(context) {
     const shell = context.shell || context.root;
-    const menus = Array.from(document.querySelectorAll('[role="menu"][aria-label="Quick replies"]'));
+    const controlled = findControlledQuickActionsMenu(shell);
+    if (controlled) return controlled;
+
+    const menus = Array.from(document.querySelectorAll('[role="menu"]'));
     return (
       menus.find((menu) => {
         if (!(menu instanceof HTMLElement) || !isVisibleElement(menu)) return false;
+        if (!isQuickRepliesMenu(menu)) return false;
+        if (shell?.contains(menu)) return true;
+        const owner = findMenuOwnerTrigger(menu);
+        if (owner && shell?.contains(owner)) return true;
         const triggerRoot = menu.closest(".relative, .hidden, .sm\\:block") || menu.parentElement;
         return Boolean(triggerRoot && shell?.contains(triggerRoot));
       }) || null
     );
+  }
+
+  function findControlledQuickActionsMenu(shell) {
+    if (!shell) return null;
+    const triggers = Array.from(shell.querySelectorAll('button[aria-haspopup="menu"][aria-expanded="true"]'));
+    for (const trigger of triggers) {
+      if (!(trigger instanceof HTMLButtonElement)) continue;
+      if (!isQuickRepliesTrigger(trigger)) continue;
+      const controls = trigger.getAttribute("aria-controls") || "";
+      const menu = controls ? document.getElementById(controls) : null;
+      if (menu instanceof HTMLElement && menu.getAttribute("role") === "menu" && isVisibleElement(menu)) {
+        return menu;
+      }
+    }
+    return null;
+  }
+
+  function findMenuOwnerTrigger(menu) {
+    const id = menu?.id || "";
+    if (!id) return null;
+    return (
+      Array.from(document.querySelectorAll('button[aria-haspopup="menu"][aria-controls]')).find(
+        (trigger) => trigger instanceof HTMLButtonElement && trigger.getAttribute("aria-controls") === id,
+      ) || null
+    );
+  }
+
+  function isQuickRepliesMenu(menu) {
+    const label = `${menu.getAttribute("aria-label") || ""} ${menu.getAttribute("data-mari-menu") || ""}`;
+    if (/\bquick\s+repl(?:y|ies)\b/i.test(label)) return true;
+    const owner = findMenuOwnerTrigger(menu);
+    return owner ? isQuickRepliesTrigger(owner) : false;
+  }
+
+  function isQuickRepliesTrigger(trigger) {
+    const label = `${trigger.getAttribute("aria-label") || ""} ${trigger.getAttribute("title") || ""}`;
+    return /\bquick\s+repl(?:y|ies)\b/i.test(label);
   }
 
   function patchHistoryMethod(method) {
@@ -1132,7 +1176,7 @@
     const ROOT_ID = "marinara-group-sort-order-root";
     const STYLE_ID = "marinara-group-sort-order-style";
     const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-    const RUNTIME_VERSION = "1.0.15";
+    const RUNTIME_VERSION = "1.0.16";
 
     const previousState = window[RUNTIME_KEY];
     if (previousState && previousState.version !== RUNTIME_VERSION) {

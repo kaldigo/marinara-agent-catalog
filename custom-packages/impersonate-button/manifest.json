@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "impersonate-button",
   "name": "Impersonate Button",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Adds package-era composer quick actions for dry-run persona generation helpers.",
   "engine": {
     "min": "2.3.3",
@@ -23,8 +23,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "4c45537feabf7b761261389d35059ec7dc3376c35a000a390f0d15f832c99762",
-      "bytes": 84776
+      "sha256": "f5dd3de56f95e6e2422eba01ac1d430be498112944f5e91d57c3b433618b4458",
+      "bytes": 86570
     }
   ],
   "permissions": [

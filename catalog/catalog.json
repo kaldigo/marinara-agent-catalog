@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-05T03:39:06.980Z",
+  "generatedAt": "2026-08-05T04:16:47.981Z",
   "packages": [
     {
       "manifest": {
@@ -1560,7 +1560,7 @@
         "schemaVersion": 1,
         "id": "group-sort-order",
         "name": "Group Sort Order",
-        "version": "1.0.15",
+        "version": "1.0.16",
         "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
         "engine": {
           "min": "2.3.3",
@@ -1647,13 +1647,13 @@
           },
           {
             "path": "bridge/ui-slots.js",
-            "sha256": "d2c9070044f1b1126a753d51e2bab3e1d937d0934e8fb706edcbde3e364abf0d",
-            "bytes": 12472
+            "sha256": "dda78000a97ed05d7dec0171c4bd72b3e858d3137fa897911952ab3dd84810b4",
+            "bytes": 14188
           },
           {
             "path": "client.js",
-            "sha256": "e4b20367e82bea163f1e6e2d7e4681f71c5f063c26c8ce6c5f84e91d2a19920c",
-            "bytes": 55166
+            "sha256": "cf8b3fc75bf8e4c7018384acc5a0e25d049fce9ff9e447b0e47e124468525244",
+            "bytes": 56960
           },
           {
             "path": "server.mjs",
@@ -1662,7 +1662,7 @@
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "dd02edabc685c7580124326fe705a8ab149ea266f8d0570964b201ce6af16f02",
+            "sha256": "9293dd29763da0b1eb94b3e29e2d3fce24b5d78474c476689a7b109f3e9b5f5f",
             "bytes": 12733
           },
           {
@@ -1694,9 +1694,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.15.zip",
-        "sha256": "b1168393d89a2a58c1706b67f4e688d95190afbebffb6bce63b9fbb7bcbc5ea0",
-        "bytes": 49900
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.16.zip",
+        "sha256": "950a38f65474ef318b596512376a7cef5e28f4901337951c4d791529278454a6",
+        "bytes": 50581
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
     },
@@ -1705,7 +1705,7 @@
         "schemaVersion": 1,
         "id": "impersonate-button",
         "name": "Impersonate Button",
-        "version": "1.0.3",
+        "version": "1.0.4",
         "description": "Adds package-era composer quick actions for dry-run persona generation helpers.",
         "engine": {
           "min": "2.3.3",
@@ -1726,8 +1726,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "4c45537feabf7b761261389d35059ec7dc3376c35a000a390f0d15f832c99762",
-            "bytes": 84776
+            "sha256": "f5dd3de56f95e6e2422eba01ac1d430be498112944f5e91d57c3b433618b4458",
+            "bytes": 86570
           }
         ],
         "permissions": [
@@ -1741,9 +1741,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.3.zip",
-        "sha256": "8770a55eb389b5aa2bf530b3c34634a5c27d2e7dfc11afb3fd968b92ba429dfa",
-        "bytes": 20837
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.4.zip",
+        "sha256": "37c706d2f322930df040e27dc3987ba3c65c70a158208330c9ee5362b49f3e0b",
+        "bytes": 21197
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
     },
@@ -1752,7 +1752,7 @@
         "schemaVersion": 1,
         "id": "presence",
         "name": "Presence",
-        "version": "1.0.7",
+        "version": "1.0.8",
         "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
         "engine": {
           "min": "2.3.3",
@@ -1834,8 +1834,8 @@
           },
           {
             "path": "bridge/ui-slots.js",
-            "sha256": "d2c9070044f1b1126a753d51e2bab3e1d937d0934e8fb706edcbde3e364abf0d",
-            "bytes": 12472
+            "sha256": "dda78000a97ed05d7dec0171c4bd72b3e858d3137fa897911952ab3dd84810b4",
+            "bytes": 14188
           },
           {
             "path": "client.js",
@@ -1911,9 +1911,9 @@
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.7.zip",
-        "sha256": "10d05e88e51df1052254b3ebdaf2539cf3f15167ef685f58e1a565ec51aea4e6",
-        "bytes": 44215
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.0.8.zip",
+        "sha256": "33e18960f062f05d41200d295bdee05080b4e74b93a6a429ccee2b5d8b0d0b83",
+        "bytes": 44559
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     },
@@ -1922,7 +1922,7 @@
         "schemaVersion": 1,
         "id": "pwa-helper",
         "name": "PWA Helper",
-        "version": "1.0.4",
+        "version": "1.0.5",
         "description": "Keeps mobile and tablet screens awake while Marinara generation is running and improves iOS home-screen metadata.",
         "engine": {
           "min": "2.3.3",
@@ -1943,8 +1943,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "8a11bdc30ed0967d2235ea7d17ed237abdb24b380cd679b79121671a207b5e29",
-            "bytes": 56703
+            "sha256": "44a66ca7dfc8daadd85741aa8c04cd9c1ff8b13a217ed1f76887c3f277e7dd41",
+            "bytes": 58497
           }
         ],
         "permissions": [
@@ -1954,9 +1954,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.4.zip",
-        "sha256": "4ffe4c61756545dacc45f7edc6e133121841b789c1aeb8f9ac93dd8f0df8ac0d",
-        "bytes": 14472
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.5.zip",
+        "sha256": "def019e20187aced4da04cfb4034c6a17528125d8e526b4c1f5309bd29eab579",
+        "bytes": 14825
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
     },
@@ -1994,7 +1994,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/tracker-json-editor-1.0.2.zip",
-        "sha256": "bb014ceffde225eaf0ac6f5c15cce3f1d17025a19948b04bc1daefbb92d4571e",
+        "sha256": "6b31fc7902b14286e4933d01bc750c0f51a035c5f0a3e48dc101f2350151b365",
         "bytes": 6002
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#tracker-json-editor"
@@ -2004,7 +2004,7 @@
         "schemaVersion": 1,
         "id": "world-map-background",
         "name": "World Map Background",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
         "engine": {
           "min": "2.3.5",
@@ -2090,17 +2090,17 @@
           },
           {
             "path": "bridge/ui-slots.js",
-            "sha256": "d2c9070044f1b1126a753d51e2bab3e1d937d0934e8fb706edcbde3e364abf0d",
-            "bytes": 12472
+            "sha256": "dda78000a97ed05d7dec0171c4bd72b3e858d3137fa897911952ab3dd84810b4",
+            "bytes": 14188
           },
           {
             "path": "client.js",
-            "sha256": "326a665061357d7da707281d25f3334e0d1175a61e2dae17c921e1f7809d3994",
+            "sha256": "184b6d9ee738def9049bbf6447f7dc8f2c2823152aa87528e983e6c310ef6fab",
             "bytes": 23310
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "f2f8047215ca151d28a1e0a8449a7b0cf06db32dab885a81a131afe8363ef83f",
+            "sha256": "dc7ce58c9b39ac184cad2d40918ac0f3336e11ee8c20401b1f7243079683e814",
             "bytes": 10685
           }
         ],
@@ -2114,9 +2114,9 @@
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.1.zip",
-        "sha256": "7ad1ef82b59138bc291247d09c78fd65cf4f97a3aa1b65a104aaf3813bdd6e31",
-        "bytes": 34662
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.2.zip",
+        "sha256": "292e2bbe3ed4aba5f77c32965cd42bcb575785c0ccda469f3b0664298d1d5f35",
+        "bytes": 35006
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"
     }
