@@ -9,7 +9,7 @@ const manifestPath = path.join(packageRoot, "manifest.json");
 const manifest = readJson(manifestPath);
 
 assert(manifest.id === "impersonate-button", "manifest id must be impersonate-button");
-assert(manifest.version === "1.0.3", "manifest version must be 1.0.3");
+assert(manifest.version === "1.0.4", "manifest version must be 1.0.4");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint must be client.js");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint must be agents.json");
 assert(fs.existsSync(path.join(packageRoot, "client.js")), "missing client.js");
@@ -19,7 +19,7 @@ assert(fs.existsSync(path.join(packageRoot, "README.md")), "missing README.md");
 const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 assert(client.includes("startImpersonateButtonPackage"), "client bundle missing runtime start");
 assert(client.includes("createDomScope"), "client bundle missing _mari-bridge DOM scope");
-assert(client.includes('PACKAGE_VERSION = "1.0.3"'), "client package version must match manifest");
+assert(client.includes('PACKAGE_VERSION = "1.0.4"'), "client package version must match manifest");
 assert(client.includes("MARI_BRIDGE_VERSION"), "client bundles bridge runtime version metadata");
 assert(client.includes("current.installed || current.installing"), "client bundles bridge recursive install guard");
 assert(client.includes("menu.insertBefore(host, menu.firstChild)"), "client inserts bridge quick actions at the top");

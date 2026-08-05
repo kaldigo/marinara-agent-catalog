@@ -64,5 +64,10 @@ assert(
   uiSlotsSource.includes("watchActiveChatId(() => scheduleComposerSlotRender(0)"),
   "active chat changes schedule a composer slot render",
 );
+assert(
+  uiSlotsSource.includes('button[aria-haspopup="menu"][aria-expanded="true"]') &&
+    uiSlotsSource.includes("aria-controls"),
+  "quick action slots can follow portaled quick-reply menus through aria-controls",
+);
 
 console.log("Mari bridge composer DOM checks passed.");
