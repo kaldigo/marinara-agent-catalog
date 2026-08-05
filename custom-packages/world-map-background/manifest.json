@@ -78,7 +78,7 @@
     },
     {
       "path": "bridge/runtime.js",
-      "sha256": "4922b0bd44a4fe0a2c0b38a82dabb34bc07512a3572e4ae7dd21063f715e213c",
+      "sha256": "dd22d85dd0d3361fb6a70e61b62ff4976cb161870a5b7cf48eee7d3c3318bb25",
       "bytes": 4810
     },
     {
@@ -88,12 +88,12 @@
     },
     {
       "path": "bridge/ui-slots.js",
-      "sha256": "dda78000a97ed05d7dec0171c4bd72b3e858d3137fa897911952ab3dd84810b4",
-      "bytes": 14188
+      "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
+      "bytes": 15676
     },
     {
       "path": "client.js",
-      "sha256": "184b6d9ee738def9049bbf6447f7dc8f2c2823152aa87528e983e6c310ef6fab",
+      "sha256": "91e812fdbc78a848c4ccbaf91b931b95c22cadaa2d19eeb543c9f57eb380462c",
       "bytes": 23310
     },
     {

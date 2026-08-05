@@ -218,6 +218,7 @@ function mountOrUpdateContribution(state, contribution, slotHost, context) {
   }
   const cleanup = contribution.update?.({ ...context, slot: contribution.slot, host: mounted.host, node: mounted.node, slotHost });
   if (typeof cleanup === "function") mounted.cleanup = cleanup;
+  if (contribution.slot === COMPOSER_SLOT_QUICK_ACTIONS) syncQuickActionsMenuPosition(slotHost.parentElement);
 }
 
 function unmountContribution(state, key) {
@@ -227,7 +228,11 @@ function unmountContribution(state, key) {
   try {
     mounted.cleanup?.();
   } catch {}
+  const slotHost = mounted.slotHost;
   mounted.host?.remove();
+  if (slotHost?.dataset?.mariBridgeSlot === COMPOSER_SLOT_QUICK_ACTIONS) {
+    syncQuickActionsMenuPosition(slotHost.parentElement);
+  }
 }
 
 function unmountAll(state) {
@@ -346,6 +351,40 @@ function isQuickRepliesMenu(menu) {
 function isQuickRepliesTrigger(trigger) {
   const label = `${trigger.getAttribute("aria-label") || ""} ${trigger.getAttribute("title") || ""}`;
   return /\bquick\s+repl(?:y|ies)\b/i.test(label);
+}
+
+function syncQuickActionsMenuPosition(menu) {
+  if (!(menu instanceof HTMLElement) || !menu.isConnected) return;
+  const wrapper = menu.parentElement;
+  const trigger = findMenuOwnerTrigger(menu);
+  if (!(wrapper instanceof HTMLElement) || !(trigger instanceof HTMLElement)) return;
+
+  const wrapperStyle = window.getComputedStyle(wrapper);
+  if (wrapperStyle.position !== "fixed") return;
+
+  const triggerRect = trigger.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  if (menuRect.width <= 0 || menuRect.height <= 0) return;
+
+  const viewportPadding = 8;
+  const gap = 8;
+  const left = Math.max(
+    viewportPadding,
+    Math.min(
+      triggerRect.left + triggerRect.width / 2 - menuRect.width / 2,
+      window.innerWidth - viewportPadding - menuRect.width,
+    ),
+  );
+  const preferredTop = triggerRect.top - gap - menuRect.height;
+  const maxTop = window.innerHeight - viewportPadding - menuRect.height;
+  const top =
+    preferredTop >= viewportPadding
+      ? preferredTop
+      : Math.max(viewportPadding, Math.min(triggerRect.bottom + gap, maxTop));
+
+  wrapper.style.left = `${left}px`;
+  wrapper.style.top = `${top}px`;
+  wrapper.style.visibility = "visible";
 }
 
 function patchHistoryMethod(method) {
