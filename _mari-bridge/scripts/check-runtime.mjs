@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 
 import { claimBridgeSubsystem, getMariBridgeRuntime } from "../src/runtime.js";
 
@@ -66,6 +67,13 @@ assert.equal(
   getMariBridgeRuntime().subsystems.get("test-recursive-install")?.version,
   "9.0.1",
   "failed install restores previous owner",
+);
+
+const generationLifecycleSource = await fs.readFile(new URL("../src/generation-lifecycle.js", import.meta.url), "utf8");
+assert(
+  generationLifecycleSource.includes("isNativeMainGenerationActive(entry.chatId)") &&
+    generationLifecycleSource.includes("store.abortControllers"),
+  "composer generation locks refuse to intercept native chat generation stop buttons",
 );
 
 console.log("Mari bridge runtime checks passed.");
