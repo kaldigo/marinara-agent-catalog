@@ -69,5 +69,10 @@ assert(
     uiSlotsSource.includes("aria-controls"),
   "quick action slots can follow portaled quick-reply menus through aria-controls",
 );
+assert(
+  uiSlotsSource.includes("syncQuickActionsMenuPosition(slotHost.parentElement)") &&
+    uiSlotsSource.includes("triggerRect.top - gap - menuRect.height"),
+  "quick action slots reposition portaled menus after injected actions change menu height",
+);
 
 console.log("Mari bridge composer DOM checks passed.");
