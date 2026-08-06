@@ -1,0 +1,21 @@
+[
+  {
+    "id": "response-keeper",
+    "name": "Response Keeper",
+    "description": "Feature marker for preserving stopped regenerations, stopped continuations, and manual edits.",
+    "category": "misc",
+    "phase": "pre_generation",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "libraryHidden": true,
+    "runtimeDisabled": true,
+    "modeAllowlist": [
+      "conversation",
+      "roleplay",
+      "visual_novel"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]
