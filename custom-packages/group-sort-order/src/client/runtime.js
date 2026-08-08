@@ -4,7 +4,6 @@ import {
   registerComposerSlotContribution,
   scheduleComposerSlotRender,
 } from "../../bridge/ui-slots.js";
-import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/generation-lifecycle.js";
 
 (function () {
   const PACKAGE_ID = "group-sort-order";
@@ -12,7 +11,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.18";
+  const RUNTIME_VERSION = "1.0.19";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -191,23 +190,13 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../bridge/ge
     if (!chatId) return;
     const button = state.barNode?.querySelector(".gso-refresh");
     if (button) button.disabled = true;
-    let generation = declarePackageGeneration({
-      packageId: PACKAGE_ID,
-      id: "refresh-next-speaker",
-      kind: GENERATION_KIND_AGENT,
-      chatId,
-      reason: "raw-next-speaker-refresh",
-    });
     try {
       const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/refresh`, { method: "POST", body: "{}" });
-      generation.end();
-      generation = null;
       if (chatId !== state.activeChatId) return;
       state.lastView = view;
       updateBar(state.barNode, view);
       scheduleComposerSlotRender(0);
     } catch (error) {
-      generation?.error(error);
       warn("refresh failed", error);
       await refreshView(chatId);
     } finally {
