@@ -204,8 +204,9 @@ async function finishGenerationLifecycle({ app, runtime, request, reply }) {
   if (reply.statusCode < 200 || reply.statusCode >= 300) return;
   const chat = await runtime.persistence.getChat(state.chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  await stampGeneratedMessages({ app, runtime, chat, state });
+  const generatedMessageIds = await stampGeneratedMessages({ app, runtime, chat, state });
   const freshChat = (await runtime.persistence.getChat(state.chatId)) || chat;
+  await patchGeneratedMessageSummaryFingerprints({ app, chat: freshChat, messageIds: generatedMessageIds });
   if (isPresenceTrackerEnabled(freshChat)) {
     const summaryEvents = diffSummaryEntries(state.summaryEntriesBefore, readSummaryEntries(freshChat), {
       source: "generation",
@@ -229,6 +230,14 @@ async function stampGeneratedMessages({ app, runtime, chat, state }) {
   for (const message of messages) {
     if (!targetIds.has(message.id)) continue;
     await stampMessageWithActivePresence({ app, runtime, chat, message, overwriteExisting: false });
+  }
+  return [...targetIds];
+}
+
+async function patchGeneratedMessageSummaryFingerprints({ app, chat, messageIds }) {
+  const fingerprint = fingerprintChatSummary(normalizeObject(chat?.metadata).summary);
+  for (const messageId of uniqueStrings(messageIds)) {
+    await patchMessageExtra(app, chat.id, messageId, { chatSummaryFingerprint: fingerprint });
   }
 }
 
@@ -824,4 +833,15 @@ function isNormalGenerateUrl(url) {
 function isPresenceInternalRequest(request) {
   const value = request.headers?.["x-presence-internal"];
   return value === "1" || value === "true" || (Array.isArray(value) && value.includes("1"));
+}
+
+function fingerprintChatSummary(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  let hash = 5381;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash = (hash * 33) ^ normalized.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
 }
