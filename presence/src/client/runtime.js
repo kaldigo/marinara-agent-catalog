@@ -106,7 +106,10 @@ function registerPresenceChatSettings() {
     packageId: PACKAGE_ID,
     id: "presence.settings",
     agentId: "presence",
-    className: "mt-2 block overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--background)]/45",
+    title: "Presence",
+    description: "Configure character visibility for this chat.",
+    iconText: "P",
+    className: "block",
     props: () => ({ enabledForChat: true }),
   });
 }
@@ -226,9 +229,6 @@ function normalizeSettingsData(data) {
 function renderPresenceSettingsLoading(mount) {
   mount.className = "mari-presence-settings-section";
   setPresenceSettingsHtml(mount, `loading:${mount.dataset.chatId || ""}`, `
-    <div class="mari-presence-settings-header">
-      <span class="mari-presence-settings-title">Presence</span>
-    </div>
     <div class="mari-presence-settings-body">
       <p class="mari-presence-settings-muted">Loading Presence settings...</p>
     </div>
@@ -238,9 +238,6 @@ function renderPresenceSettingsLoading(mount) {
 function renderPresenceSettingsNotice(mount, message) {
   mount.className = "mari-presence-settings-section";
   setPresenceSettingsHtml(mount, `notice:${message}`, `
-    <div class="mari-presence-settings-header">
-      <span class="mari-presence-settings-title">Presence</span>
-    </div>
     <div class="mari-presence-settings-body">
       <p class="mari-presence-settings-muted">${escapeHtml(message)}</p>
     </div>
@@ -276,10 +273,6 @@ function renderPresenceSettingsSection(mount, data) {
     `;
   }).join("");
   const changed = setPresenceSettingsHtml(mount, renderKey, `
-    <div class="mari-presence-settings-header">
-      <span class="mari-presence-settings-title">Presence</span>
-      <span class="mari-presence-settings-count">${alwaysPresent.size}</span>
-    </div>
     <div class="mari-presence-settings-body">
       <div class="mari-presence-character-list">
         ${items || '<p class="mari-presence-settings-muted">No characters in this chat.</p>'}
@@ -344,31 +337,7 @@ function injectPresenceSettingsStyle() {
   style.id = "mari-presence-settings-style";
   style.textContent = `
     .mari-presence-settings-section {
-      border-bottom: 1px solid var(--border);
       display: block;
-      padding: 0.75rem 1rem;
-    }
-    .mari-presence-settings-header {
-      align-items: center;
-      display: flex;
-      gap: 0.5rem;
-      justify-content: space-between;
-      margin-bottom: 0.5rem;
-    }
-    .mari-presence-settings-title {
-      color: var(--foreground);
-      font-size: 0.75rem;
-      font-weight: 650;
-    }
-    .mari-presence-settings-count {
-      background: color-mix(in srgb, var(--primary) 15%, transparent);
-      border-radius: 999px;
-      color: var(--primary);
-      font-size: 0.625rem;
-      font-weight: 600;
-      min-width: 1.25rem;
-      padding: 0.125rem 0.375rem;
-      text-align: center;
     }
     .mari-presence-settings-body {
       display: flex;

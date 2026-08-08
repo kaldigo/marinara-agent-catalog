@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 
-import { claimBridgeSubsystem, getMariBridgeRuntime } from "../src/runtime.js";
+import { claimBridgeSubsystem, getMariBridgeRuntime, warnBridgeRuntime } from "../src/runtime.js";
 
 delete globalThis.__mariBridgeRuntime;
 
@@ -52,6 +52,19 @@ const older = claimBridgeSubsystem("test-recursive-install", {
 
 assert.equal(older.active, false, "older subsystem claim is ignored");
 assert.equal(installCount, 1, "older subsystem did not install");
+assert.equal(
+  getMariBridgeRuntime().warnings.filter((entry) => entry.message.includes("Ignoring older test-recursive-install bridge")).length,
+  1,
+  "older bridge warning is recorded once",
+);
+
+warnBridgeRuntime("dedupe probe");
+warnBridgeRuntime("dedupe probe");
+assert.equal(
+  getMariBridgeRuntime().warnings.filter((entry) => entry.message === "dedupe probe").length,
+  1,
+  "duplicate bridge warnings are throttled",
+);
 
 const newer = claimBridgeSubsystem("test-recursive-install", {
   version: "9.0.1",
@@ -87,6 +100,13 @@ assert(
   generationLifecycleSource.includes("isNativeMainGenerationActive(entry.chatId)") &&
     generationLifecycleSource.includes("store.abortControllers"),
   "composer generation locks refuse to intercept native chat generation stop buttons",
+);
+
+const capabilitySlotsSource = await fs.readFile(new URL("../src/capability-slots.js", import.meta.url), "utf8");
+assert(
+  capabilitySlotsSource.includes("chat-settings-agent-menu-") &&
+    capabilitySlotsSource.includes("data-mari-bridge-agent-settings-body"),
+  "chat settings slot bridge can mount package settings in an agent settings card",
 );
 
 console.log("Mari bridge runtime checks passed.");

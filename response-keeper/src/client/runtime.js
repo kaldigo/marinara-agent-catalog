@@ -2,6 +2,19 @@ import { installFetchInterceptor } from "../../../_mari-bridge/src/fetch-interce
 import { PACKAGE_ID, PUBLIC_API_KEY, RUNTIME_KEY } from "./constants.js";
 import { handleGenerateRequest, handleMessageEditRequest } from "./keeper.js";
 
+const TAG_NAME = `marinara-capability-${PACKAGE_ID}`;
+
+class ResponseKeeperCapabilityElement extends HTMLElement {
+  connectedCallback() {
+    this.hidden = true;
+    this.setAttribute("aria-hidden", "true");
+  }
+}
+
+if (!customElements.get(TAG_NAME)) {
+  customElements.define(TAG_NAME, ResponseKeeperCapabilityElement);
+}
+
 export function startResponseKeeperPackage() {
   if (window[RUNTIME_KEY]?.destroy) return window[RUNTIME_KEY].api;
 
