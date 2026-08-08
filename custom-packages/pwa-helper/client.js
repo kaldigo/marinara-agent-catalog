@@ -3,7 +3,7 @@
   // bridge/runtime.js
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.6";
+  const MARI_BRIDGE_VERSION = "1.0.7";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -13,6 +13,10 @@
     "generation:lifecycle-events",
     "ui-slots:composer-above-input",
     "ui-slots:quick-actions-menu",
+    "ui-slots:message-actions",
+    "ui-slots:topbar-panel",
+    "ui-slots:chat-settings",
+    "capability-slots:register",
   ];
 
   // Returns the page-global Mari bridge runtime shared by every bundled bridge copy.

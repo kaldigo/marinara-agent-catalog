@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
@@ -31,6 +31,16 @@
       "path": "agents.json",
       "sha256": "7177c1a3ba59b6ece877477e701fb1c424fc7176e304309825b2c4d32daef5da",
       "bytes": 427
+    },
+    {
+      "path": "bridge/capability-slots.js",
+      "sha256": "450afab3bdf52f23963be6af0bb9b05d2c5916cd29313ed476904291843df45d",
+      "bytes": 14597
+    },
+    {
+      "path": "bridge/chat-settings.js",
+      "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
+      "bytes": 633
     },
     {
       "path": "bridge/commands.js",
@@ -69,8 +79,13 @@
     },
     {
       "path": "bridge/index.js",
-      "sha256": "c6d5e1b8daca55e76d0073dd5e35e5e34e8f1945fdb00b8858fb354adf1aae92",
-      "bytes": 431
+      "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
+      "bytes": 580
+    },
+    {
+      "path": "bridge/message-actions.js",
+      "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
+      "bytes": 481
     },
     {
       "path": "bridge/prompt-contribution.js",
@@ -84,13 +99,18 @@
     },
     {
       "path": "bridge/runtime.js",
-      "sha256": "4c32e5b70322a27632b811dc165117d826885598dc1ff0231534920c078824fa",
-      "bytes": 4810
+      "sha256": "24dff57b51efbca7224f689502ecef63646878385bbf235c7af43d5c37bac6d7",
+      "bytes": 4926
     },
     {
       "path": "bridge/summary-tracking.js",
       "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
       "bytes": 2620
+    },
+    {
+      "path": "bridge/topbar-panels.js",
+      "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
+      "bytes": 463
     },
     {
       "path": "bridge/ui-slots.js",
@@ -99,8 +119,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "4c9194157e4a69cabb96c14f148abc0d3fcf90e20453fd43d8b3f1d60cb61cd8",
-      "bytes": 41083
+      "sha256": "7698444f66cbb179fcd7c50ae5dac8f6b4e169bcdf2bf9a0fe87a57f93a66e0e",
+      "bytes": 57264
     },
     {
       "path": "server.mjs",
@@ -109,8 +129,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "58a117afa576ee29fbafeef83b5710d7959eb67362a70334ab9709a0c965d267",
-      "bytes": 16963
+      "sha256": "cf8b4116ca0c259b8d31681f184c5d416d4723090f9392cd254503ea8d6d6860",
+      "bytes": 17630
     },
     {
       "path": "src/server/command-router.js",
