@@ -2,7 +2,7 @@
   "use strict";
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.10";
+  const MARI_BRIDGE_VERSION = "1.0.11";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -438,6 +438,7 @@
   ]);
   const AGENT_SETTINGS_SURFACE_CLASS = "border border-[var(--border)] bg-[var(--secondary)]/70";
   const GENERATED_AGENT_CARD_SELECTOR = "[data-mari-bridge-generated-agent-card]";
+  const SLOT_LOG_PREFIX = "[mari-bridge:slots]";
 
   registerBridgeCapabilities([
     "ui-slots:chat-settings",
@@ -450,12 +451,24 @@
     const normalized = normalizeCapabilitySlotContribution(contribution);
     const state = getCapabilitySlotState();
     state.contributions.set(normalized.key, normalized);
+    logCapabilitySlotState(state, `contribution:${normalized.key}`, "registered contribution", {
+      slot: normalized.slot,
+      packageId: normalized.packageId,
+      id: normalized.id,
+      view: normalized.view,
+      match: normalized.match,
+    });
     ensureCapabilitySlotBridge();
     scheduleCapabilitySlotRenderInternal(0);
     return () => {
       const current = state.contributions.get(normalized.key);
       if (current !== normalized) return;
       state.contributions.delete(normalized.key);
+      logCapabilitySlotState(state, `contribution:${normalized.key}`, "removed contribution", {
+        slot: normalized.slot,
+        packageId: normalized.packageId,
+        id: normalized.id,
+      });
       unmountContributionFamily(state, normalized.key);
       scheduleCapabilitySlotRenderInternal(0);
     };
@@ -505,6 +518,7 @@
         chatSettingsPanel: null,
         chatSettingsPanelScope: null,
         chatSettingsPanelObserver: null,
+        debugValues: new Map(),
         renderTimer: 0,
         renderDelayMs: 120,
         ownerToken: null,
@@ -514,11 +528,13 @@
     const state = window[CAPABILITY_SLOT_STATE_KEY];
     if (!(state.contributions instanceof Map)) state.contributions = new Map();
     if (!(state.mounted instanceof Map)) state.mounted = new Map();
+    if (!(state.debugValues instanceof Map)) state.debugValues = new Map();
     return state;
   }
 
   function startCapabilitySlotObservation(state, token) {
     if (!isBridgeSubsystemOwner("capability-slots", token)) return;
+    logCapabilitySlotState(state, "observer:body", "started outer slot observer", { bridgeVersion: MARI_BRIDGE_VERSION });
     state.scope.on(window, "focus", () => handleCapabilitySlotDomChange(state, token, 0));
     state.scope.on(window, "resize", () => scheduleCapabilitySlotRenderInternal());
     state.scope.on(window, "popstate", () => handleCapabilitySlotDomChange(state, token, 0));
@@ -549,14 +565,17 @@
     disconnectChatSettingsPanelWatcher(state);
     state.chatSettingsPanel = panel;
     if (!(panel instanceof HTMLElement)) {
+      logCapabilitySlotState(state, "chat-settings:panel", "chat settings panel missing", {});
       unmountSlot(state, CAPABILITY_SLOT_CHAT_SETTINGS);
       return;
     }
+    logCapabilitySlotState(state, "chat-settings:panel", "chat settings panel found", describeElement(panel));
     const panelScope = createDomScope();
     state.chatSettingsPanelScope = panelScope;
     state.scope?.cleanup?.(() => panelScope.destroy());
     state.chatSettingsPanelObserver = panelScope.observe(panel, () => {
       if (!document.body?.contains(panel) || !isVisibleElement(panel)) {
+        logCapabilitySlotState(state, "chat-settings:panel", "chat settings panel disappeared", describeElement(panel));
         syncChatSettingsPanelWatcher(state, token);
         scheduleCapabilitySlotRenderInternal(0);
         return;
@@ -568,10 +587,14 @@
       attributes: true,
       attributeFilter: ["aria-expanded", "data-chat-settings-section", "data-chat-agent-entry", "class", "style"],
     });
+    logCapabilitySlotState(state, "chat-settings:panel-observer", "attached chat settings panel observer", describeElement(panel));
     scheduleCapabilitySlotRenderInternal(0);
   }
 
   function disconnectChatSettingsPanelWatcher(state) {
+    if (state.chatSettingsPanel || state.chatSettingsPanelScope) {
+      logCapabilitySlotState(state, "chat-settings:panel-observer", "detached chat settings panel observer", {});
+    }
     state.chatSettingsPanelScope?.destroy?.();
     state.chatSettingsPanelScope = null;
     state.chatSettingsPanelObserver = null;
@@ -619,21 +642,56 @@
   }
 
   function findChatSettingsContexts(contribution) {
+    const state = getCapabilitySlotState();
     const panel = findChatSettingsPanel();
-    if (!panel) return [];
+    if (!panel) {
+      if (contribution.slot === CAPABILITY_SLOT_CHAT_SETTINGS) {
+        logCapabilitySlotState(state, `context:${contribution.key}`, "waiting for chat settings panel", {
+          sectionId: contribution.match.sectionId || "",
+        });
+      }
+      return [];
+    }
     const chatId = getActiveChatIdFromClient();
     const agentId = contribution.match.agentId || contribution.packageId;
     if (contribution.match.sectionId) {
       const section = findChatSettingsSection(panel, contribution.match.sectionId);
       const sectionStack = findChatSettingsSectionStack(section);
-      if (!section || !sectionStack) return [];
+      if (!section) {
+        logCapabilitySlotState(state, `context:${contribution.key}`, "waiting for chat settings section", {
+          chatId,
+          sectionId: contribution.match.sectionId,
+          panel: true,
+        });
+        return [];
+      }
+      if (!sectionStack) {
+        logCapabilitySlotState(state, `context:${contribution.key}`, "waiting for open chat settings section content", {
+          chatId,
+          sectionId: contribution.match.sectionId,
+          sectionChildren: section.children.length,
+          headerExpanded: section.firstElementChild?.getAttribute?.("aria-expanded") || "",
+        });
+        return [];
+      }
+      logCapabilitySlotState(state, `context:${contribution.key}`, "chat settings section content ready", {
+        chatId,
+        sectionId: contribution.match.sectionId,
+        stackChildren: sectionStack.children.length,
+      });
       const agentCard = findAgentSettingsCard(section, chatId, agentId);
       return [{ slot: contribution.slot, chatId, panel, section, sectionStack, agentId, agentCard, mountKey: "chat-settings" }];
     }
     const section = findChatSettingsSection(panel, contribution.match.sectionId);
     const agentEntry = findAgentEntry(panel, agentId);
     const agentCard = findAgentSettingsCard(panel, chatId, agentId);
-    if (!section && !agentEntry && !agentCard) return [];
+    if (!section && !agentEntry && !agentCard) {
+      logCapabilitySlotState(state, `context:${contribution.key}`, "waiting for generic chat settings target", {
+        chatId,
+        agentId,
+      });
+      return [];
+    }
     return [{ slot: contribution.slot, chatId, panel, section, agentId, agentEntry, agentCard, mountKey: "chat-settings" }];
   }
 
@@ -676,6 +734,15 @@
       slotHost.appendChild(element);
       mounted = { element, slotHost };
       state.mounted.set(mountKey, mounted);
+      logCapabilitySlotState(state, `mounted:${mountKey}`, "mounted capability element", {
+        packageId: contribution.packageId,
+        id: contribution.id,
+        slot: contribution.slot,
+        view: contribution.view,
+        chatId: context.chatId || "",
+        sectionId: context.section?.dataset?.chatSettingsSection || "",
+        host: describeElement(slotHost),
+      });
     }
     setCapabilityProps(mounted.element, contribution, context);
   }
@@ -683,6 +750,13 @@
   function unmountContribution(state, key) {
     const mounted = state.mounted.get(key);
     state.mounted.delete(key);
+    if (mounted?.element) {
+      logCapabilitySlotState(state, `mounted:${key}`, "unmounted capability element", {
+        slot: mounted.element.dataset.mariBridgeCapabilitySlot || "",
+        packageId: mounted.element.dataset.mariBridgePackageId || "",
+        id: mounted.element.dataset.mariBridgeContributionId || "",
+      });
+    }
     mounted?.element?.remove();
     cleanupEmptyHost(mounted?.slotHost);
   }
@@ -754,22 +828,42 @@
   }
 
   function ensureChatSettingsHost(context, contribution) {
+    const state = getCapabilitySlotState();
     const card = context.agentCard || ensureGeneratedAgentSettingsCard(context.panel, context.agentId, contribution, context);
     if (card) {
       ensureGeneratedAgentSettingsCardPlacement(card, context, contribution);
       const body = ensureGeneratedAgentSettingsBody(card);
       if (body) return ensureContributionHost(body, contribution, "div", "mari-bridge-slot-host mari-bridge-chat-settings-host");
     }
-    if (!context.agentEntry) return null;
+    if (!context.agentEntry) {
+      logCapabilitySlotState(state, `host:${contribution.key}`, "no chat settings host available", {
+        sectionId: context.section?.dataset?.chatSettingsSection || "",
+        agentId: context.agentId || "",
+      });
+      return null;
+    }
     return ensureContributionHost(context.agentEntry, contribution, "div", "mari-bridge-slot-host mari-bridge-chat-settings-host");
   }
 
   function ensureGeneratedAgentSettingsCard(panel, agentId, contribution, context = null) {
+    const state = getCapabilitySlotState();
     if (!panel || !agentId) return null;
     const existing = findAgentSettingsCard(panel, getActiveChatIdFromClient(), agentId);
-    if (existing) return existing;
+    if (existing) {
+      logCapabilitySlotState(state, `card:${contribution.key}`, "found existing settings card", {
+        agentId,
+        card: describeElement(existing),
+      });
+      return existing;
+    }
     const parent = findAgentSettingsCardContainer(panel, context, contribution);
-    if (!parent) return null;
+    if (!parent) {
+      logCapabilitySlotState(state, `card:${contribution.key}`, "waiting for settings card parent", {
+        agentId,
+        sectionId: context?.section?.dataset?.chatSettingsSection || "",
+      });
+      return null;
+    }
     const card = document.createElement("div");
     const cardId = getAgentSettingsCardId(getActiveChatIdFromClient(), agentId);
     if (cardId) {
@@ -820,6 +914,11 @@
     });
     card.append(header, body);
     insertGeneratedAgentSettingsCard(parent, card, context, contribution);
+    logCapabilitySlotState(state, `card:${contribution.key}`, "created generated settings card", {
+      agentId,
+      sectionId: context?.section?.dataset?.chatSettingsSection || "",
+      parent: describeElement(parent),
+    });
     return card;
   }
 
@@ -838,10 +937,15 @@
   }
 
   function ensureGeneratedAgentSettingsCardPlacement(card, context, contribution) {
+    const state = getCapabilitySlotState();
     if (!(card instanceof HTMLElement) || !card.matches(GENERATED_AGENT_CARD_SELECTOR)) return;
     const parent = findAgentSettingsCardContainer(context.panel, context, contribution);
     if (!parent) return;
     insertGeneratedAgentSettingsCard(parent, card, context, contribution);
+    logCapabilitySlotState(state, `card-placement:${contribution.key}`, "placed generated settings card", {
+      sectionId: context.section?.dataset?.chatSettingsSection || "",
+      parent: describeElement(parent),
+    });
   }
 
   function findChatSettingsSectionStack(section) {
@@ -882,12 +986,17 @@
   }
 
   function ensureContributionHost(parent, contribution, tagName, className) {
+    const state = getCapabilitySlotState();
     let host = parent.querySelector(`:scope > [data-mari-bridge-slot-host="${contribution.key}"]`);
     if (!(host instanceof HTMLElement)) {
       host = document.createElement(tagName);
       host.dataset.mariBridgeSlotHost = contribution.key;
       host.className = className;
       parent.appendChild(host);
+      logCapabilitySlotState(state, `host:${contribution.key}`, "created contribution host", {
+        slot: contribution.slot,
+        parent: describeElement(parent),
+      });
     }
     return host;
   }
@@ -922,6 +1031,35 @@
 
   function cleanupEmptyHost(host) {
     if (host instanceof HTMLElement && host.childElementCount === 0) host.remove();
+  }
+
+  function logCapabilitySlotState(state, key, message, details = {}) {
+    if (!(state.debugValues instanceof Map)) state.debugValues = new Map();
+    const signature = `${message}:${stableDebugSignature(details)}`;
+    if (state.debugValues.get(key) === signature) return;
+    state.debugValues.set(key, signature);
+    globalThis.console?.info?.(SLOT_LOG_PREFIX, message, details);
+  }
+
+  function stableDebugSignature(value) {
+    try {
+      return JSON.stringify(value, Object.keys(value || {}).sort());
+    } catch {
+      return String(value);
+    }
+  }
+
+  function describeElement(element) {
+    if (!(element instanceof HTMLElement)) return {};
+    return {
+      tag: element.tagName.toLowerCase(),
+      id: element.id || "",
+      className: typeof element.className === "string" ? element.className : "",
+      chatSettingsSection: element.dataset.chatSettingsSection || "",
+      chatFloatingPanel: element.dataset.chatFloatingPanel || "",
+      chatAgentEntry: element.dataset.chatAgentEntry || "",
+      bridgeSlotHost: element.dataset.mariBridgeSlotHost || "",
+    };
   }
 
   function normalizeCapabilitySlotContribution(contribution) {

@@ -29,8 +29,8 @@
     },
     {
       "path": "bridge/capability-slots.js",
-      "sha256": "e33192b78f29453da54205ea67793e03875fe74d2b1c124e04b2db0550c034f3",
-      "bytes": 25377
+      "sha256": "67fc8db3007c1feed32b0ed966b7c5e6d5de1fe7f769ebbce5d79d7d10918259",
+      "bytes": 31086
     },
     {
       "path": "bridge/chat-settings.js",
@@ -94,7 +94,7 @@
     },
     {
       "path": "bridge/runtime.js",
-      "sha256": "dea829b9ce4e7aaa9bf101858b4b744417b516631859e71ec7b1f39221c3e379",
+      "sha256": "48b3446f882fb4d7be12d88ef1af3baf08c841e21ab9083ee756266e19358696",
       "bytes": 5418
     },
     {
@@ -114,7 +114,7 @@
     },
     {
       "path": "client.js",
-      "sha256": "c5099fdebc3b05ba6b43b1d944c7363079ca0e8ecd75f3990531e72724d2d09c",
+      "sha256": "fc52f4c453e6b2a9d4604d25f9cc46fa4a1e5f3a03a365e28a1b02db7bc77342",
       "bytes": 60608
     },
     {
