@@ -2,7 +2,7 @@
   "use strict";
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.8";
+  const MARI_BRIDGE_VERSION = "1.0.9";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -576,10 +576,11 @@
     if (!panel) return [];
     const chatId = getActiveChatIdFromClient();
     const agentId = contribution.match.agentId || contribution.packageId;
+    const section = findChatSettingsSection(panel, contribution.match.sectionId);
     const agentEntry = findAgentEntry(panel, agentId);
     const agentCard = findAgentSettingsCard(panel, chatId, agentId);
-    if (!agentEntry && !agentCard) return [];
-    return [{ slot: contribution.slot, chatId, panel, agentId, agentEntry, agentCard, mountKey: "chat-settings" }];
+    if (!section && !agentEntry && !agentCard) return [];
+    return [{ slot: contribution.slot, chatId, panel, section, agentId, agentEntry, agentCard, mountKey: "chat-settings" }];
   }
 
   function findMessageActionContexts(contribution) {
@@ -673,6 +674,13 @@
     return entry instanceof HTMLElement && isVisibleElement(entry) ? entry : null;
   }
 
+  function findChatSettingsSection(panel, sectionId) {
+    if (!panel || !sectionId) return null;
+    const escaped = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(sectionId) : cssAttributeValue(sectionId);
+    const section = panel.querySelector(`[data-chat-settings-section="${escaped}"]`);
+    return section instanceof HTMLElement && isVisibleElement(section) ? section : null;
+  }
+
   function findAgentSettingsCard(panel, chatId, agentId) {
     if (!panel || !agentId) return null;
     const cardId = getAgentSettingsCardId(chatId, agentId);
@@ -686,8 +694,9 @@
   }
 
   function ensureChatSettingsHost(context, contribution) {
-    const card = context.agentCard || ensureGeneratedAgentSettingsCard(context.panel, context.agentId, contribution);
+    const card = context.agentCard || ensureGeneratedAgentSettingsCard(context.panel, context.agentId, contribution, context);
     if (card) {
+      ensureGeneratedAgentSettingsCardPlacement(card, context, contribution);
       const body = ensureGeneratedAgentSettingsBody(card);
       if (body) return ensureContributionHost(body, contribution, "div", "mari-bridge-slot-host mari-bridge-chat-settings-host");
     }
@@ -695,11 +704,11 @@
     return ensureContributionHost(context.agentEntry, contribution, "div", "mari-bridge-slot-host mari-bridge-chat-settings-host");
   }
 
-  function ensureGeneratedAgentSettingsCard(panel, agentId, contribution) {
+  function ensureGeneratedAgentSettingsCard(panel, agentId, contribution, context = null) {
     if (!panel || !agentId) return null;
     const existing = findAgentSettingsCard(panel, getActiveChatIdFromClient(), agentId);
     if (existing) return existing;
-    const parent = findAgentSettingsCardContainer(panel);
+    const parent = findAgentSettingsCardContainer(panel, context, contribution);
     if (!parent) return null;
     const card = document.createElement("div");
     const cardId = getAgentSettingsCardId(getActiveChatIdFromClient(), agentId);
@@ -750,11 +759,13 @@
       chevron.style.transform = open ? "rotate(90deg)" : "rotate(0deg)";
     });
     card.append(header, body);
-    parent.appendChild(card);
+    insertGeneratedAgentSettingsCard(parent, card, context, contribution);
     return card;
   }
 
-  function findAgentSettingsCardContainer(panel) {
+  function findAgentSettingsCardContainer(panel, context, contribution) {
+    const sectionStack = findChatSettingsSectionStack(context?.section);
+    if (sectionStack) return sectionStack;
     const generated = panel.querySelector(GENERATED_AGENT_CARD_SELECTOR);
     if (generated?.parentElement instanceof HTMLElement) return generated.parentElement;
     const existingCards = Array.from(panel.querySelectorAll('[id^="chat-settings-agent-menu-"]')).filter(
@@ -765,6 +776,38 @@
     const agentEntries = Array.from(panel.querySelectorAll("[data-chat-agent-entry]")).filter((node) => node instanceof HTMLElement);
     const lastEntry = agentEntries.at(-1);
     return lastEntry?.parentElement instanceof HTMLElement ? lastEntry.parentElement : null;
+  }
+
+  function ensureGeneratedAgentSettingsCardPlacement(card, context, contribution) {
+    if (!(card instanceof HTMLElement) || !card.matches(GENERATED_AGENT_CARD_SELECTOR)) return;
+    const parent = findAgentSettingsCardContainer(context.panel, context, contribution);
+    if (!parent || card.parentElement === parent) return;
+    insertGeneratedAgentSettingsCard(parent, card, context, contribution);
+  }
+
+  function findChatSettingsSectionStack(section) {
+    if (!(section instanceof HTMLElement)) return null;
+    const content = Array.from(section.children).find(
+      (child) => child instanceof HTMLElement && child.getAttribute("role") !== "button",
+    );
+    if (!(content instanceof HTMLElement)) return null;
+    const stack = content.firstElementChild;
+    if (stack instanceof HTMLElement && stack.classList.contains("space-y-2")) return stack;
+    return content;
+  }
+
+  function insertGeneratedAgentSettingsCard(parent, card, context, contribution) {
+    const after = findChatSettingsSectionInsertionAnchor(parent, context, contribution);
+    if (after?.parentElement === parent) after.after(card);
+    else parent.prepend(card);
+  }
+
+  function findChatSettingsSectionInsertionAnchor(parent, context) {
+    if (context?.section?.dataset?.chatSettingsSection !== "roleplay-agents") return null;
+    const directButtons = Array.from(parent.children).filter(
+      (child) => child instanceof HTMLElement && child.tagName === "BUTTON",
+    );
+    return directButtons.at(-1) || null;
   }
 
   function ensureGeneratedAgentSettingsBody(card) {
@@ -1269,6 +1312,7 @@
       packageId: PACKAGE_ID,
       id: "presence.settings",
       agentId: "presence",
+      match: { sectionId: "roleplay-agents" },
       title: "Presence",
       description: "Configure character visibility for this chat.",
       iconText: "P",
