@@ -7,7 +7,7 @@ export async function activate(context) {
   registerPresenceMessageCreateHook({ app: context.app, runtime: context.api.runtime });
   await context.app.register(
     async (app) => {
-      createPresenceRoutes({ app, runtime: context.api.runtime });
+      createPresenceRoutes({ app, hostApp: context.app, runtime: context.api.runtime });
     },
     { prefix: "/api/presence" },
   );

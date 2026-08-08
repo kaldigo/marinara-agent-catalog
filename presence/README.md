@@ -14,9 +14,20 @@ where the Presence tracker is enabled in the chat's active agent list.
 - Store presence as character IDs, not names.
 - Preserve global Hide From AI state.
 - Backfill newly added characters so they do not inherit old scene history.
+- Let chat-level narrator/helper cards be marked always present.
 - Store positive per-summary audience state by native summary ID.
 - Copy enabled chat summaries into a temporary Presence-owned outlet lorebook during generation.
 - Use `_mari-bridge` for slash command handling and summary lifecycle detection.
+
+## Chat Settings
+
+When the Presence tracker is enabled for a chat, Presence adds a compact section
+to Chat Settings next to the character roster. Selecting a character there stores
+that character ID in `marinaraPresencePackage.alwaysPresentCharacterIds`.
+
+Always-present characters are kept visible in native per-character Hide From AI
+state, future message stamps, roster backfill, slash command updates, and summary
+audiences. Globally hidden messages remain hidden.
 
 ## Slash Commands
 

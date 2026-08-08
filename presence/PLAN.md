@@ -22,6 +22,10 @@ Characters listed in `hiddenFromAICharacterIds` are absent from that message.
 Characters in the current roster that are not listed are present. Presence does
 not stamp per-message shadow metadata.
 
+Chat metadata may also store `alwaysPresentCharacterIds` for narrator/helper
+cards that should see all non-globally-hidden content regardless of the chat's
+active character toggles.
+
 ## 3. Message Save
 
 On message create/save, stamp the message with currently active chat characters.
@@ -29,6 +33,8 @@ Do not use all roster characters when some are inactive.
 
 If all roster characters are active, Presence may store compact default metadata,
 but must still be able to backfill future newly added characters.
+
+Always-present character IDs are unioned into the stamped present set.
 
 ## 4. Roster Backfill
 
@@ -39,6 +45,7 @@ When a chat gains characters:
 - Add newly added character IDs to Presence-owned hidden IDs.
 - Do not touch globally hidden messages.
 - Do not remove manual per-character hidden IDs.
+- Do not hide always-present character IDs.
 - Recompute positive summary audience only for summaries affected by the roster change.
 
 ## 5. Summaries
@@ -52,6 +59,7 @@ When a chat gains characters:
   snapshotted enabled state and clear the temporary lorebook.
 - Update summary audience directly on summary create/delete/combine and only
   recalculate affected summaries after presence range commands.
+- Always-present character IDs are included in summary audiences.
 
 ## 6. Commands
 

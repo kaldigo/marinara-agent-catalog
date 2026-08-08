@@ -10,6 +10,7 @@ export function readPresenceChatState(chat) {
   const state = normalizeObject(metadata[PRESENCE_PACKAGE_KEY]);
   return {
     version: PRESENCE_SCHEMA_VERSION,
+    alwaysPresentCharacterIds: uniqueStrings(state.alwaysPresentCharacterIds),
     rosterCharacterIds: uniqueStrings(state.rosterCharacterIds),
     summaryLorebookId: typeof state.summaryLorebookId === "string" ? state.summaryLorebookId : null,
     summaryPresenceById: normalizeStringArrayMap(state.summaryPresenceById),

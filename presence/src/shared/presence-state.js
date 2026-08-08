@@ -1,8 +1,9 @@
-export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds }) {
+export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds, alwaysPresentCharacterIds = [] }) {
   const normalizedExtra = normalizeObject(extra);
   const roster = uniqueStrings(rosterIds);
   const rosterSet = new Set(roster);
-  const present = uniqueStrings(presentCharacterIds).filter((id) => rosterSet.has(id));
+  const present = uniqueStrings([...uniqueStrings(presentCharacterIds), ...uniqueStrings(alwaysPresentCharacterIds)])
+    .filter((id) => rosterSet.has(id));
   const presentSet = new Set(present);
   const currentHidden = uniqueStrings(normalizedExtra.hiddenFromAICharacterIds);
   const nonRosterHidden = currentHidden.filter((id) => !rosterSet.has(id));

@@ -55,8 +55,10 @@ export function buildSummaryLorebookEntries({
   return entries;
 }
 
-export function buildSummaryAudience({ summary, messagesById, rosterIds }) {
+export function buildSummaryAudience({ summary, messagesById, rosterIds, alwaysPresentCharacterIds = [] }) {
   const roster = uniqueStrings(rosterIds);
+  const rosterSet = new Set(roster);
+  const alwaysPresent = new Set(uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterSet.has(id)));
   const coveredIds = Array.isArray(summary?.messageIds) && summary.messageIds.length
     ? summary.messageIds
     : Array.isArray(summary?.hiddenMessageIds)
@@ -65,6 +67,7 @@ export function buildSummaryAudience({ summary, messagesById, rosterIds }) {
   const coveredMessages = coveredIds.map((id) => messagesById.get(String(id))).filter(Boolean);
   if (!coveredMessages.length) return roster;
   return roster.filter((characterId) =>
+    alwaysPresent.has(characterId) ||
     coveredMessages.some((message) => readPresenceState(message, roster).has(characterId)),
   );
 }

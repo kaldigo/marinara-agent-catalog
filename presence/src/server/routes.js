@@ -42,7 +42,7 @@ export function registerPresenceMessageCreateHook({ app, runtime }) {
   });
 }
 
-export function createPresenceRoutes({ app, runtime }) {
+export function createPresenceRoutes({ app, hostApp = app, runtime }) {
   const persistence = runtime.persistence;
   const logger = runtime.logger;
 
@@ -53,6 +53,7 @@ export function createPresenceRoutes({ app, runtime }) {
     const roster = await resolveRoster(runtime, chat);
     return {
       chatId: chat.id,
+      enabled: isPresenceTrackerEnabled(chat),
       roster,
       state: readPresenceChatState(chat),
       messages: messages.map((message, index) => ({
@@ -76,14 +77,33 @@ export function createPresenceRoutes({ app, runtime }) {
     const message = messages.find((item) => item.id === req.params.messageId);
     if (!message) return reply.status(404).send({ error: "Message not found" });
     const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
+    const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
     const body = normalizeObject(req.body);
     const patch = buildPresenceExtraPatch({
       extra: message.extra,
       rosterIds,
       presentCharacterIds: uniqueStrings(body.presentCharacterIds),
+      alwaysPresentCharacterIds,
     });
-    await patchMessageExtra(app, req.params.chatId, req.params.messageId, patch);
+    await patchMessageExtra(hostApp, req.params.chatId, req.params.messageId, patch);
     return { ok: true, patch };
+  });
+
+  app.patch("/chat/:chatId/settings", async (req, reply) => {
+    const chat = await persistence.getChat(req.params.chatId);
+    if (!chat) return reply.status(404).send({ error: "Chat not found" });
+    if (!isPresenceTrackerEnabled(chat)) {
+      return reply.status(409).send({ error: "Presence tracker is not enabled for this chat." });
+    }
+    const body = normalizeObject(req.body);
+    const result = await updatePresenceChatSettings({
+      app: hostApp,
+      runtime,
+      chat,
+      alwaysPresentCharacterIds: uniqueStrings(body.alwaysPresentCharacterIds),
+    });
+    const freshChat = (await persistence.getChat(req.params.chatId)) || chat;
+    return { ok: true, state: readPresenceChatState(freshChat), ...result };
   });
 
   app.post("/chat/:chatId/command", async (req, reply) => {
@@ -94,8 +114,8 @@ export function createPresenceRoutes({ app, runtime }) {
     }
     const raw = String(normalizeObject(req.body).text || "");
     const router = createPresenceCommandRouter({
-      runPresenceCommand: (args) => runPresenceCommand({ ...args, app, runtime, chat }),
-      runScopedHideCommand: (args) => runScopedHideCommand({ ...args, app, runtime, chat }),
+      runPresenceCommand: (args) => runPresenceCommand({ ...args, app: hostApp, runtime, chat }),
+      runScopedHideCommand: (args) => runScopedHideCommand({ ...args, app: hostApp, runtime, chat }),
     });
     try {
       const result = await router.run(raw, { chatId: chat.id });
@@ -110,7 +130,7 @@ export function createPresenceRoutes({ app, runtime }) {
   app.post("/chat/:chatId/ensure", async (req, reply) => {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
-    const result = await ensurePresenceChatLifecycle({ app, runtime, chat });
+    const result = await ensurePresenceChatLifecycle({ app: hostApp, runtime, chat });
     return { ok: true, ...result };
   });
 }
@@ -218,10 +238,12 @@ async function stampMessageWithActivePresence({ app, runtime, chat, message, ove
   if (!overwriteExisting && Array.isArray(extra.hiddenFromAICharacterIds)) return;
   const rosterIds = uniqueStrings(chat.characterIds);
   const activeIds = resolveActiveRosterIds(chat);
+  const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
   const patch = buildPresenceExtraPatch({
     extra,
     rosterIds,
     presentCharacterIds: activeIds,
+    alwaysPresentCharacterIds,
   });
   await patchMessageExtra(app, chat.id, message.id, patch);
 }
@@ -314,18 +336,63 @@ async function clearPresenceSummaryLorebook({ app, runtime, chat }) {
 async function reconcileRoster({ app, runtime, chat }) {
   const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
   const state = readPresenceChatState(chat);
+  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
   const messages = await runtime.persistence.listMessages(chat.id);
   const backfill = planRosterBackfill({
     previousRosterIds: state.rosterCharacterIds,
     currentRosterIds: rosterIds,
     messages,
+    alwaysPresentCharacterIds,
   });
   for (const patch of backfill.messagePatches) {
     await patchMessageExtra(app, chat.id, patch.messageId, patch.patch);
   }
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
-  await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds });
+  await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds, alwaysPresentCharacterIds });
   return { addedCharacterIds: backfill.addedCharacterIds, patchedMessages: backfill.messagePatches.length };
+}
+
+async function updatePresenceChatSettings({ app, runtime, chat, alwaysPresentCharacterIds }) {
+  const roster = await resolveRoster(runtime, chat);
+  const rosterIds = roster.map((character) => character.id);
+  const normalizedAlwaysPresent = uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterIds.includes(id));
+  await patchChatState(runtime.persistence, chat, { alwaysPresentCharacterIds: normalizedAlwaysPresent });
+  const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
+  const patchedMessages = await enforceAlwaysPresentOnMessages({
+    app,
+    runtime,
+    chat: freshChat,
+    rosterIds,
+    alwaysPresentCharacterIds: normalizedAlwaysPresent,
+  });
+  const afterMessages = (await runtime.persistence.getChat(chat.id)) || freshChat;
+  const summaries = await ensureSummaryPresence({ runtime, chat: afterMessages });
+  return {
+    alwaysPresentCharacterIds: normalizedAlwaysPresent,
+    patchedMessages,
+    summaries,
+  };
+}
+
+async function enforceAlwaysPresentOnMessages({ app, runtime, chat, rosterIds, alwaysPresentCharacterIds }) {
+  const forced = new Set(uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterIds.includes(id)));
+  if (!forced.size) return 0;
+  let patched = 0;
+  const messages = await runtime.persistence.listMessages(chat.id);
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (!message?.id) continue;
+    const extra = normalizeObject(message.extra);
+    if (extra.hiddenFromAI === true) continue;
+    const currentHidden = uniqueStrings(extra.hiddenFromAICharacterIds);
+    const nextHidden = currentHidden.filter((id) => !forced.has(id));
+    if (sameStringArray(currentHidden, nextHidden)) continue;
+    await patchMessageExtra(app, chat.id, message.id, {
+      hiddenFromAI: false,
+      hiddenFromAICharacterIds: nextHidden,
+    });
+    patched += 1;
+  }
+  return patched;
 }
 
 async function runScopedHideCommand({ hidden, tokens, app, runtime, chat }) {
@@ -340,14 +407,17 @@ async function setPresenceForRange({ app, runtime, chat, hidden, characterName, 
   const messages = await runtime.persistence.listMessages(chat.id);
   const selected = parseMessageRange(rangeTokens, messages);
   const rosterIds = roster.map((character) => character.id);
+  const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
+  const targetIsAlwaysPresent = alwaysPresentCharacterIds.includes(target.id);
   for (const message of selected) {
     const present = readPresenceState(message, rosterIds);
-    if (hidden) present.delete(target.id);
+    if (hidden && !targetIsAlwaysPresent) present.delete(target.id);
     else present.add(target.id);
     const patch = buildPresenceExtraPatch({
       extra: message.extra,
       rosterIds,
       presentCharacterIds: [...present],
+      alwaysPresentCharacterIds,
     });
     await patchMessageExtra(app, chat.id, message.id, patch);
   }
@@ -358,7 +428,7 @@ async function setPresenceForRange({ app, runtime, chat, hidden, characterName, 
   });
   return {
     ok: true,
-    feedback: `${hidden ? "Unset" : "Set"} ${target.name} presence on ${selected.length} message${selected.length === 1 ? "" : "s"}.`,
+    feedback: `${hidden ? "Unset" : "Set"} ${target.name} presence on ${selected.length} message${selected.length === 1 ? "" : "s"}.${hidden && targetIsAlwaysPresent ? " Always-present kept them visible." : ""}`,
     updated: selected.length,
   };
 }
@@ -427,17 +497,24 @@ async function ensureSummaryPresence({ runtime, chat, summaries = readSummaryEnt
   const messageList = messages || (await runtime.persistence.listMessages(chat.id));
   const messagesById = new Map(messageList.map((message) => [message.id, message]));
   const state = readPresenceChatState(chat);
+  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
   const nextPresenceById = {};
   let changed = false;
 
   for (const summary of Array.isArray(summaries) ? summaries : []) {
     if (!summary?.id) continue;
     if (Object.prototype.hasOwnProperty.call(state.summaryPresenceById, summary.id)) {
-      nextPresenceById[summary.id] = uniqueStrings(state.summaryPresenceById[summary.id]).filter((id) =>
-        rosterIds.includes(id),
-      );
+      nextPresenceById[summary.id] = uniqueStrings([
+        ...state.summaryPresenceById[summary.id],
+        ...alwaysPresentCharacterIds,
+      ]).filter((id) => rosterIds.includes(id));
     } else {
-      nextPresenceById[summary.id] = buildSummaryAudience({ summary, messagesById, rosterIds });
+      nextPresenceById[summary.id] = buildSummaryAudience({
+        summary,
+        messagesById,
+        rosterIds,
+        alwaysPresentCharacterIds,
+      });
     }
     if (!sameStringArray(nextPresenceById[summary.id], state.summaryPresenceById[summary.id])) changed = true;
   }
@@ -460,6 +537,7 @@ async function reconcileSummaryPresence({ runtime, chat, events, hint = {} }) {
   const messages = await runtime.persistence.listMessages(chat.id);
   const roster = await resolveRoster(runtime, chat);
   const rosterIds = roster.map((character) => character.id);
+  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
   const messagesById = new Map(messages.map((message) => [message.id, message]));
   let changed = false;
 
@@ -467,7 +545,10 @@ async function reconcileSummaryPresence({ runtime, chat, events, hint = {} }) {
   const selectedIds = uniqueStrings(hint.summaryEntryIds || hint.selectedSummaryEntryIds);
   const combinedSourceIds = selectedIds.length >= 2 ? selectedIds : deletedEvents.map((event) => event.summaryId);
   const hasCombinedSources = combinedSourceIds.length >= 2;
-  const combinedAudience = unionSummaryAudience(nextPresenceById, combinedSourceIds);
+  const combinedAudience = uniqueStrings([
+    ...unionSummaryAudience(nextPresenceById, combinedSourceIds),
+    ...alwaysPresentCharacterIds,
+  ]);
 
   for (const event of Array.isArray(events) ? events : []) {
     if (!event?.summaryId) continue;
@@ -482,7 +563,7 @@ async function reconcileSummaryPresence({ runtime, chat, events, hint = {} }) {
       const entry = event.entry || summaryById.get(event.summaryId);
       const audience = hasCombinedSources
         ? combinedAudience.filter((id) => rosterIds.includes(id))
-        : buildSummaryAudience({ summary: entry, messagesById, rosterIds });
+        : buildSummaryAudience({ summary: entry, messagesById, rosterIds, alwaysPresentCharacterIds });
       nextPresenceById[event.summaryId] = audience;
       changed = true;
       continue;
@@ -495,6 +576,7 @@ async function reconcileSummaryPresence({ runtime, chat, events, hint = {} }) {
           summary: event.entry || summaryById.get(event.summaryId),
           messagesById,
           rosterIds,
+          alwaysPresentCharacterIds,
         });
         changed = true;
       }
@@ -527,9 +609,15 @@ async function updateSummaryPresenceForMessages({ runtime, chat, messageIds }) {
   const messagesById = new Map(messages.map((message) => [message.id, message]));
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
   const state = readPresenceChatState(freshChat);
+  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
   const nextPresenceById = { ...state.summaryPresenceById };
   for (const summary of summaries) {
-    nextPresenceById[summary.id] = buildSummaryAudience({ summary, messagesById, rosterIds });
+    nextPresenceById[summary.id] = buildSummaryAudience({
+      summary,
+      messagesById,
+      rosterIds,
+      alwaysPresentCharacterIds,
+    });
   }
   await patchChatState(runtime.persistence, freshChat, { summaryPresenceById: nextPresenceById });
   return { updated: true, summaries: summaries.length };
@@ -642,6 +730,11 @@ function resolveActiveRosterIds(chat) {
   const metadata = normalizeObject(chat?.metadata);
   const inactive = new Set(uniqueStrings(metadata.inactiveCharacterIds));
   return rosterIds.filter((id) => !inactive.has(id));
+}
+
+function resolveAlwaysPresentRosterIds(chat) {
+  const rosterIds = new Set(uniqueStrings(chat?.characterIds));
+  return readPresenceChatState(chat).alwaysPresentCharacterIds.filter((id) => rosterIds.has(id));
 }
 
 function resolveCharacterByName(roster, name) {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { createSlashCommandRouter, matchSlashCommand } from "../../_mari-bridge/src/commands.js";
 import { diffSummaryEntries } from "../../_mari-bridge/src/summary-tracking.js";
+import { readPresenceChatState } from "../src/shared/chat-state.js";
 import { buildPresenceExtraPatch, readPresenceState } from "../src/shared/presence-state.js";
 import { planRosterBackfill } from "../src/shared/roster.js";
 import { activate, selfCheck } from "../src/server/index.js";
@@ -44,6 +45,14 @@ assert(patch.hiddenFromAICharacterIds.includes("outside-roster"), "non-roster hi
 assert(patch.hiddenFromAI === true, "global hidden flag preserved");
 assert(!Object.prototype.hasOwnProperty.call(patch, "marinaraPresencePackage"), "message patch does not stamp shadow metadata");
 
+const alwaysPresentPatch = buildPresenceExtraPatch({
+  extra: { hiddenFromAICharacterIds: ["a", "b"] },
+  rosterIds: ["a", "b"],
+  presentCharacterIds: [],
+  alwaysPresentCharacterIds: ["b"],
+});
+assert(!alwaysPresentPatch.hiddenFromAICharacterIds.includes("b"), "always-present character cannot be hidden by message patch");
+
 const nobodyPresent = readPresenceState(
   { extra: { hiddenFromAICharacterIds: ["a", "b"] } },
   ["a", "b"],
@@ -62,6 +71,15 @@ const backfill = planRosterBackfill({
 });
 assert(backfill.messagePatches.length === 1, "new character backfill planned");
 assert(
+  planRosterBackfill({
+    previousRosterIds: ["a"],
+    currentRosterIds: ["a", "b"],
+    messages: [{ id: "m1", extra: {} }],
+    alwaysPresentCharacterIds: ["b"],
+  }).messagePatches[0].patch.hiddenFromAICharacterIds.length === 0,
+  "always-present character is not hidden by roster backfill",
+);
+assert(
   planRosterBackfill({ previousRosterIds: [], currentRosterIds: ["a"], messages: [{ id: "m1", extra: {} }] })
     .messagePatches.length === 0,
   "backfill waits for a previous roster snapshot",
@@ -76,6 +94,15 @@ assert(
     "a",
   "summary audience excludes absent characters",
 );
+assert(
+  buildSummaryAudience({
+    summary: { id: "s1", messageIds: ["m1"] },
+    messagesById,
+    rosterIds: ["a", "b"],
+    alwaysPresentCharacterIds: ["b"],
+  }).join(",") === "a,b",
+  "summary audience includes always-present characters",
+);
 
 const entries = buildSummaryLorebookEntries({
   chatId: "chat-1",
@@ -89,8 +116,10 @@ assert(entries[1].outletName === PRESENCE_SUMMARY_OUTLET_NAME, "summary mirror u
 assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.characterFilterMode)), "valid character filters");
 assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.generationTriggerFilterMode)), "valid trigger filters");
 assert(entries.every((entry) => entry.dynamicState?.owner === "presence"), "summary mirror ownership is schema-shaped");
+assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { alwaysPresentCharacterIds: ["b"] } } }).alwaysPresentCharacterIds[0] === "b", "chat state reads always-present characters");
 
 const registeredRoutes = [];
+const registeredRouteHandlers = new Map();
 const registeredHooks = [];
 const injectedRequests = [];
 let lorebookEntries = [];
@@ -110,9 +139,15 @@ await activate({
       await callback({
         get(route) {
           registeredRoutes.push(`GET ${route}`);
+          registeredRouteHandlers.set(`GET ${route}`, arguments[1]);
         },
         post(route) {
           registeredRoutes.push(`POST ${route}`);
+          registeredRouteHandlers.set(`POST ${route}`, arguments[1]);
+        },
+        patch(route) {
+          registeredRoutes.push(`PATCH ${route}`);
+          registeredRouteHandlers.set(`PATCH ${route}`, arguments[1]);
         },
       });
     },
@@ -152,6 +187,15 @@ await activate({
         };
         return { statusCode: 200, payload: JSON.stringify(testChat) };
       }
+      if (request.method === "PATCH" && /^\/api\/chats\/chat-1\/messages\/[^/]+\/extra$/u.test(request.url)) {
+        const messageId = decodeURIComponent(request.url.split("/").at(-2));
+        currentMessages = currentMessages.map((message) =>
+          message.id === messageId
+            ? { ...message, extra: { ...message.extra, ...request.payload } }
+            : message,
+        );
+        return { statusCode: 200, payload: JSON.stringify({ ok: true }) };
+      }
       return { statusCode: 200, payload: "{}" };
     },
   },
@@ -176,6 +220,7 @@ await activate({
 assert(registeredRoutes.includes("GET /chat/:chatId/state"), "activate registers state route");
 assert(registeredRoutes.includes("POST /chat/:chatId/command"), "activate registers command route");
 assert(registeredRoutes.includes("POST /chat/:chatId/ensure"), "activate registers chat lifecycle ensure route");
+assert(registeredRoutes.includes("PATCH /chat/:chatId/settings"), "activate registers chat settings route");
 assert(registeredHooks.some((hook) => hook.name === "onSend"), "activate registers message save hook");
 assert(registeredHooks.some((hook) => hook.name === "preHandler"), "activate registers generation capture hook");
 assert(registeredHooks.some((hook) => hook.name === "onResponse"), "activate registers generation completion hook");
@@ -204,6 +249,31 @@ await registeredHooks
     JSON.stringify({ id: "m-disabled", chatId: "chat-1", role: "user", extra: {} }),
   );
 assert(injectedRequests.length === disabledRequestCount, "disabled Presence tracker does not stamp created messages");
+
+testChat = {
+  ...testChat,
+  metadata: { enableAgents: true, activeAgentIds: ["presence"], inactiveCharacterIds: ["b"] },
+};
+currentMessages = [
+  { id: "m-always", role: "user", extra: { hiddenFromAICharacterIds: ["b"] } },
+  { id: "m-global", role: "user", extra: { hiddenFromAI: true, hiddenFromAICharacterIds: ["b"] } },
+];
+await registeredRouteHandlers.get("PATCH /chat/:chatId/settings")(
+  { params: { chatId: "chat-1" }, body: { alwaysPresentCharacterIds: ["b"] } },
+  replyStub(),
+);
+assert(
+  testChat.metadata.marinaraPresencePackage?.alwaysPresentCharacterIds?.join(",") === "b",
+  "settings route stores always-present characters in chat metadata",
+);
+assert(
+  currentMessages.find((message) => message.id === "m-always")?.extra.hiddenFromAICharacterIds.length === 0,
+  "settings route removes always-present characters from message hidden lists",
+);
+assert(
+  currentMessages.find((message) => message.id === "m-global")?.extra.hiddenFromAICharacterIds.join(",") === "b",
+  "settings route does not unhide globally hidden messages",
+);
 
 testChat = {
   ...testChat,
@@ -297,6 +367,18 @@ await selfCheck({
 
 function assert(condition, message) {
   if (!condition) throw new Error(`Check failed: ${message}`);
+}
+
+function replyStub() {
+  return {
+    status() {
+      return {
+        send(value) {
+          return value;
+        },
+      };
+    },
+  };
 }
 
 console.log("Presence checks passed.");
