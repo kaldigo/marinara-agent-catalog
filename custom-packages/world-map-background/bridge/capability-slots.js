@@ -77,6 +77,7 @@ export function ensureCapabilitySlotBridge(options = {}) {
         state.scope = null;
         state.observer = null;
         state.chatSettingsPanel = null;
+        state.renderTimerDueAt = 0;
         state.ownerToken = null;
         state.scheduleRender = null;
       };
@@ -101,6 +102,7 @@ function getCapabilitySlotState() {
       chatSettingsPanelObserver: null,
       debugValues: new Map(),
       renderTimer: 0,
+      renderTimerDueAt: 0,
       renderDelayMs: 120,
       ownerToken: null,
       scheduleRender: null,
@@ -110,6 +112,7 @@ function getCapabilitySlotState() {
   if (!(state.contributions instanceof Map)) state.contributions = new Map();
   if (!(state.mounted instanceof Map)) state.mounted = new Map();
   if (!(state.debugValues instanceof Map)) state.debugValues = new Map();
+  state.renderTimerDueAt = Number(state.renderTimerDueAt) || 0;
   return state;
 }
 
@@ -194,11 +197,18 @@ function scheduleCapabilitySlotRenderInternal(delayMs) {
 
 function scheduleCapabilitySlotRenderForOwner(state, delayMs, token) {
   if (!isBridgeSubsystemOwner("capability-slots", token)) return;
-  if (state.renderTimer) state.scope?.clearTimer?.(state.renderTimer);
+  const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : state.renderDelayMs;
+  const dueAt = Date.now() + delay;
+  if (state.renderTimer) {
+    if (delay > 0 && state.renderTimerDueAt > 0 && state.renderTimerDueAt <= dueAt) return;
+    state.scope?.clearTimer?.(state.renderTimer);
+  }
+  state.renderTimerDueAt = dueAt;
   state.renderTimer = (state.scope || createDomScope()).timeout(() => {
     state.renderTimer = 0;
+    state.renderTimerDueAt = 0;
     if (isBridgeSubsystemOwner("capability-slots", token)) renderCapabilitySlots(state);
-  }, Number.isFinite(Number(delayMs)) ? Number(delayMs) : state.renderDelayMs);
+  }, delay);
 }
 
 function renderCapabilitySlots(state) {

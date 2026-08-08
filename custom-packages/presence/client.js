@@ -2,7 +2,7 @@
   "use strict";
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.12";
+  const MARI_BRIDGE_VERSION = "1.0.13";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -496,6 +496,7 @@
           state.scope = null;
           state.observer = null;
           state.chatSettingsPanel = null;
+          state.renderTimerDueAt = 0;
           state.ownerToken = null;
           state.scheduleRender = null;
         };
@@ -520,6 +521,7 @@
         chatSettingsPanelObserver: null,
         debugValues: new Map(),
         renderTimer: 0,
+        renderTimerDueAt: 0,
         renderDelayMs: 120,
         ownerToken: null,
         scheduleRender: null,
@@ -529,6 +531,7 @@
     if (!(state.contributions instanceof Map)) state.contributions = new Map();
     if (!(state.mounted instanceof Map)) state.mounted = new Map();
     if (!(state.debugValues instanceof Map)) state.debugValues = new Map();
+    state.renderTimerDueAt = Number(state.renderTimerDueAt) || 0;
     return state;
   }
 
@@ -613,11 +616,18 @@
 
   function scheduleCapabilitySlotRenderForOwner(state, delayMs, token) {
     if (!isBridgeSubsystemOwner("capability-slots", token)) return;
-    if (state.renderTimer) state.scope?.clearTimer?.(state.renderTimer);
+    const delay = Number.isFinite(Number(delayMs)) ? Number(delayMs) : state.renderDelayMs;
+    const dueAt = Date.now() + delay;
+    if (state.renderTimer) {
+      if (delay > 0 && state.renderTimerDueAt > 0 && state.renderTimerDueAt <= dueAt) return;
+      state.scope?.clearTimer?.(state.renderTimer);
+    }
+    state.renderTimerDueAt = dueAt;
     state.renderTimer = (state.scope || createDomScope()).timeout(() => {
       state.renderTimer = 0;
+      state.renderTimerDueAt = 0;
       if (isBridgeSubsystemOwner("capability-slots", token)) renderCapabilitySlots(state);
-    }, Number.isFinite(Number(delayMs)) ? Number(delayMs) : state.renderDelayMs);
+    }, delay);
   }
 
   function renderCapabilitySlots(state) {
@@ -1450,6 +1460,7 @@
     settingsTimer: 0,
     settingsDataByChatId: new Map(),
     settingsLoadingChatIds: new Set(),
+    settingsLoadPromisesByChatId: new Map(),
     settingsElements: new Set(),
     settingsStyleInjected: false,
   };
@@ -1462,6 +1473,8 @@
   state.ensureInFlight = state.ensureInFlight instanceof Set ? state.ensureInFlight : new Set();
   state.settingsDataByChatId = state.settingsDataByChatId instanceof Map ? state.settingsDataByChatId : new Map();
   state.settingsLoadingChatIds = state.settingsLoadingChatIds instanceof Set ? state.settingsLoadingChatIds : new Set();
+  state.settingsLoadPromisesByChatId =
+    state.settingsLoadPromisesByChatId instanceof Map ? state.settingsLoadPromisesByChatId : new Map();
   state.commandDisposers = Array.isArray(state.commandDisposers) ? state.commandDisposers : [];
   state.lastEnsureAttemptAt = Number(state.lastEnsureAttemptAt) || 0;
   state.lastEnsureAttemptChatId = typeof state.lastEnsureAttemptChatId === "string" ? state.lastEnsureAttemptChatId : "";
@@ -1614,29 +1627,36 @@
   async function loadPresenceSettings(chatId, { force = false } = {}) {
     const cached = state.settingsDataByChatId.get(chatId);
     if (!force && cached && Date.now() - cached.loadedAt < 5_000) return cached;
-    if (state.settingsLoadingChatIds.has(chatId)) return cached;
+    const existingLoad = state.settingsLoadPromisesByChatId.get(chatId);
+    if (existingLoad && !force) return existingLoad;
     state.settingsLoadingChatIds.add(chatId);
-    try {
-      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/state`);
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
-      const normalized = normalizeSettingsData(data);
-      state.settingsDataByChatId.set(chatId, normalized);
-      return normalized;
-    } catch (error) {
-      const fallback = {
-        chatId,
-        enabled: true,
-        error: error instanceof Error ? error.message : String(error),
-        loadedAt: Date.now(),
-        roster: [],
-        state: { alwaysPresentCharacterIds: [] },
-      };
-      state.settingsDataByChatId.set(chatId, fallback);
-      return fallback;
-    } finally {
-      state.settingsLoadingChatIds.delete(chatId);
-    }
+    let loadPromise;
+    loadPromise = (async () => {
+      try {
+        const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/state`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+        const normalized = normalizeSettingsData(data);
+        state.settingsDataByChatId.set(chatId, normalized);
+        return normalized;
+      } catch (error) {
+        const fallback = {
+          chatId,
+          enabled: true,
+          error: error instanceof Error ? error.message : String(error),
+          loadedAt: Date.now(),
+          roster: [],
+          state: { alwaysPresentCharacterIds: [] },
+        };
+        state.settingsDataByChatId.set(chatId, fallback);
+        return fallback;
+      } finally {
+        state.settingsLoadingChatIds.delete(chatId);
+        if (state.settingsLoadPromisesByChatId.get(chatId) === loadPromise) state.settingsLoadPromisesByChatId.delete(chatId);
+      }
+    })();
+    state.settingsLoadPromisesByChatId.set(chatId, loadPromise);
+    return loadPromise;
   }
 
   function normalizeSettingsData(data) {
