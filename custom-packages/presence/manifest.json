@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
@@ -15,6 +15,16 @@
     "server": "server.mjs",
     "client": "client.js",
     "agents": "agents.json"
+  },
+  "contributions": {
+    "agentDetail": {
+      "agentIds": [
+        "presence"
+      ]
+    },
+    "slots": [
+      "chat-settings"
+    ]
   },
   "files": [
     {
@@ -89,8 +99,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "e8e986619343209efa63628b2cebad182428d6d347cadae5e05dae8b01efa1a6",
-      "bytes": 40436
+      "sha256": "4c9194157e4a69cabb96c14f148abc0d3fcf90e20453fd43d8b3f1d60cb61cd8",
+      "bytes": 41083
     },
     {
       "path": "server.mjs",
@@ -99,8 +109,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "2f06e7054260e9ca3a902f4494839936b303768626eaf506c92dbb1391c0f66a",
-      "bytes": 16354
+      "sha256": "58a117afa576ee29fbafeef83b5710d7959eb67362a70334ab9709a0c965d267",
+      "bytes": 16963
     },
     {
       "path": "src/server/command-router.js",
