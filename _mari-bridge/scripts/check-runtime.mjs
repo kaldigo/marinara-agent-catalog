@@ -105,8 +105,9 @@ assert(
 const capabilitySlotsSource = await fs.readFile(new URL("../src/capability-slots.js", import.meta.url), "utf8");
 assert(
   capabilitySlotsSource.includes("chat-settings-agent-menu-") &&
-    capabilitySlotsSource.includes("data-mari-bridge-agent-settings-body"),
-  "chat settings slot bridge can mount package settings in an agent settings card",
+    capabilitySlotsSource.includes("data-mari-bridge-agent-settings-body") &&
+    capabilitySlotsSource.includes("roleplay-agents"),
+  "chat settings slot bridge can mount package settings in the roleplay agent settings card area",
 );
 
 console.log("Mari bridge runtime checks passed.");

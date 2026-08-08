@@ -106,6 +106,7 @@ function registerPresenceChatSettings() {
     packageId: PACKAGE_ID,
     id: "presence.settings",
     agentId: "presence",
+    match: { sectionId: "roleplay-agents" },
     title: "Presence",
     description: "Configure character visibility for this chat.",
     iconText: "P",
