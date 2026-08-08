@@ -110,8 +110,9 @@ assert(
     capabilitySlotsSource.includes("syncChatSettingsPanelWatcher") &&
     capabilitySlotsSource.includes("section.children[1]") &&
     capabilitySlotsSource.includes("[mari-bridge:slots]") &&
-    capabilitySlotsSource.includes("shouldIgnoreBridgeOwnedMutations"),
-  "chat settings slot bridge waits for the roleplay panel content before mounting package settings",
+    capabilitySlotsSource.includes("shouldIgnoreBridgeOwnedMutations") &&
+    capabilitySlotsSource.includes("renderTimerDueAt"),
+  "chat settings slot bridge waits for the roleplay panel content without starving scheduled renders",
 );
 
 console.log("Mari bridge runtime checks passed.");

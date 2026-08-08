@@ -18,6 +18,7 @@ const state = window.__marinaraPresencePackageRuntime || {
   settingsTimer: 0,
   settingsDataByChatId: new Map(),
   settingsLoadingChatIds: new Set(),
+  settingsLoadPromisesByChatId: new Map(),
   settingsElements: new Set(),
   settingsStyleInjected: false,
 };
@@ -30,6 +31,8 @@ state.ensureTimer = Number(state.ensureTimer) || 0;
 state.ensureInFlight = state.ensureInFlight instanceof Set ? state.ensureInFlight : new Set();
 state.settingsDataByChatId = state.settingsDataByChatId instanceof Map ? state.settingsDataByChatId : new Map();
 state.settingsLoadingChatIds = state.settingsLoadingChatIds instanceof Set ? state.settingsLoadingChatIds : new Set();
+state.settingsLoadPromisesByChatId =
+  state.settingsLoadPromisesByChatId instanceof Map ? state.settingsLoadPromisesByChatId : new Map();
 state.commandDisposers = Array.isArray(state.commandDisposers) ? state.commandDisposers : [];
 state.lastEnsureAttemptAt = Number(state.lastEnsureAttemptAt) || 0;
 state.lastEnsureAttemptChatId = typeof state.lastEnsureAttemptChatId === "string" ? state.lastEnsureAttemptChatId : "";
@@ -182,29 +185,36 @@ function getSettingsRenderRoot(element) {
 async function loadPresenceSettings(chatId, { force = false } = {}) {
   const cached = state.settingsDataByChatId.get(chatId);
   if (!force && cached && Date.now() - cached.loadedAt < 5_000) return cached;
-  if (state.settingsLoadingChatIds.has(chatId)) return cached;
+  const existingLoad = state.settingsLoadPromisesByChatId.get(chatId);
+  if (existingLoad && !force) return existingLoad;
   state.settingsLoadingChatIds.add(chatId);
-  try {
-    const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/state`);
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
-    const normalized = normalizeSettingsData(data);
-    state.settingsDataByChatId.set(chatId, normalized);
-    return normalized;
-  } catch (error) {
-    const fallback = {
-      chatId,
-      enabled: true,
-      error: error instanceof Error ? error.message : String(error),
-      loadedAt: Date.now(),
-      roster: [],
-      state: { alwaysPresentCharacterIds: [] },
-    };
-    state.settingsDataByChatId.set(chatId, fallback);
-    return fallback;
-  } finally {
-    state.settingsLoadingChatIds.delete(chatId);
-  }
+  let loadPromise;
+  loadPromise = (async () => {
+    try {
+      const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/state`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+      const normalized = normalizeSettingsData(data);
+      state.settingsDataByChatId.set(chatId, normalized);
+      return normalized;
+    } catch (error) {
+      const fallback = {
+        chatId,
+        enabled: true,
+        error: error instanceof Error ? error.message : String(error),
+        loadedAt: Date.now(),
+        roster: [],
+        state: { alwaysPresentCharacterIds: [] },
+      };
+      state.settingsDataByChatId.set(chatId, fallback);
+      return fallback;
+    } finally {
+      state.settingsLoadingChatIds.delete(chatId);
+      if (state.settingsLoadPromisesByChatId.get(chatId) === loadPromise) state.settingsLoadPromisesByChatId.delete(chatId);
+    }
+  })();
+  state.settingsLoadPromisesByChatId.set(chatId, loadPromise);
+  return loadPromise;
 }
 
 function normalizeSettingsData(data) {
