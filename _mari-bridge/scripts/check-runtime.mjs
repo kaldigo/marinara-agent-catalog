@@ -106,8 +106,10 @@ const capabilitySlotsSource = await fs.readFile(new URL("../src/capability-slots
 assert(
   capabilitySlotsSource.includes("chat-settings-agent-menu-") &&
     capabilitySlotsSource.includes("data-mari-bridge-agent-settings-body") &&
-    capabilitySlotsSource.includes("roleplay-agents"),
-  "chat settings slot bridge can mount package settings in the roleplay agent settings card area",
+    capabilitySlotsSource.includes("roleplay-agents") &&
+    capabilitySlotsSource.includes("syncChatSettingsPanelWatcher") &&
+    capabilitySlotsSource.includes("section.children[1]"),
+  "chat settings slot bridge waits for the roleplay panel content before mounting package settings",
 );
 
 console.log("Mari bridge runtime checks passed.");
