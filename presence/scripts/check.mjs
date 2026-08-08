@@ -5,6 +5,7 @@ import { buildPresenceExtraPatch, readPresenceState } from "../src/shared/presen
 import { planRosterBackfill } from "../src/shared/roster.js";
 import { activate, selfCheck } from "../src/server/index.js";
 import { buildSummaryAudience, buildSummaryLorebookEntries } from "../src/server/summary-mirror.js";
+import { PRESENCE_SUMMARY_OUTLET_NAME } from "../src/shared/constants.js";
 
 const command = {
   id: "presence-hide",
@@ -83,6 +84,8 @@ const entries = buildSummaryLorebookEntries({
 });
 assert(entries.length === 3, "summary mirror wrapper and entry");
 assert(entries[1].name === "s1", "summary id used as entry name");
+assert(entries[1].position === 7, "summary mirror uses outlet injection");
+assert(entries[1].outletName === PRESENCE_SUMMARY_OUTLET_NAME, "summary mirror uses Presence outlet name");
 assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.characterFilterMode)), "valid character filters");
 assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.generationTriggerFilterMode)), "valid trigger filters");
 assert(entries.every((entry) => entry.dynamicState?.owner === "presence"), "summary mirror ownership is schema-shaped");
@@ -90,6 +93,7 @@ assert(entries.every((entry) => entry.dynamicState?.owner === "presence"), "summ
 const registeredRoutes = [];
 const registeredHooks = [];
 const injectedRequests = [];
+let lorebookEntries = [];
 let testChat = {
   id: "chat-1",
   characterIds: ["a", "b"],
@@ -114,11 +118,39 @@ await activate({
     },
     async inject(request) {
       injectedRequests.push(request);
+      if (request.method === "GET" && request.url === "/api/lorebooks?chatId=chat-1") {
+        return { statusCode: 200, payload: "[]" };
+      }
+      if (request.method === "GET" && request.url === "/api/lorebooks/presence-lorebook") {
+        return { statusCode: 200, payload: JSON.stringify({ id: "presence-lorebook", enabled: true }) };
+      }
       if (request.method === "POST" && request.url === "/api/lorebooks") {
         return { statusCode: 200, payload: JSON.stringify({ id: "presence-lorebook", enabled: true }) };
       }
       if (request.method === "GET" && request.url === "/api/lorebooks/presence-lorebook/entries") {
-        return { statusCode: 200, payload: "[]" };
+        return { statusCode: 200, payload: JSON.stringify(lorebookEntries) };
+      }
+      if (request.method === "POST" && request.url === "/api/lorebooks/presence-lorebook/entries") {
+        const entry = { id: `entry-${lorebookEntries.length + 1}`, ...request.payload };
+        lorebookEntries.push(entry);
+        return { statusCode: 200, payload: JSON.stringify(entry) };
+      }
+      if (request.method === "DELETE" && request.url.startsWith("/api/lorebooks/presence-lorebook/entries/")) {
+        const entryId = decodeURIComponent(request.url.split("/").pop());
+        lorebookEntries = lorebookEntries.filter((entry) => entry.id !== entryId);
+        return { statusCode: 204, payload: "" };
+      }
+      if (request.method === "PATCH" && request.url === "/api/chats/chat-1/summary-entries") {
+        testChat = {
+          ...testChat,
+          metadata: {
+            ...testChat.metadata,
+            summaryEntries: (testChat.metadata.summaryEntries || []).map((entry) =>
+              entry.id === request.payload.entryId ? { ...entry, enabled: request.payload.enabled } : entry,
+            ),
+          },
+        };
+        return { statusCode: 200, payload: JSON.stringify(testChat) };
       }
       return { statusCode: 200, payload: "{}" };
     },
@@ -133,7 +165,9 @@ await activate({
         listMessages() {
           return currentMessages;
         },
-        updateChatMetadata() {},
+        updateChatMetadata({ metadata }) {
+          testChat = { ...testChat, metadata };
+        },
       },
       resources: { listCharacters() { return []; } },
     },
@@ -177,16 +211,38 @@ testChat = {
     enableAgents: true,
     activeAgentIds: ["presence"],
     inactiveCharacterIds: ["b"],
+    summaryEntries: [{ id: "summary-1", content: "Existing summary", enabled: true, messageIds: ["m1"] }],
   },
 };
 currentMessages = [{ id: "m1", role: "user", extra: {} }];
 const generateRequest = { method: "POST", url: "/api/generate", body: { chatId: "chat-1" }, headers: {} };
 await registeredHooks.find((hook) => hook.name === "preHandler").handler(generateRequest, {});
+assert(
+  testChat.metadata.marinaraPresencePackage?.summaryPresenceById?.["summary-1"]?.join(",") === "a,b",
+  "normal generate stores positive summary audience before disabling native summaries",
+);
+assert(
+  injectedRequests.some(
+    (request) =>
+      request.method === "PATCH" &&
+      request.url === "/api/chats/chat-1/summary-entries" &&
+      request.payload?.entryId === "summary-1" &&
+      request.payload?.enabled === false,
+  ),
+  "normal generate temporarily disables enabled native summary entries",
+);
+assert(
+  lorebookEntries.some((entry) => entry.name === "summary-1" && entry.position === 7 && entry.outletName === PRESENCE_SUMMARY_OUTLET_NAME),
+  "normal generate creates temporary outlet summary entry",
+);
 testChat = {
   ...testChat,
   metadata: {
     ...testChat.metadata,
-    summaryEntries: [{ id: "summary-1", content: "Generated summary", enabled: true, messageIds: ["m1", "m2"] }],
+    summaryEntries: [
+      ...(testChat.metadata.summaryEntries || []),
+      { id: "summary-2", content: "Generated summary", enabled: true, messageIds: ["m1", "m2"] },
+    ],
   },
 };
 currentMessages = [
@@ -209,9 +265,14 @@ assert(
       request.method === "PATCH" &&
       request.url === "/api/chats/chat-1/summary-entries" &&
       request.payload?.entryId === "summary-1" &&
-      request.payload?.enabled === false,
+      request.payload?.enabled === true,
   ),
-  "normal generate reconciles and disables native summary entries",
+  "normal generate restores native summary enabled state",
+);
+assert(lorebookEntries.length === 0, "normal generate clears temporary summary lorebook entries");
+assert(
+  testChat.metadata.marinaraPresencePackage?.summaryPresenceById?.["summary-2"]?.join(",") === "a,b",
+  "normal generate records positive audience for generated summaries",
 );
 
 const afterGenerateRequestCount = injectedRequests.length;

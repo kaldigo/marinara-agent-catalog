@@ -39,15 +39,19 @@ When a chat gains characters:
 - Add newly added character IDs to Presence-owned hidden IDs.
 - Do not touch globally hidden messages.
 - Do not remove manual per-character hidden IDs.
-- Rebuild summary lorebook filters.
+- Recompute positive summary audience only for summaries affected by the roster change.
 
 ## 5. Summaries
 
 - Detect summary creation, generation, edit, and delete via bridge diffing plus
   route/generation-completion hints where available.
-- Mirror summaries into a Presence-owned lorebook keyed by summary entry ID.
-- Store mirror enabled preferences per chat by summary ID.
-- Disable native summary entries only after a successful mirror rebuild.
+- Store positive summary audience per chat by native summary entry ID.
+- On generation, copy enabled native summaries into a temporary Presence-owned
+  outlet lorebook keyed by summary entry ID.
+- Temporarily disable native summary entries during generation, then restore the
+  snapshotted enabled state and clear the temporary lorebook.
+- Update summary audience directly on summary create/delete/combine and only
+  recalculate affected summaries after presence range commands.
 
 ## 6. Commands
 
