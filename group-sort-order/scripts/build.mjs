@@ -12,9 +12,7 @@ const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.jso
 const bridgeClientSources = [
   "runtime.js",
   "composer-dom.js",
-  "generation-stream.js",
-  "ui-slots.js",
-  "generation-lifecycle.js"
+  "ui-slots.js"
 ];
 
 if (!existsSync(bridgeRoot)) {

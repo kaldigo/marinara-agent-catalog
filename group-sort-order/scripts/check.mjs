@@ -141,9 +141,9 @@ assert(clientSource.includes("marinara-capability-group-sort-order"), "client re
 assert(clientSource.includes("marinara-capability-props"), "client responds to capability prop changes");
 assert(clientSource.includes("registerComposerSlotContribution"), "client uses bridge composer slot contribution");
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
-assert(clientSource.includes("declarePackageGeneration"), "client declares bridge generation activity for refresh");
-assert(clientSource.includes("GENERATION_KIND_AGENT"), "client marks refresh as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.18"'), "client runtime version matches package version");
+assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
+assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.19"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
@@ -161,6 +161,8 @@ assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-
 assert(buildSource.includes("stripBrowserModuleSyntax"), "client entrypoint bundles browser-safe bridge modules");
 assert(buildSource.includes("runtimeDisabled: true"), "feature marker is runtime-disabled");
 assert(buildSource.includes('"ui-slots.js"'), "client entrypoint bundles bridge UI slot placement");
+assert(!buildSource.includes('"generation-lifecycle.js"'), "client entrypoint does not bundle composer generation lock code");
+assert(!buildSource.includes('"generation-stream.js"'), "client entrypoint does not bundle unused generation streaming code");
 
 await selfCheck({
   app: { db: fakeDb() },
