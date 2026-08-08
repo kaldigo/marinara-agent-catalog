@@ -1,4 +1,5 @@
 import { injectStyle } from "../../bridge/composer-dom.js";
+import { installFetchInterceptor } from "../../bridge/fetch-intercept.js";
 import {
   COMPOSER_SLOT_ABOVE_INPUT,
   registerComposerSlotContribution,
@@ -11,7 +12,7 @@ import {
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.19";
+  const RUNTIME_VERSION = "1.0.20";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -77,6 +78,14 @@ import {
   }
 
   function startRuntime() {
+    state.cleanups.push(
+      installFetchInterceptor({
+        id: "group-sort-order-generate",
+        priority: 30,
+        route: "generate",
+        handler: onGenerateFetch,
+      }),
+    );
     state.slotCleanup = registerComposerSlotContribution({
       packageId: PACKAGE_ID,
       id: "next-speaker",
@@ -94,6 +103,34 @@ import {
     on(window, "marinara:generation-complete", scheduleRefreshFromEvent);
     on(window, "marinara:generation-error", scheduleRefreshFromEvent);
     scheduleComposerSlotRender(0);
+  }
+
+  async function onGenerateFetch(context, next) {
+    if (context.method !== "POST") return next();
+    const body = normalizeObject(context.body);
+    const chatId = typeof body.chatId === "string" ? body.chatId.trim() : "";
+    if (!chatId || body.impersonate === true || body.turnGameBots === true) return next();
+    try {
+      const view = await readViewForGenerate(context.fetchOriginal, chatId);
+      if (view?.enabled === false || view?.hidden !== false || view?.canRefresh !== true) return next();
+      const contribution = await readPromptContributionForGenerate(context.fetchOriginal, chatId);
+      const text = typeof contribution?.text === "string" ? contribution.text.trim() : "";
+      if (!text) return next();
+      const nextBody = { ...body };
+      nextBody.agentInjectionOverrides = mergeAgentInjectionOverrides(nextBody.agentInjectionOverrides, {
+        agentType: "group-sort-order",
+        agentName: "Group Sort Order",
+        text,
+      });
+      const speaker = view?.nextSpeaker;
+      if (speaker?.kind !== "persona" && typeof speaker?.id === "string" && speaker.id && !nextBody.forCharacterId) {
+        nextBody.forCharacterId = speaker.id;
+      }
+      return next(context.input, context.cloneInitWithJsonBody(nextBody));
+    } catch (error) {
+      warn("generate intercept failed", error);
+      return next();
+    }
   }
 
   function on(target, type, handler, options) {
@@ -261,6 +298,41 @@ import {
     if (!response.ok) throw new Error(await response.text());
     if (response.status === 204) return {};
     return response.json();
+  }
+
+  async function apiWithFetch(fetcher, path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (options.body !== undefined && !headers["content-type"] && !headers["Content-Type"]) {
+      headers["content-type"] = "application/json";
+    }
+    const response = await fetcher(`/api${path}`, {
+      headers,
+      ...options,
+    });
+    if (!response.ok) throw new Error(await response.text());
+    if (response.status === 204) return {};
+    return response.json();
+  }
+
+  async function readViewForGenerate(fetcher, chatId) {
+    if (chatId === state.activeChatId && state.lastView?.chatId === chatId && Date.now() - state.lastRefreshAt < 3000) {
+      return state.lastView;
+    }
+    return apiWithFetch(fetcher, `/group-sort-order/chat/${encodeURIComponent(chatId)}/state`);
+  }
+
+  async function readPromptContributionForGenerate(fetcher, chatId) {
+    const response = await apiWithFetch(
+      fetcher,
+      `/group-sort-order/prompt-contributions/${encodeURIComponent(chatId)}/group-sort-order`,
+    );
+    return normalizeObject(response?.contribution);
+  }
+
+  function mergeAgentInjectionOverrides(current, contribution) {
+    const agentType = contribution.agentType;
+    const entries = Array.isArray(current) ? current.filter((item) => normalizeObject(item).agentType !== agentType) : [];
+    return [...entries, contribution];
   }
 
   function normalizeObject(value) {

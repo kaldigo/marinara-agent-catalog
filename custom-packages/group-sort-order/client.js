@@ -362,6 +362,154 @@
     return window[key];
   }
 
+  // bridge/fetch-intercept.js
+  // Upstream gap MB-011: packages do not yet have a first-class client-side
+  // generate request observation/mutation hook.
+
+
+  const FETCH_INTERCEPT_STATE_KEY = "__mariBridgeFetchInterceptState";
+
+  function getApiPath(input) {
+    try {
+      const url = typeof input === "string" ? input : input?.url || "";
+      return new URL(String(url || ""), window.location.origin).pathname.replace(/\/+$/u, "") || "/";
+    } catch {
+      return "";
+    }
+  }
+
+  function classifyApiRequest(input) {
+    const pathname = getApiPath(input);
+    if (pathname === "/api/generate") return { kind: "generate", route: "generate", pathname };
+    if (pathname === "/api/generate/dryRun") return { kind: "generate", route: "generate:dry-run", pathname };
+    if (pathname === "/api/generate/raw") return { kind: "generate", route: "generate:raw", pathname };
+    const messageMatch = pathname.match(/^\/api\/chats\/([^/]+)\/messages$/u);
+    if (messageMatch) {
+      return { kind: "message:create", route: "message:create", chatId: decodeURIComponent(messageMatch[1]), pathname };
+    }
+    return { kind: "other", route: "other", pathname };
+  }
+
+  function parseJsonFetchBody(init) {
+    if (typeof init?.body !== "string") return null;
+    try {
+      return JSON.parse(init.body);
+    } catch {
+      return null;
+    }
+  }
+
+  function cloneFetchInitWithJsonBody(input, init, body) {
+    const nextInit = { ...(init || {}) };
+    nextInit.method = String(nextInit.method || (typeof input !== "string" ? input?.method : "") || "POST");
+    nextInit.body = JSON.stringify(body);
+    const headers = new Headers(nextInit.headers || (typeof input !== "string" ? input?.headers : undefined) || {});
+    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    nextInit.headers = headers;
+    return nextInit;
+  }
+
+  function installFetchInterceptor(definition = {}) {
+    const id = typeof definition.id === "string" && definition.id.trim() ? definition.id.trim() : "";
+    if (!id) throw new Error("installFetchInterceptor requires an id.");
+    if (typeof definition.handler !== "function") throw new Error(`Fetch interceptor "${id}" requires a handler.`);
+
+    const state = fetchInterceptState();
+    state.interceptors.set(id, {
+      id,
+      priority: Number.isFinite(Number(definition.priority)) ? Number(definition.priority) : 100,
+      match: typeof definition.match === "function" ? definition.match : null,
+      route: typeof definition.route === "string" ? definition.route : "",
+      handler: definition.handler,
+    });
+    claimBridgeSubsystem("fetch-intercept", {
+      version: MARI_BRIDGE_VERSION,
+      ownerId: "mari-bridge:fetch-intercept",
+      install: ({ token }) => installFetchPatch(state, token),
+    });
+
+    return () => {
+      const current = state.interceptors.get(id);
+      if (current?.handler === definition.handler) state.interceptors.delete(id);
+    };
+  }
+
+  function fetchInterceptState() {
+    if (!window[FETCH_INTERCEPT_STATE_KEY]) {
+      window[FETCH_INTERCEPT_STATE_KEY] = {
+        originalFetch: null,
+        patchedFetch: null,
+        interceptors: new Map(),
+        ownerToken: null,
+      };
+    }
+    const state = window[FETCH_INTERCEPT_STATE_KEY];
+    if (!(state.interceptors instanceof Map)) state.interceptors = new Map();
+    if (!("ownerToken" in state)) state.ownerToken = null;
+    return state;
+  }
+
+  function installFetchPatch(state, token) {
+    if (typeof state.originalFetch !== "function") state.originalFetch = window.fetch.bind(window);
+    state.ownerToken = token;
+    state.patchedFetch = (input, init = {}) => {
+      if (!isBridgeSubsystemOwner("fetch-intercept", token)) {
+        return (state.originalFetch || window.fetch.bind(window))(input, init);
+      }
+      return runFetchPipeline(state, input, init);
+    };
+    window.fetch = state.patchedFetch;
+    return () => {
+      if (state.ownerToken !== token) return;
+      if (window.fetch === state.patchedFetch && typeof state.originalFetch === "function") {
+        window.fetch = state.originalFetch;
+      }
+      state.patchedFetch = null;
+      state.ownerToken = null;
+    };
+  }
+
+  async function runFetchPipeline(state, input, init = {}) {
+    const stack = Array.from(state.interceptors.values())
+      .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))
+      .filter((entry) => fetchInterceptorMatches(entry, input, init));
+    const baseFetch = state.originalFetch || window.fetch.bind(window);
+
+    const dispatch = async (index, currentInput, currentInit) => {
+      const entry = stack[index];
+      if (!entry) return baseFetch(currentInput, currentInit);
+      let nextCalled = false;
+      const context = buildFetchContext(currentInput, currentInit, baseFetch);
+      const next = async (nextInput = currentInput, nextInit = currentInit) => {
+        if (nextCalled) throw new Error(`Fetch interceptor "${entry.id}" called next() more than once.`);
+        nextCalled = true;
+        return dispatch(index + 1, nextInput, nextInit);
+      };
+      return entry.handler(context, next);
+    };
+
+    return dispatch(0, input, init);
+  }
+
+  function fetchInterceptorMatches(entry, input, init) {
+    const context = buildFetchContext(input, init, window.fetch);
+    if (entry.match) return entry.match(context) === true;
+    if (entry.route) return entry.route === context.route.route || entry.route === context.route.kind;
+    return true;
+  }
+
+  function buildFetchContext(input, init, fetchOriginal) {
+    return {
+      input,
+      init,
+      method: String(init?.method || (typeof input !== "string" ? input?.method : "GET") || "GET").toUpperCase(),
+      route: classifyApiRequest(input),
+      body: parseJsonFetchBody(init),
+      cloneInitWithJsonBody: (body) => cloneFetchInitWithJsonBody(input, init, body),
+      fetchOriginal,
+    };
+  }
+
   // bridge/ui-slots.js
   // Upstream gap MB-010: packages do not yet have stable composer UI slots.
 
@@ -768,7 +916,7 @@
     const ROOT_ID = "marinara-group-sort-order-root";
     const STYLE_ID = "marinara-group-sort-order-style";
     const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-    const RUNTIME_VERSION = "1.0.19";
+    const RUNTIME_VERSION = "1.0.20";
 
     const previousState = window[RUNTIME_KEY];
     if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -834,6 +982,14 @@
     }
 
     function startRuntime() {
+      state.cleanups.push(
+        installFetchInterceptor({
+          id: "group-sort-order-generate",
+          priority: 30,
+          route: "generate",
+          handler: onGenerateFetch,
+        }),
+      );
       state.slotCleanup = registerComposerSlotContribution({
         packageId: PACKAGE_ID,
         id: "next-speaker",
@@ -851,6 +1007,34 @@
       on(window, "marinara:generation-complete", scheduleRefreshFromEvent);
       on(window, "marinara:generation-error", scheduleRefreshFromEvent);
       scheduleComposerSlotRender(0);
+    }
+
+    async function onGenerateFetch(context, next) {
+      if (context.method !== "POST") return next();
+      const body = normalizeObject(context.body);
+      const chatId = typeof body.chatId === "string" ? body.chatId.trim() : "";
+      if (!chatId || body.impersonate === true || body.turnGameBots === true) return next();
+      try {
+        const view = await readViewForGenerate(context.fetchOriginal, chatId);
+        if (view?.enabled === false || view?.hidden !== false || view?.canRefresh !== true) return next();
+        const contribution = await readPromptContributionForGenerate(context.fetchOriginal, chatId);
+        const text = typeof contribution?.text === "string" ? contribution.text.trim() : "";
+        if (!text) return next();
+        const nextBody = { ...body };
+        nextBody.agentInjectionOverrides = mergeAgentInjectionOverrides(nextBody.agentInjectionOverrides, {
+          agentType: "group-sort-order",
+          agentName: "Group Sort Order",
+          text,
+        });
+        const speaker = view?.nextSpeaker;
+        if (speaker?.kind !== "persona" && typeof speaker?.id === "string" && speaker.id && !nextBody.forCharacterId) {
+          nextBody.forCharacterId = speaker.id;
+        }
+        return next(context.input, context.cloneInitWithJsonBody(nextBody));
+      } catch (error) {
+        warn("generate intercept failed", error);
+        return next();
+      }
     }
 
     function on(target, type, handler, options) {
@@ -1018,6 +1202,41 @@
       if (!response.ok) throw new Error(await response.text());
       if (response.status === 204) return {};
       return response.json();
+    }
+
+    async function apiWithFetch(fetcher, path, options = {}) {
+      const headers = { ...(options.headers || {}) };
+      if (options.body !== undefined && !headers["content-type"] && !headers["Content-Type"]) {
+        headers["content-type"] = "application/json";
+      }
+      const response = await fetcher(`/api${path}`, {
+        headers,
+        ...options,
+      });
+      if (!response.ok) throw new Error(await response.text());
+      if (response.status === 204) return {};
+      return response.json();
+    }
+
+    async function readViewForGenerate(fetcher, chatId) {
+      if (chatId === state.activeChatId && state.lastView?.chatId === chatId && Date.now() - state.lastRefreshAt < 3000) {
+        return state.lastView;
+      }
+      return apiWithFetch(fetcher, `/group-sort-order/chat/${encodeURIComponent(chatId)}/state`);
+    }
+
+    async function readPromptContributionForGenerate(fetcher, chatId) {
+      const response = await apiWithFetch(
+        fetcher,
+        `/group-sort-order/prompt-contributions/${encodeURIComponent(chatId)}/group-sort-order`,
+      );
+      return normalizeObject(response?.contribution);
+    }
+
+    function mergeAgentInjectionOverrides(current, contribution) {
+      const agentType = contribution.agentType;
+      const entries = Array.isArray(current) ? current.filter((item) => normalizeObject(item).agentType !== agentType) : [];
+      return [...entries, contribution];
     }
 
     function normalizeObject(value) {
