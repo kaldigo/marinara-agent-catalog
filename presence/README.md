@@ -62,10 +62,8 @@ positive summary audience state in chat metadata:
 During normal generation, Presence temporarily copies enabled native summaries
 into a chat-scoped lorebook assigned to `{{outlet::presence_chat_summaries}}`:
 
-- First wrapper entry opens `<chat_summaries>`.
 - Each summary entry uses the summary ID as the lorebook entry name.
 - Each summary entry is locked and character-filtered.
-- Last wrapper entry closes `</chat_summaries>`.
 
 Native summary enabled states are snapshotted, disabled for the generation
 window so the global summary marker stays empty, then restored when generation

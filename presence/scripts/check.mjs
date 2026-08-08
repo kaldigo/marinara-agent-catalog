@@ -31,6 +31,7 @@ assert(clientRuntime.includes("registerBridgeSlashCommand"), "client registers c
 assert(clientRuntime.includes('getAttribute("view") !== "settings"'), "client exposes settings through the capability element view");
 assert(clientRuntime.includes("registerCapabilityChatSettingsContribution"), "client registers chat settings through the bridge");
 assert(clientRuntime.includes("settingsLoadPromisesByChatId"), "client reuses in-flight settings loads");
+assert(clientRuntime.includes("Always present characters"), "client labels the always-present settings clearly");
 assert(!clientRuntime.includes('document.addEventListener("keydown"'), "client does not own keydown command capture");
 assert(!clientRuntime.includes('document.addEventListener("submit"'), "client does not own submit command capture");
 assert(!clientRuntime.includes("function matchSlashCommand"), "client does not own slash command matching");
@@ -113,10 +114,11 @@ const entries = buildSummaryLorebookEntries({
   summaries: [{ id: "s1", content: "Inside <tag>raw</tag>", enabled: true }],
   audienceBySummaryId: new Map([["s1", ["a"]]]),
 });
-assert(entries.length === 3, "summary mirror wrapper and entry");
-assert(entries[1].name === "s1", "summary id used as entry name");
-assert(entries[1].position === 7, "summary mirror uses outlet injection");
-assert(entries[1].outletName === PRESENCE_SUMMARY_OUTLET_NAME, "summary mirror uses Presence outlet name");
+assert(entries.length === 1, "summary mirror only creates summary entries");
+assert(entries[0].name === "s1", "summary id used as entry name");
+assert(!entries.some((entry) => String(entry.content || "").includes("<chat_summaries>")), "summary mirror does not add XML wrappers");
+assert(entries[0].position === 7, "summary mirror uses outlet injection");
+assert(entries[0].outletName === PRESENCE_SUMMARY_OUTLET_NAME, "summary mirror uses Presence outlet name");
 assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.characterFilterMode)), "valid character filters");
 assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.generationTriggerFilterMode)), "valid trigger filters");
 assert(entries.every((entry) => entry.dynamicState?.owner === "presence"), "summary mirror ownership is schema-shaped");
@@ -285,6 +287,7 @@ testChat = {
     enableAgents: true,
     activeAgentIds: ["presence"],
     inactiveCharacterIds: ["b"],
+    summary: "Existing summary",
     summaryEntries: [{ id: "summary-1", content: "Existing summary", enabled: true, messageIds: ["m1"] }],
   },
 };
@@ -332,6 +335,14 @@ assert(
 assert(
   injectedRequests.some((request) => request.url.includes("/messages/m3/extra")),
   "normal generate stamps created assistant message",
+);
+assert(
+  injectedRequests.some(
+    (request) =>
+      request.url.includes("/messages/m3/extra") &&
+      Object.prototype.hasOwnProperty.call(request.payload || {}, "chatSummaryFingerprint"),
+  ),
+  "normal generate refreshes cached prompt summary fingerprint after restoring summaries",
 );
 assert(
   injectedRequests.some(
