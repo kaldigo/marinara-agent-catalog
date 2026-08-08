@@ -2,7 +2,7 @@
   "use strict";
   // Shared runtime coordinator for bridge copies bundled by different packages.
 
-  const MARI_BRIDGE_VERSION = "1.0.9";
+  const MARI_BRIDGE_VERSION = "1.0.10";
 
   const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
   const DEFAULT_CAPABILITIES = [
@@ -478,9 +478,11 @@
         }
         return () => {
           unmountAll(state);
+          disconnectChatSettingsPanelWatcher(state);
           state.scope?.destroy?.();
           state.scope = null;
           state.observer = null;
+          state.chatSettingsPanel = null;
           state.ownerToken = null;
           state.scheduleRender = null;
         };
@@ -500,6 +502,9 @@
         mounted: new Map(),
         scope: null,
         observer: null,
+        chatSettingsPanel: null,
+        chatSettingsPanelScope: null,
+        chatSettingsPanelObserver: null,
         renderTimer: 0,
         renderDelayMs: 120,
         ownerToken: null,
@@ -514,21 +519,63 @@
 
   function startCapabilitySlotObservation(state, token) {
     if (!isBridgeSubsystemOwner("capability-slots", token)) return;
-    state.scope.on(window, "focus", () => scheduleCapabilitySlotRenderInternal(0));
+    state.scope.on(window, "focus", () => handleCapabilitySlotDomChange(state, token, 0));
     state.scope.on(window, "resize", () => scheduleCapabilitySlotRenderInternal());
-    state.scope.on(window, "popstate", () => scheduleCapabilitySlotRenderInternal(0));
-    state.scope.cleanup(watchActiveChatId(() => scheduleCapabilitySlotRenderInternal(0), { debounceMs: 80, intervalMs: 1_000 }));
+    state.scope.on(window, "popstate", () => handleCapabilitySlotDomChange(state, token, 0));
+    state.scope.cleanup(watchActiveChatId(() => handleCapabilitySlotDomChange(state, token, 0), { debounceMs: 80, intervalMs: 1_000 }));
     patchCapabilitySlotHistoryMethod("pushState");
     patchCapabilitySlotHistoryMethod("replaceState");
     if (document.body) {
-      state.observer = state.scope.observe(document.body, () => scheduleCapabilitySlotRenderInternal(), {
+      state.observer = state.scope.observe(document.body, () => handleCapabilitySlotDomChange(state, token), {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["data-chat-agent-entry", "data-message-id", "data-message-role", "class", "style"],
+        attributeFilter: ["data-chat-agent-entry", "data-message-id", "data-message-role", "data-chat-floating-panel", "class", "style"],
       });
     }
+    handleCapabilitySlotDomChange(state, token, 0);
+  }
+
+  function handleCapabilitySlotDomChange(state, token, delayMs) {
+    if (!isBridgeSubsystemOwner("capability-slots", token)) return;
+    syncChatSettingsPanelWatcher(state, token);
+    scheduleCapabilitySlotRenderInternal(delayMs);
+  }
+
+  function syncChatSettingsPanelWatcher(state, token) {
+    if (!isBridgeSubsystemOwner("capability-slots", token)) return;
+    const panel = findChatSettingsPanel();
+    if (panel === state.chatSettingsPanel) return;
+    disconnectChatSettingsPanelWatcher(state);
+    state.chatSettingsPanel = panel;
+    if (!(panel instanceof HTMLElement)) {
+      unmountSlot(state, CAPABILITY_SLOT_CHAT_SETTINGS);
+      return;
+    }
+    const panelScope = createDomScope();
+    state.chatSettingsPanelScope = panelScope;
+    state.scope?.cleanup?.(() => panelScope.destroy());
+    state.chatSettingsPanelObserver = panelScope.observe(panel, () => {
+      if (!document.body?.contains(panel) || !isVisibleElement(panel)) {
+        syncChatSettingsPanelWatcher(state, token);
+        scheduleCapabilitySlotRenderInternal(0);
+        return;
+      }
+      scheduleCapabilitySlotRenderInternal();
+    }, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-expanded", "data-chat-settings-section", "data-chat-agent-entry", "class", "style"],
+    });
     scheduleCapabilitySlotRenderInternal(0);
+  }
+
+  function disconnectChatSettingsPanelWatcher(state) {
+    state.chatSettingsPanelScope?.destroy?.();
+    state.chatSettingsPanelScope = null;
+    state.chatSettingsPanelObserver = null;
+    state.chatSettingsPanel = null;
   }
 
   function scheduleCapabilitySlotRenderInternal(delayMs) {
@@ -576,6 +623,13 @@
     if (!panel) return [];
     const chatId = getActiveChatIdFromClient();
     const agentId = contribution.match.agentId || contribution.packageId;
+    if (contribution.match.sectionId) {
+      const section = findChatSettingsSection(panel, contribution.match.sectionId);
+      const sectionStack = findChatSettingsSectionStack(section);
+      if (!section || !sectionStack) return [];
+      const agentCard = findAgentSettingsCard(section, chatId, agentId);
+      return [{ slot: contribution.slot, chatId, panel, section, sectionStack, agentId, agentCard, mountKey: "chat-settings" }];
+    }
     const section = findChatSettingsSection(panel, contribution.match.sectionId);
     const agentEntry = findAgentEntry(panel, agentId);
     const agentCard = findAgentSettingsCard(panel, chatId, agentId);
@@ -635,6 +689,12 @@
 
   function unmountAll(state) {
     for (const key of [...state.mounted.keys()]) unmountContribution(state, key);
+  }
+
+  function unmountSlot(state, slot) {
+    for (const [key, mounted] of [...state.mounted.entries()]) {
+      if (mounted?.element?.dataset?.mariBridgeCapabilitySlot === slot) unmountContribution(state, key);
+    }
   }
 
   function unmountContributionFamily(state, contributionKey) {
@@ -764,8 +824,7 @@
   }
 
   function findAgentSettingsCardContainer(panel, context, contribution) {
-    const sectionStack = findChatSettingsSectionStack(context?.section);
-    if (sectionStack) return sectionStack;
+    if (context?.sectionStack instanceof HTMLElement) return context.sectionStack;
     const generated = panel.querySelector(GENERATED_AGENT_CARD_SELECTOR);
     if (generated?.parentElement instanceof HTMLElement) return generated.parentElement;
     const existingCards = Array.from(panel.querySelectorAll('[id^="chat-settings-agent-menu-"]')).filter(
@@ -781,15 +840,13 @@
   function ensureGeneratedAgentSettingsCardPlacement(card, context, contribution) {
     if (!(card instanceof HTMLElement) || !card.matches(GENERATED_AGENT_CARD_SELECTOR)) return;
     const parent = findAgentSettingsCardContainer(context.panel, context, contribution);
-    if (!parent || card.parentElement === parent) return;
+    if (!parent) return;
     insertGeneratedAgentSettingsCard(parent, card, context, contribution);
   }
 
   function findChatSettingsSectionStack(section) {
     if (!(section instanceof HTMLElement)) return null;
-    const content = Array.from(section.children).find(
-      (child) => child instanceof HTMLElement && child.getAttribute("role") !== "button",
-    );
+    const content = section.children[1];
     if (!(content instanceof HTMLElement)) return null;
     const stack = content.firstElementChild;
     if (stack instanceof HTMLElement && stack.classList.contains("space-y-2")) return stack;
