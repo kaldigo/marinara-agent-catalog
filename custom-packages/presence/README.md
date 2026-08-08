@@ -14,9 +14,20 @@ where the Presence tracker is enabled in the chat's active agent list.
 - Store presence as character IDs, not names.
 - Preserve global Hide From AI state.
 - Backfill newly added characters so they do not inherit old scene history.
-- Mirror chat summaries into a Presence-owned lorebook with per-character filters.
-- Disable native chat summary injection after mirrored summaries are created.
+- Let chat-level narrator/helper cards be marked always present.
+- Store positive per-summary audience state by native summary ID.
+- Copy enabled chat summaries into a temporary Presence-owned outlet lorebook during generation.
 - Use `_mari-bridge` for slash command handling and summary lifecycle detection.
+
+## Chat Settings
+
+When the Presence tracker is enabled for a chat, Presence adds a compact section
+to Chat Settings next to the character roster. Selecting a character there stores
+that character ID in `marinaraPresencePackage.alwaysPresentCharacterIds`.
+
+Always-present characters are kept visible in native per-character Hide From AI
+state, future message stamps, roster backfill, slash command updates, and summary
+audiences. Globally hidden messages remain hidden.
 
 ## Slash Commands
 
@@ -35,13 +46,27 @@ through untouched.
 ## Summary Strategy
 
 Native chat summary entries do not currently support per-character audience
-scoping. Presence mirrors enabled summary entries into a chat-scoped lorebook:
+scoping. Presence keeps native summary entries as the source of truth and stores
+positive summary audience state in chat metadata:
+
+```json
+{
+  "marinaraPresencePackage": {
+    "summaryPresenceById": {
+      "summary-id": ["char-a", "char-b"]
+    }
+  }
+}
+```
+
+During normal generation, Presence temporarily copies enabled native summaries
+into a chat-scoped lorebook assigned to `{{outlet::presence_chat_summaries}}`:
 
 - First wrapper entry opens `<chat_summaries>`.
 - Each summary entry uses the summary ID as the lorebook entry name.
 - Each summary entry is locked and character-filtered.
 - Last wrapper entry closes `</chat_summaries>`.
-- User enabled/disabled mirror preferences are stored per chat by summary ID.
 
-The native summary entries are then disabled so the same summary is not injected
-globally. Mirror enabled/disabled preferences are stored per chat by summary ID.
+Native summary enabled states are snapshotted, disabled for the generation
+window so the global summary marker stays empty, then restored when generation
+finishes. The temporary lorebook entries are cleared afterward.

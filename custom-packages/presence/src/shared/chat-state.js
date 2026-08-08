@@ -10,9 +10,10 @@ export function readPresenceChatState(chat) {
   const state = normalizeObject(metadata[PRESENCE_PACKAGE_KEY]);
   return {
     version: PRESENCE_SCHEMA_VERSION,
+    alwaysPresentCharacterIds: uniqueStrings(state.alwaysPresentCharacterIds),
     rosterCharacterIds: uniqueStrings(state.rosterCharacterIds),
     summaryLorebookId: typeof state.summaryLorebookId === "string" ? state.summaryLorebookId : null,
-    summaryEntryEnabledById: normalizeBooleanMap(state.summaryEntryEnabledById),
+    summaryPresenceById: normalizeStringArrayMap(state.summaryPresenceById),
     updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
   };
 }
@@ -35,11 +36,11 @@ export function buildPresenceLorebookName(chatId) {
   return `${PRESENCE_LOREBOOK_NAME_PREFIX} - ${chatId || "active chat"}`;
 }
 
-function normalizeBooleanMap(value) {
+function normalizeStringArrayMap(value) {
   const input = normalizeObject(value);
   const output = {};
-  for (const [key, enabled] of Object.entries(input)) {
-    if (typeof enabled === "boolean") output[key] = enabled;
+  for (const [key, ids] of Object.entries(input)) {
+    if (Array.isArray(ids)) output[key] = uniqueStrings(ids);
   }
   return output;
 }

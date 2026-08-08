@@ -13,6 +13,11 @@ const state = window.__marinaraPresencePackageRuntime || {
   ensureInFlight: new Set(),
   lastEnsureAttemptAt: 0,
   lastEnsureAttemptChatId: "",
+  settingsObserver: null,
+  settingsTimer: 0,
+  settingsDataByChatId: new Map(),
+  settingsLoadingChatIds: new Set(),
+  settingsStyleInjected: false,
 };
 window.__marinaraPresencePackageRuntime = state;
 state.activeChatId = typeof state.activeChatId === "string" ? state.activeChatId : "";
@@ -20,9 +25,14 @@ state.pendingChatId = typeof state.pendingChatId === "string" ? state.pendingCha
 state.chatWatcherCleanup = typeof state.chatWatcherCleanup === "function" ? state.chatWatcherCleanup : null;
 state.ensureTimer = Number(state.ensureTimer) || 0;
 state.ensureInFlight = state.ensureInFlight instanceof Set ? state.ensureInFlight : new Set();
+state.settingsDataByChatId = state.settingsDataByChatId instanceof Map ? state.settingsDataByChatId : new Map();
+state.settingsLoadingChatIds = state.settingsLoadingChatIds instanceof Set ? state.settingsLoadingChatIds : new Set();
 state.commandDisposers = Array.isArray(state.commandDisposers) ? state.commandDisposers : [];
 state.lastEnsureAttemptAt = Number(state.lastEnsureAttemptAt) || 0;
 state.lastEnsureAttemptChatId = typeof state.lastEnsureAttemptChatId === "string" ? state.lastEnsureAttemptChatId : "";
+state.settingsObserver = state.settingsObserver instanceof MutationObserver ? state.settingsObserver : null;
+state.settingsTimer = Number(state.settingsTimer) || 0;
+state.settingsStyleInjected = state.settingsStyleInjected === true;
 
 class PresenceCapabilityElement extends HTMLElement {
   connectedCallback() {
@@ -40,6 +50,7 @@ if (!state.initialized) {
   registerPresenceCommands();
 }
 if (!state.chatWatcherCleanup) startChatLifecycleDetection();
+startSettingsPanelDetection();
 
 function startChatLifecycleDetection() {
   state.chatWatcherCleanup = watchActiveChatId((chatId) => {
@@ -54,6 +65,7 @@ function scheduleEnsureActiveChat(chatId = getActiveChatIdFromClient()) {
   state.pendingChatId = chatId || "";
   if (state.ensureTimer) window.clearTimeout(state.ensureTimer);
   state.ensureTimer = window.setTimeout(ensureActiveChat, 150);
+  scheduleRenderPresenceSettings();
 }
 
 async function ensureActiveChat() {
@@ -78,6 +90,332 @@ async function ensureActiveChat() {
   } finally {
     state.ensureInFlight.delete(chatId);
   }
+}
+
+function startSettingsPanelDetection() {
+  injectPresenceSettingsStyle();
+  if (!state.settingsObserver) {
+    state.settingsObserver = new MutationObserver(() => scheduleRenderPresenceSettings());
+    state.settingsObserver.observe(document.body, { childList: true, subtree: true });
+  }
+  scheduleRenderPresenceSettings();
+}
+
+function scheduleRenderPresenceSettings() {
+  if (state.settingsTimer) window.clearTimeout(state.settingsTimer);
+  state.settingsTimer = window.setTimeout(renderPresenceSettingsIntoChatSettings, 100);
+}
+
+async function renderPresenceSettingsIntoChatSettings() {
+  state.settingsTimer = 0;
+  const target = findChatSettingsMountTarget();
+  if (!target) return;
+  const chatId = getActiveChatIdFromClient();
+  if (!chatId) return;
+  let mount = target.panel.querySelector("[data-presence-chat-settings-section]");
+  if (!mount) {
+    mount = document.createElement("div");
+    mount.dataset.presenceChatSettingsSection = "true";
+    target.after(target.anchor, mount);
+  }
+  mount.dataset.chatId = chatId;
+  const cached = state.settingsDataByChatId.get(chatId);
+  if (cached) renderPresenceSettingsSection(mount, cached);
+  else renderPresenceSettingsLoading(mount);
+  await loadPresenceSettings(chatId);
+  if (mount.dataset.chatId !== chatId) return;
+  const latest = state.settingsDataByChatId.get(chatId);
+  if (latest) renderPresenceSettingsSection(mount, latest);
+}
+
+function findChatSettingsMountTarget() {
+  const panel = document.querySelector(".mari-chat-settings-drawer[data-chat-floating-panel], [data-chat-floating-panel].mari-chat-settings-drawer");
+  if (!(panel instanceof HTMLElement) || !isElementVisible(panel)) return null;
+  const charactersSection = panel.querySelector('[data-chat-settings-section$="-characters"]');
+  const anchor = charactersSection instanceof HTMLElement ? charactersSection : null;
+  if (anchor) {
+    return {
+      panel,
+      anchor,
+      after(reference, mount) {
+        reference.insertAdjacentElement("afterend", mount);
+      },
+    };
+  }
+  const scrollArea = panel.querySelector(".overflow-y-auto") || panel;
+  if (!(scrollArea instanceof HTMLElement)) return null;
+  return {
+    panel,
+    anchor: scrollArea,
+    after(reference, mount) {
+      reference.appendChild(mount);
+    },
+  };
+}
+
+async function loadPresenceSettings(chatId, { force = false } = {}) {
+  const cached = state.settingsDataByChatId.get(chatId);
+  if (!force && cached && Date.now() - cached.loadedAt < 5_000) return cached;
+  if (state.settingsLoadingChatIds.has(chatId)) return cached;
+  state.settingsLoadingChatIds.add(chatId);
+  try {
+    const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/state`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+    const normalized = normalizeSettingsData(data);
+    state.settingsDataByChatId.set(chatId, normalized);
+    return normalized;
+  } catch (error) {
+    const fallback = {
+      chatId,
+      enabled: false,
+      error: error instanceof Error ? error.message : String(error),
+      loadedAt: Date.now(),
+      roster: [],
+      state: { alwaysPresentCharacterIds: [] },
+    };
+    state.settingsDataByChatId.set(chatId, fallback);
+    return fallback;
+  } finally {
+    state.settingsLoadingChatIds.delete(chatId);
+  }
+}
+
+function normalizeSettingsData(data) {
+  const roster = Array.isArray(data?.roster)
+    ? data.roster
+        .filter((character) => character && typeof character.id === "string")
+        .map((character) => ({
+          id: character.id,
+          name: typeof character.name === "string" && character.name.trim() ? character.name.trim() : character.id,
+        }))
+    : [];
+  return {
+    chatId: typeof data?.chatId === "string" ? data.chatId : "",
+    enabled: data?.enabled !== false,
+    loadedAt: Date.now(),
+    roster,
+    state: {
+      alwaysPresentCharacterIds: uniqueStrings(data?.state?.alwaysPresentCharacterIds),
+    },
+  };
+}
+
+function renderPresenceSettingsLoading(mount) {
+  mount.className = "mari-presence-settings-section";
+  setPresenceSettingsHtml(mount, `loading:${mount.dataset.chatId || ""}`, `
+    <div class="mari-presence-settings-header">
+      <span class="mari-presence-settings-title">Presence</span>
+    </div>
+    <div class="mari-presence-settings-body">
+      <p class="mari-presence-settings-muted">Loading Presence settings...</p>
+    </div>
+  `);
+}
+
+function renderPresenceSettingsSection(mount, data) {
+  if (data.enabled === false) {
+    mount.remove();
+    return;
+  }
+  const alwaysPresent = new Set(uniqueStrings(data.state?.alwaysPresentCharacterIds));
+  mount.className = "mari-presence-settings-section";
+  const renderKey = JSON.stringify({
+    chatId: data.chatId,
+    roster: data.roster.map((character) => [character.id, character.name]),
+    alwaysPresent: [...alwaysPresent].sort(),
+  });
+  const items = data.roster.map((character) => {
+    const checked = alwaysPresent.has(character.id);
+    return `
+      <button type="button" class="mari-presence-character-toggle${checked ? " is-active" : ""}" data-presence-always-character-id="${escapeAttribute(character.id)}" role="checkbox" aria-checked="${checked ? "true" : "false"}">
+        <span class="mari-presence-character-check" aria-hidden="true">${checked ? "✓" : ""}</span>
+        <span class="mari-presence-character-name">${escapeHtml(character.name)}</span>
+      </button>
+    `;
+  }).join("");
+  const changed = setPresenceSettingsHtml(mount, renderKey, `
+    <div class="mari-presence-settings-header">
+      <span class="mari-presence-settings-title">Presence</span>
+      <span class="mari-presence-settings-count">${alwaysPresent.size}</span>
+    </div>
+    <div class="mari-presence-settings-body">
+      <div class="mari-presence-character-list">
+        ${items || '<p class="mari-presence-settings-muted">No characters in this chat.</p>'}
+      </div>
+    </div>
+  `);
+  if (!changed) return;
+  for (const button of mount.querySelectorAll("[data-presence-always-character-id]")) {
+    button.addEventListener("click", () => {
+      const characterId = button.getAttribute("data-presence-always-character-id");
+      if (!characterId) return;
+      toggleAlwaysPresentCharacter(data.chatId, characterId);
+    });
+  }
+}
+
+function setPresenceSettingsHtml(mount, renderKey, html) {
+  if (mount.dataset.presenceRenderKey === renderKey) return false;
+  mount.dataset.presenceRenderKey = renderKey;
+  mount.innerHTML = html;
+  return true;
+}
+
+async function toggleAlwaysPresentCharacter(chatId, characterId) {
+  const current = state.settingsDataByChatId.get(chatId);
+  if (!current) return;
+  const next = new Set(uniqueStrings(current.state?.alwaysPresentCharacterIds));
+  if (next.has(characterId)) next.delete(characterId);
+  else next.add(characterId);
+  const optimistic = {
+    ...current,
+    state: { ...current.state, alwaysPresentCharacterIds: [...next] },
+    loadedAt: Date.now(),
+  };
+  state.settingsDataByChatId.set(chatId, optimistic);
+  scheduleRenderPresenceSettings();
+  try {
+    const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alwaysPresentCharacterIds: [...next] }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
+    state.settingsDataByChatId.set(chatId, normalizeSettingsData({
+      ...data,
+      chatId,
+      roster: current.roster,
+      enabled: true,
+    }));
+  } catch (error) {
+    console.warn("[Presence] could not update always-present characters", error);
+    state.settingsDataByChatId.set(chatId, current);
+  } finally {
+    scheduleRenderPresenceSettings();
+  }
+}
+
+function injectPresenceSettingsStyle() {
+  if (state.settingsStyleInjected || document.getElementById("mari-presence-settings-style")) return;
+  const style = document.createElement("style");
+  style.id = "mari-presence-settings-style";
+  style.textContent = `
+    .mari-presence-settings-section {
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+    }
+    .mari-presence-settings-header {
+      align-items: center;
+      display: flex;
+      gap: 0.5rem;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+    .mari-presence-settings-title {
+      color: var(--foreground);
+      font-size: 0.75rem;
+      font-weight: 650;
+    }
+    .mari-presence-settings-count {
+      background: color-mix(in srgb, var(--primary) 15%, transparent);
+      border-radius: 999px;
+      color: var(--primary);
+      font-size: 0.625rem;
+      font-weight: 600;
+      min-width: 1.25rem;
+      padding: 0.125rem 0.375rem;
+      text-align: center;
+    }
+    .mari-presence-settings-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .mari-presence-settings-muted {
+      color: color-mix(in srgb, var(--muted-foreground) 80%, transparent);
+      font-size: 0.6875rem;
+      line-height: 1.35;
+      margin: 0;
+    }
+    .mari-presence-character-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .mari-presence-character-toggle {
+      align-items: center;
+      background: color-mix(in srgb, var(--background) 75%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      color: var(--foreground);
+      cursor: pointer;
+      display: flex;
+      gap: 0.5rem;
+      min-height: 2rem;
+      padding: 0.375rem 0.5rem;
+      text-align: left;
+      width: 100%;
+    }
+    .mari-presence-character-toggle:hover {
+      background: var(--accent);
+    }
+    .mari-presence-character-toggle.is-active {
+      background: color-mix(in srgb, var(--primary) 12%, transparent);
+      border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+    }
+    .mari-presence-character-check {
+      align-items: center;
+      border: 1px solid color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+      border-radius: 0.25rem;
+      color: var(--primary);
+      display: inline-flex;
+      flex: 0 0 auto;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      height: 1rem;
+      justify-content: center;
+      line-height: 1;
+      width: 1rem;
+    }
+    .mari-presence-character-toggle.is-active .mari-presence-character-check {
+      border-color: var(--primary);
+    }
+    .mari-presence-character-name {
+      flex: 1 1 auto;
+      font-size: 0.75rem;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  `;
+  document.head.appendChild(style);
+  state.settingsStyleInjected = true;
+}
+
+function isElementVisible(element) {
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function uniqueStrings(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map(String).map((value) => value.trim()).filter(Boolean))];
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value);
 }
 
 async function runServerCommand(raw, context) {

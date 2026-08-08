@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.0.8",
+  "version": "1.1.0",
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
@@ -89,8 +89,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "06debe874c88a306270671106fa30040e70482740a38e1d38eb07ffbe897cc25",
-      "bytes": 27794
+      "sha256": "e8e986619343209efa63628b2cebad182428d6d347cadae5e05dae8b01efa1a6",
+      "bytes": 40436
     },
     {
       "path": "server.mjs",
@@ -99,8 +99,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "875abb7cb9b6662ce2ab10303277a6b79121c7d948603bb8eb375df3fa8ca76c",
-      "bytes": 4358
+      "sha256": "2f06e7054260e9ca3a902f4494839936b303768626eaf506c92dbb1391c0f66a",
+      "bytes": 16354
     },
     {
       "path": "src/server/command-router.js",
@@ -109,28 +109,28 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "8db336b1469d1e0a92f5a73e5a8585b6a98e4e032afbc78dad63079f9cc25f36",
-      "bytes": 1004
+      "sha256": "5cfbf2ddbf9494695868ad7cb311aa81ff9a006e4c87da09e46a2a25d5da76cb",
+      "bytes": 1026
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "7b793c3b005234dae989553af46c6e72688026adede10209b5150208ff621870",
-      "bytes": 23609
+      "sha256": "ad424ac92da5490eacdcbe187eed1eac5d5d395b5ba0f70946d4eb7084fe3ab2",
+      "bytes": 35206
     },
     {
       "path": "src/server/summary-mirror.js",
-      "sha256": "95b6cb1b6fdbc6008c4c557854c71242ea80eeeee6a513d771b107dd6e1724e7",
-      "bytes": 2830
+      "sha256": "b70ddb9128e22b1c6141961a189c2b0a15da5678dd79ef659f5f763daebfe0f0",
+      "bytes": 3054
     },
     {
       "path": "src/shared/chat-state.js",
-      "sha256": "415398095cd0dc4e89fbd0412b827c7cd77f4d526ffb971eadcf007a416c9bd6",
-      "bytes": 1496
+      "sha256": "65d23ee293cdd60c25a25f00037baaf30bfa1245fec0a003c5eb3d89b8a289e5",
+      "bytes": 1572
     },
     {
       "path": "src/shared/constants.js",
-      "sha256": "f56430746c6b6f250c54b1da290d18dfa9dd4e0bf730dd73aaa8a7aa7bb6bc2a",
-      "bytes": 224
+      "sha256": "d465c79061708e0bca70519ec5f0dc022d938096ecd8b39437a3be5f6b00b0e3",
+      "bytes": 295
     },
     {
       "path": "src/shared/index.js",
@@ -139,13 +139,13 @@
     },
     {
       "path": "src/shared/presence-state.js",
-      "sha256": "6c9e605317381be9cb3e60ece40ca5818c63c78f8a5bce2b2a70868b05e79e00",
-      "bytes": 1626
+      "sha256": "c96757d4f0b15adc847a56955cabd03515e929641deb74a2ca0f2af837f3dc00",
+      "bytes": 1728
     },
     {
       "path": "src/shared/roster.js",
-      "sha256": "c2c919084e807a26a08fbf4e8e41a349122a26b9645f0e1dcb1984273c6e2aa5",
-      "bytes": 1101
+      "sha256": "50a97422a78b9e86b6a026a74326660afac610a2b630897f571cdec9970b5ba8",
+      "bytes": 1166
     }
   ],
   "permissions": [

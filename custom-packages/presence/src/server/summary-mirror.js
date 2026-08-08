@@ -1,4 +1,4 @@
-import { PRESENCE_LOREBOOK_NAME_PREFIX } from "../shared/constants.js";
+import { PRESENCE_LOREBOOK_NAME_PREFIX, PRESENCE_SUMMARY_OUTLET_NAME } from "../shared/constants.js";
 import { normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 
 export function buildSummaryLorebookName(chatId) {
@@ -9,13 +9,10 @@ export function buildSummaryLorebookEntries({
   chatId,
   summaries,
   audienceBySummaryId = new Map(),
-  enabledBySummaryId = new Map(),
 }) {
   const enabledSummaries = (Array.isArray(summaries) ? summaries : [])
     .filter((entry) => entry?.id)
-    .filter((entry) =>
-      enabledBySummaryId.has(entry.id) ? enabledBySummaryId.get(entry.id) !== false : entry.enabled !== false,
-    );
+    .filter((entry) => entry.enabled !== false);
 
   const entries = [
     createWrapperEntry({ chatId, name: "__presence_chat_summaries_open", content: "<chat_summaries>", order: 0 }),
@@ -23,17 +20,19 @@ export function buildSummaryLorebookEntries({
 
   for (const summary of enabledSummaries) {
     const characterIds = uniqueStrings(audienceBySummaryId.get(summary.id) || []);
+    if (!characterIds.length) continue;
     entries.push({
       name: String(summary.id),
       content: String(summary.content || ""),
       enabled: true,
       constant: true,
       locked: true,
-      position: 1,
+      position: 7,
+      outletName: PRESENCE_SUMMARY_OUTLET_NAME,
       order: 10 + entries.length,
       preventRecursion: true,
       excludeFromVectorization: true,
-      characterFilterMode: characterIds.length ? "include" : "any",
+      characterFilterMode: "include",
       characterFilterIds: characterIds,
       generationTriggerFilterMode: "any",
       generationTriggerFilters: [],
@@ -56,8 +55,10 @@ export function buildSummaryLorebookEntries({
   return entries;
 }
 
-export function buildSummaryAudience({ summary, messagesById, rosterIds }) {
+export function buildSummaryAudience({ summary, messagesById, rosterIds, alwaysPresentCharacterIds = [] }) {
   const roster = uniqueStrings(rosterIds);
+  const rosterSet = new Set(roster);
+  const alwaysPresent = new Set(uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterSet.has(id)));
   const coveredIds = Array.isArray(summary?.messageIds) && summary.messageIds.length
     ? summary.messageIds
     : Array.isArray(summary?.hiddenMessageIds)
@@ -66,6 +67,7 @@ export function buildSummaryAudience({ summary, messagesById, rosterIds }) {
   const coveredMessages = coveredIds.map((id) => messagesById.get(String(id))).filter(Boolean);
   if (!coveredMessages.length) return roster;
   return roster.filter((characterId) =>
+    alwaysPresent.has(characterId) ||
     coveredMessages.some((message) => readPresenceState(message, roster).has(characterId)),
   );
 }
@@ -77,7 +79,8 @@ function createWrapperEntry({ chatId, name, content, order }) {
     enabled: true,
     constant: true,
     locked: true,
-    position: 1,
+    position: 7,
+    outletName: PRESENCE_SUMMARY_OUTLET_NAME,
     order,
     preventRecursion: true,
     excludeFromVectorization: true,
