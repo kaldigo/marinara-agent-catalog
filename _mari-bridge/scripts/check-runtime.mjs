@@ -108,7 +108,8 @@ assert(
     capabilitySlotsSource.includes("data-mari-bridge-agent-settings-body") &&
     capabilitySlotsSource.includes("roleplay-agents") &&
     capabilitySlotsSource.includes("syncChatSettingsPanelWatcher") &&
-    capabilitySlotsSource.includes("section.children[1]"),
+    capabilitySlotsSource.includes("section.children[1]") &&
+    capabilitySlotsSource.includes("[mari-bridge:slots]"),
   "chat settings slot bridge waits for the roleplay panel content before mounting package settings",
 );
 
