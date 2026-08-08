@@ -13,10 +13,10 @@ const state = window.__marinaraPresencePackageRuntime || {
   ensureInFlight: new Set(),
   lastEnsureAttemptAt: 0,
   lastEnsureAttemptChatId: "",
-  settingsObserver: null,
   settingsTimer: 0,
   settingsDataByChatId: new Map(),
   settingsLoadingChatIds: new Set(),
+  settingsElements: new Set(),
   settingsStyleInjected: false,
 };
 window.__marinaraPresencePackageRuntime = state;
@@ -30,14 +30,60 @@ state.settingsLoadingChatIds = state.settingsLoadingChatIds instanceof Set ? sta
 state.commandDisposers = Array.isArray(state.commandDisposers) ? state.commandDisposers : [];
 state.lastEnsureAttemptAt = Number(state.lastEnsureAttemptAt) || 0;
 state.lastEnsureAttemptChatId = typeof state.lastEnsureAttemptChatId === "string" ? state.lastEnsureAttemptChatId : "";
-state.settingsObserver = state.settingsObserver instanceof MutationObserver ? state.settingsObserver : null;
 state.settingsTimer = Number(state.settingsTimer) || 0;
 state.settingsStyleInjected = state.settingsStyleInjected === true;
+state.settingsElements = state.settingsElements instanceof Set ? state.settingsElements : new Set();
 
 class PresenceCapabilityElement extends HTMLElement {
+  constructor() {
+    super();
+    this.onCapabilityProps = () => this.render();
+  }
+
+  static get observedAttributes() {
+    return ["view"];
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    if (name === "view" && oldValue !== newValue && this.isConnected) this.render();
+  }
+
   connectedCallback() {
-    this.hidden = true;
-    this.setAttribute("aria-hidden", "true");
+    this.addEventListener("marinara-capability-props", this.onCapabilityProps);
+    state.settingsElements.add(this);
+    this.render();
+  }
+
+  disconnectedCallback() {
+    this.removeEventListener("marinara-capability-props", this.onCapabilityProps);
+    state.settingsElements.delete(this);
+  }
+
+  render() {
+    if (this.getAttribute("view") !== "settings") {
+      this.hidden = true;
+      this.setAttribute("aria-hidden", "true");
+      this.replaceChildren();
+      return;
+    }
+    injectPresenceSettingsStyle();
+    this.hidden = false;
+    this.removeAttribute("aria-hidden");
+    const mount = getSettingsRenderRoot(this);
+    const chatId = getChatIdFromCapabilityProps(this.capabilityProps) || getActiveChatIdFromClient();
+    this.dataset.chatId = chatId || "";
+    if (!chatId) {
+      renderPresenceSettingsNotice(mount, "Open a chat to configure Presence.");
+      return;
+    }
+    const cached = state.settingsDataByChatId.get(chatId);
+    if (cached) renderPresenceSettingsSection(mount, cached);
+    else renderPresenceSettingsLoading(mount);
+    if (!cached || Date.now() - cached.loadedAt >= 5_000) {
+      loadPresenceSettings(chatId).then(() => {
+        if (this.isConnected && this.getAttribute("view") === "settings" && this.dataset.chatId === chatId) this.render();
+      });
+    }
   }
 }
 
@@ -50,7 +96,6 @@ if (!state.initialized) {
   registerPresenceCommands();
 }
 if (!state.chatWatcherCleanup) startChatLifecycleDetection();
-startSettingsPanelDetection();
 
 function startChatLifecycleDetection() {
   state.chatWatcherCleanup = watchActiveChatId((chatId) => {
@@ -92,65 +137,28 @@ async function ensureActiveChat() {
   }
 }
 
-function startSettingsPanelDetection() {
-  injectPresenceSettingsStyle();
-  if (!state.settingsObserver) {
-    state.settingsObserver = new MutationObserver(() => scheduleRenderPresenceSettings());
-    state.settingsObserver.observe(document.body, { childList: true, subtree: true });
-  }
-  scheduleRenderPresenceSettings();
-}
-
 function scheduleRenderPresenceSettings() {
   if (state.settingsTimer) window.clearTimeout(state.settingsTimer);
-  state.settingsTimer = window.setTimeout(renderPresenceSettingsIntoChatSettings, 100);
+  state.settingsTimer = window.setTimeout(() => {
+    state.settingsTimer = 0;
+    for (const element of state.settingsElements) {
+      if (element instanceof PresenceCapabilityElement) element.render();
+    }
+  }, 100);
 }
 
-async function renderPresenceSettingsIntoChatSettings() {
-  state.settingsTimer = 0;
-  const target = findChatSettingsMountTarget();
-  if (!target) return;
-  const chatId = getActiveChatIdFromClient();
-  if (!chatId) return;
-  let mount = target.panel.querySelector("[data-presence-chat-settings-section]");
-  if (!mount) {
-    mount = document.createElement("div");
-    mount.dataset.presenceChatSettingsSection = "true";
-    target.after(target.anchor, mount);
-  }
-  mount.dataset.chatId = chatId;
-  const cached = state.settingsDataByChatId.get(chatId);
-  if (cached) renderPresenceSettingsSection(mount, cached);
-  else renderPresenceSettingsLoading(mount);
-  await loadPresenceSettings(chatId);
-  if (mount.dataset.chatId !== chatId) return;
-  const latest = state.settingsDataByChatId.get(chatId);
-  if (latest) renderPresenceSettingsSection(mount, latest);
+function getChatIdFromCapabilityProps(props) {
+  const chatId = props?.chatId;
+  return typeof chatId === "string" && chatId.trim() ? chatId.trim() : "";
 }
 
-function findChatSettingsMountTarget() {
-  const panel = document.querySelector(".mari-chat-settings-drawer[data-chat-floating-panel], [data-chat-floating-panel].mari-chat-settings-drawer");
-  if (!(panel instanceof HTMLElement) || !isElementVisible(panel)) return null;
-  const charactersSection = panel.querySelector('[data-chat-settings-section$="-characters"]');
-  const anchor = charactersSection instanceof HTMLElement ? charactersSection : null;
-  if (anchor) {
-    return {
-      panel,
-      anchor,
-      after(reference, mount) {
-        reference.insertAdjacentElement("afterend", mount);
-      },
-    };
-  }
-  const scrollArea = panel.querySelector(".overflow-y-auto") || panel;
-  if (!(scrollArea instanceof HTMLElement)) return null;
-  return {
-    panel,
-    anchor: scrollArea,
-    after(reference, mount) {
-      reference.appendChild(mount);
-    },
-  };
+function getSettingsRenderRoot(element) {
+  const current = element.firstElementChild;
+  if (current instanceof HTMLElement && current.dataset.presenceSettingsRoot === "true") return current;
+  const root = document.createElement("div");
+  root.dataset.presenceSettingsRoot = "true";
+  element.replaceChildren(root);
+  return root;
 }
 
 async function loadPresenceSettings(chatId, { force = false } = {}) {
@@ -168,7 +176,7 @@ async function loadPresenceSettings(chatId, { force = false } = {}) {
   } catch (error) {
     const fallback = {
       chatId,
-      enabled: false,
+      enabled: true,
       error: error instanceof Error ? error.message : String(error),
       loadedAt: Date.now(),
       roster: [],
@@ -213,11 +221,30 @@ function renderPresenceSettingsLoading(mount) {
   `);
 }
 
+function renderPresenceSettingsNotice(mount, message) {
+  mount.className = "mari-presence-settings-section";
+  setPresenceSettingsHtml(mount, `notice:${message}`, `
+    <div class="mari-presence-settings-header">
+      <span class="mari-presence-settings-title">Presence</span>
+    </div>
+    <div class="mari-presence-settings-body">
+      <p class="mari-presence-settings-muted">${escapeHtml(message)}</p>
+    </div>
+  `);
+}
+
 function renderPresenceSettingsSection(mount, data) {
   if (data.enabled === false) {
-    mount.remove();
+    mount.hidden = true;
+    setPresenceSettingsHtml(mount, "disabled", "");
     return;
   }
+  if (data.error) {
+    mount.hidden = false;
+    renderPresenceSettingsNotice(mount, `Presence settings could not load: ${data.error}`);
+    return;
+  }
+  mount.hidden = false;
   const alwaysPresent = new Set(uniqueStrings(data.state?.alwaysPresentCharacterIds));
   mount.className = "mari-presence-settings-section";
   const renderKey = JSON.stringify({
@@ -304,6 +331,7 @@ function injectPresenceSettingsStyle() {
   style.textContent = `
     .mari-presence-settings-section {
       border-bottom: 1px solid var(--border);
+      display: block;
       padding: 0.75rem 1rem;
     }
     .mari-presence-settings-header {
@@ -393,11 +421,6 @@ function injectPresenceSettingsStyle() {
   `;
   document.head.appendChild(style);
   state.settingsStyleInjected = true;
-}
-
-function isElementVisible(element) {
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
 }
 
 function uniqueStrings(values) {

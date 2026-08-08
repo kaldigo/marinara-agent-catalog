@@ -28,9 +28,11 @@ assert((await router.run("/presence test", { chatId: "chat-1" })).result === "ch
 
 const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientRuntime.includes("registerBridgeSlashCommand"), "client registers commands through the bridge");
+assert(clientRuntime.includes('getAttribute("view") !== "settings"'), "client exposes settings through the capability element view");
 assert(!clientRuntime.includes('document.addEventListener("keydown"'), "client does not own keydown command capture");
 assert(!clientRuntime.includes('document.addEventListener("submit"'), "client does not own submit command capture");
 assert(!clientRuntime.includes("function matchSlashCommand"), "client does not own slash command matching");
+assert(!clientRuntime.includes("MutationObserver"), "client does not DOM-inject chat settings");
 
 const events = diffSummaryEntries([], [{ id: "s1", content: "Summary", enabled: true }], { source: "generation" });
 assert(events[0]?.type === "generated", "summary generation event");

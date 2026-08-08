@@ -9,16 +9,21 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "presence", "manifest id is presence");
-assert(manifest.version === "1.1.0", "manifest version is 1.1.0");
+assert(manifest.version === "1.1.1", "manifest version is 1.1.1");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps Presence before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint declared");
+assert(manifest.contributions?.slots?.includes("chat-settings"), "manifest declares chat-settings contribution slot");
+assert(manifest.contributions?.agentDetail?.agentIds?.includes("presence"), "manifest contributes Presence agent detail");
 assert(agents[0]?.category === "tracker", "Presence is exposed as a tracker agent");
 assert(agents[0]?.phase === "pre_generation", "Presence declares the required packaged agent phase");
 assert(agents[0]?.execution === "feature", "Presence remains a feature runtime agent");
 assert(!fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("import "), "client entrypoint is self-contained");
 assert(fs.readFileSync(path.join(packageRoot, "client.js"), "utf8").includes("/ensure"), "client ensures chats on load");
+const bundledClient = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
+assert(!bundledClient.includes("mari-chat-settings-drawer"), "client does not target the host chat settings drawer DOM");
+assert(!bundledClient.includes("data-presence-chat-settings"), "client does not DOM-inject Presence chat settings");
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);

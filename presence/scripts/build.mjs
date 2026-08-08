@@ -42,6 +42,10 @@ function manifest() {
       client: "client.js",
       agents: "agents.json",
     },
+    contributions: {
+      agentDetail: { agentIds: ["presence"] },
+      slots: ["chat-settings"],
+    },
     files: [{ path: "server.mjs", sha256: "0".repeat(64), bytes: 0 }],
     permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
     restartRequired: true,
