@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "group-sort-order", "manifest id is group-sort-order");
-assert(manifest.version === "1.0.20", "manifest version is 1.0.20");
+assert(manifest.version === "1.0.19", "manifest version is 1.0.19");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
@@ -23,8 +23,6 @@ const clientSource = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8"
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers capability element");
 assert(!clientSource.includes("import "), "client entrypoint is self-contained");
 assert(clientSource.includes("registerComposerSlotContribution"), "client bundles bridge UI slots");
-assert(clientSource.includes("installFetchInterceptor"), "client bundles bridge fetch interception");
-assert(clientSource.includes("group-sort-order-generate"), "client mutates normal generate requests");
 assert(clientSource.includes("MARI_BRIDGE_VERSION"), "client bundles bridge runtime version metadata");
 assert(clientSource.includes("current.installed || current.installing"), "client bundles bridge recursive install guard");
 assert(clientSource.includes("watchActiveChatId(() => scheduleComposerSlotRender(0)"), "client bundles bridge active-chat slot rerendering");

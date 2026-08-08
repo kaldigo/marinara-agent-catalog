@@ -12,7 +12,6 @@ const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.jso
 const bridgeClientSources = [
   "runtime.js",
   "composer-dom.js",
-  "fetch-intercept.js",
   "ui-slots.js"
 ];
 
