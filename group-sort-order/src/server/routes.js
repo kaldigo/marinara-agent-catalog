@@ -109,7 +109,7 @@ export function createGroupSortRoutes({ app, runtime }) {
     const chat = await runtime.persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
     const view = await buildView(runtime, chat);
-    if (!view.enabled || view.hidden) return { ok: true, refreshed: false, ...view };
+    if (!view.enabled || view.candidates.length <= 2) return { ok: true, refreshed: false, ...view };
     const selected = await refreshSmartSelection({
       app,
       runtime,
@@ -222,6 +222,7 @@ async function buildView(runtime, chat) {
   const state = readGroupSortState(chat.metadata);
   const messages = await runtime.persistence.listMessages(chat.id);
   const candidates = await resolveCandidates(runtime, chat, state);
+  const availableCandidateCount = resolveAvailableCandidateCount(chat, state);
   const candidateHash = buildCandidateHash(candidates, { includePersonaCandidate: state.includePersonaCandidate });
   const next = candidates.length > 2 ? deriveNextSpeaker({ state, messages, candidates, candidateHash }) : null;
   return {
@@ -232,8 +233,17 @@ async function buildView(runtime, chat) {
     candidateHash,
     nextSpeaker: next,
     status: next ? "known" : "unknown",
-    hidden: candidates.length <= 2,
+    canRefresh: candidates.length > 2,
+    hidden: availableCandidateCount <= 2,
   };
+}
+
+export function resolveAvailableCandidateCount(chat, state) {
+  const activeCharacterCount = resolveActiveCharacterIds(chat).length;
+  const normalizedState = normalizeGroupSortState(state);
+  const hasPersonaCandidate =
+    (typeof chat?.personaId === "string" && chat.personaId.trim()) || normalizedState.personaCandidate;
+  return activeCharacterCount + (hasPersonaCandidate ? 1 : 0);
 }
 
 async function resolveCandidates(runtime, chat, state) {

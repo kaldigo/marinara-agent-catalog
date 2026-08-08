@@ -8,7 +8,7 @@ import {
   stripTerminalNextSpeakerMarker
 } from "../src/shared/state.js";
 import fs from "node:fs/promises";
-import { createGroupSortRoutes, registerGroupSortHooks } from "../src/server/routes.js";
+import { createGroupSortRoutes, registerGroupSortHooks, resolveAvailableCandidateCount } from "../src/server/routes.js";
 import { activate, selfCheck } from "../src/server/index.js";
 
 const candidates = [
@@ -54,6 +54,20 @@ assert(
     candidateHash
   }) === null,
   "swipe change invalidates derived next speaker"
+);
+assert(
+  resolveAvailableCandidateCount(
+    { characterIds: ["bob", "james"], personaId: "alice", metadata: {} },
+    { includePersonaCandidate: false }
+  ) === 3,
+  "two active characters plus a persona are three available candidates"
+);
+assert(
+  resolveAvailableCandidateCount(
+    { characterIds: ["bob", "james"], personaId: "alice", metadata: { inactiveCharacterIds: ["james"] } },
+    { includePersonaCandidate: false }
+  ) === 2,
+  "inactive characters are excluded from available candidates"
 );
 
 const routes = [];
@@ -117,6 +131,10 @@ assert(hooks.some((hook) => hook.name === "onResponse"), "onResponse hook regist
 const routesSource = await fs.readFile(new URL("../src/server/routes.js", import.meta.url), "utf8");
 assert(routesSource.includes("/api/generate/raw"), "refresh uses raw generation selector route");
 assert(routesSource.includes("statePersona?.name"), "refresh transcript can name persona outside candidate list");
+assert(routesSource.includes("resolveAvailableCandidateCount(chat, state)"), "view visibility uses available candidates");
+assert(routesSource.includes("hidden: availableCandidateCount <= 2"), "two characters plus persona keeps the UI visible");
+assert(routesSource.includes("canRefresh: candidates.length > 2"), "refresh remains gated on the included candidate list");
+assert(routesSource.includes("view.candidates.length <= 2"), "refresh route skips raw selection until more than two candidates are included");
 assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not write tracker metadata");
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
@@ -125,7 +143,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(clientSource.includes("declarePackageGeneration"), "client declares bridge generation activity for refresh");
 assert(clientSource.includes("GENERATION_KIND_AGENT"), "client marks refresh as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.17"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.18"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
@@ -133,6 +151,7 @@ assert(!clientSource.includes('type="checkbox"'), "persona control is not a chec
 assert(clientSource.includes('aria-label="Refresh next speaker"'), "refresh control is icon-labeled");
 assert(clientSource.includes("options.body !== undefined"), "client only sends JSON content-type when a body exists");
 assert(clientSource.includes("view?.hidden !== false"), "client hides the bar when only two candidates are available");
+assert(clientSource.includes("view?.canRefresh !== true"), "client disables refresh until more than two candidates are included");
 assert(clientSource.includes("width:13px; height:13px"), "client uses smaller GSO icons");
 assert(clientSource.includes("bindActiveChat(chatId || \"\")"), "client binds active chat from bridge context");
 assert(!clientSource.includes("readCapabilityChatId() || chatId"), "client does not prefer stale capability chat ids");
@@ -156,6 +175,7 @@ await selfCheck({
 
 assert(typeof createGroupSortRoutes === "function", "routes export exists");
 assert(typeof registerGroupSortHooks === "function", "hooks export exists");
+assert(typeof resolveAvailableCandidateCount === "function", "available candidate helper export exists");
 
 function fakeDb() {
   return {

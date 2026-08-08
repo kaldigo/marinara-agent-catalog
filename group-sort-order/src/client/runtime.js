@@ -12,7 +12,7 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../../_mari-
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.17";
+  const RUNTIME_VERSION = "1.0.18";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -247,6 +247,8 @@ import { declarePackageGeneration, GENERATION_KIND_AGENT } from "../../../_mari-
     root.querySelector(".gso-next").textContent = view?.nextSpeaker?.name || "Unknown";
     const personaButton = root.querySelector(".gso-persona");
     if (personaButton) personaButton.setAttribute("aria-pressed", view?.includePersonaCandidate === true ? "true" : "false");
+    const refreshButton = root.querySelector(".gso-refresh");
+    if (refreshButton) refreshButton.disabled = view?.canRefresh !== true;
   }
 
   async function readPersonaCandidate(chatId) {
