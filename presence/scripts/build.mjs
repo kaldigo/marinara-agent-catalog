@@ -93,6 +93,8 @@ async function buildClientEntrypoint() {
     path.join(bridgeRoot, "runtime.js"),
     path.join(bridgeRoot, "ranges.js"),
     path.join(bridgeRoot, "composer-dom.js"),
+    path.join(bridgeRoot, "capability-slots.js"),
+    path.join(bridgeRoot, "chat-settings.js"),
     path.join(bridgeRoot, "commands.js"),
     path.join(projectRoot, "src/client/runtime.js"),
   ];
@@ -111,6 +113,7 @@ async function buildClientEntrypoint() {
 
 function stripBrowserModuleSyntax(content) {
   return content
+    .replace(/^import\s+[\s\S]*?\s+from\s+["'][^"']+["'];\r?\n/gm, "")
     .replace(/^import .*?;\r?\n/gm, "")
     .replace(/^export async function /gm, "async function ")
     .replace(/^export function /gm, "function ")

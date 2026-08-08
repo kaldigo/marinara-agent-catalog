@@ -1,4 +1,5 @@
 import { createHideHijackOwner, ensureSlashCommandBridge, registerBridgeSlashCommand } from "../../../_mari-bridge/src/commands.js";
+import { registerCapabilityChatSettingsContribution } from "../../../_mari-bridge/src/chat-settings.js";
 import { getActiveChatIdFromClient, watchActiveChatId } from "../../../_mari-bridge/src/composer-dom.js";
 
 const PACKAGE_ID = "presence";
@@ -6,6 +7,7 @@ const TAG_NAME = "marinara-capability-presence";
 const state = window.__marinaraPresencePackageRuntime || {
   initialized: false,
   commandDisposers: [],
+  chatSettingsDisposer: null,
   activeChatId: "",
   pendingChatId: "",
   chatWatcherCleanup: null,
@@ -21,6 +23,7 @@ const state = window.__marinaraPresencePackageRuntime || {
 };
 window.__marinaraPresencePackageRuntime = state;
 state.activeChatId = typeof state.activeChatId === "string" ? state.activeChatId : "";
+state.chatSettingsDisposer = typeof state.chatSettingsDisposer === "function" ? state.chatSettingsDisposer : null;
 state.pendingChatId = typeof state.pendingChatId === "string" ? state.pendingChatId : "";
 state.chatWatcherCleanup = typeof state.chatWatcherCleanup === "function" ? state.chatWatcherCleanup : null;
 state.ensureTimer = Number(state.ensureTimer) || 0;
@@ -95,7 +98,18 @@ if (!state.initialized) {
   state.initialized = true;
   registerPresenceCommands();
 }
+if (!state.chatSettingsDisposer) registerPresenceChatSettings();
 if (!state.chatWatcherCleanup) startChatLifecycleDetection();
+
+function registerPresenceChatSettings() {
+  state.chatSettingsDisposer = registerCapabilityChatSettingsContribution({
+    packageId: PACKAGE_ID,
+    id: "presence.settings",
+    agentId: "presence",
+    className: "mt-2 block overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--background)]/45",
+    props: () => ({ enabledForChat: true }),
+  });
+}
 
 function startChatLifecycleDetection() {
   state.chatWatcherCleanup = watchActiveChatId((chatId) => {

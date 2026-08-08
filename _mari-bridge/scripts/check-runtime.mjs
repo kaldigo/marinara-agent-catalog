@@ -5,6 +5,19 @@ import { claimBridgeSubsystem, getMariBridgeRuntime } from "../src/runtime.js";
 
 delete globalThis.__mariBridgeRuntime;
 
+assert.equal(getMariBridgeRuntime().capabilities.has("ui-slots:chat-settings"), true, "chat settings bridge capability is advertised");
+assert.equal(getMariBridgeRuntime().capabilities.has("capability-slots:register"), true, "generic capability slot registration is advertised");
+
+const engineSchemaSource = await fs.readFile(
+  new URL("../../../references/marinara-engine/packages/shared/src/schemas/capability-package.schema.ts", import.meta.url),
+  "utf8",
+);
+assert.equal(
+  engineSchemaSource.includes('"message-actions"') || engineSchemaSource.includes('"topbar-panel"'),
+  false,
+  "message/topbar bridge slots are not safe to put in package manifests yet",
+);
+
 let installCount = 0;
 let cleanupCount = 0;
 

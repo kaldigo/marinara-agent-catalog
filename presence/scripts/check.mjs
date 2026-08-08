@@ -29,6 +29,7 @@ assert((await router.run("/presence test", { chatId: "chat-1" })).result === "ch
 const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientRuntime.includes("registerBridgeSlashCommand"), "client registers commands through the bridge");
 assert(clientRuntime.includes('getAttribute("view") !== "settings"'), "client exposes settings through the capability element view");
+assert(clientRuntime.includes("registerCapabilityChatSettingsContribution"), "client registers chat settings through the bridge");
 assert(!clientRuntime.includes('document.addEventListener("keydown"'), "client does not own keydown command capture");
 assert(!clientRuntime.includes('document.addEventListener("submit"'), "client does not own submit command capture");
 assert(!clientRuntime.includes("function matchSlashCommand"), "client does not own slash command matching");
