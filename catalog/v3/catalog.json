@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-08T05:06:01.568Z",
+  "generatedAt": "2026-08-08T05:27:45.104Z",
   "packages": [
     {
       "manifest": {
@@ -1586,8 +1586,8 @@
           },
           {
             "path": "bridge/capability-slots.js",
-            "sha256": "67fc8db3007c1feed32b0ed966b7c5e6d5de1fe7f769ebbce5d79d7d10918259",
-            "bytes": 31086
+            "sha256": "426a058156ca87643530a5bef23d6516d1614a4f15388429ddd3ed2ac1e821c5",
+            "bytes": 32254
           },
           {
             "path": "bridge/chat-settings.js",
@@ -1651,7 +1651,7 @@
           },
           {
             "path": "bridge/runtime.js",
-            "sha256": "48b3446f882fb4d7be12d88ef1af3baf08c841e21ab9083ee756266e19358696",
+            "sha256": "630dd822df84eaf50e84cc5436490a7b0716af1be78be390d4dd3fa6c0b8d39e",
             "bytes": 5418
           },
           {
@@ -1671,7 +1671,7 @@
           },
           {
             "path": "client.js",
-            "sha256": "87ee507e55af5d6ca7fe99957638e87e14f59244c385933bbe0452bbdc87e62c",
+            "sha256": "fbb589769e10e324acd4fcd7df0eca521040395455361602fbe1010250c3f900",
             "bytes": 23950
           },
           {
@@ -1691,8 +1691,8 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.2.zip",
-        "sha256": "5e2a69413009ff9b86c8fc027665efd9c111483a5e190144d8b3dac4fa7828e6",
-        "bytes": 44409
+        "sha256": "187add0412aa36ce913e05f663d846cee4e9b7bd2770c4791f6f59cdc467004c",
+        "bytes": 44665
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"
     }

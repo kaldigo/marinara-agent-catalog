@@ -123,7 +123,10 @@ function startCapabilitySlotObservation(state, token) {
   patchCapabilitySlotHistoryMethod("pushState");
   patchCapabilitySlotHistoryMethod("replaceState");
   if (document.body) {
-    state.observer = state.scope.observe(document.body, () => handleCapabilitySlotDomChange(state, token), {
+    state.observer = state.scope.observe(document.body, (mutations) => {
+      if (shouldIgnoreBridgeOwnedMutations(mutations)) return;
+      handleCapabilitySlotDomChange(state, token);
+    }, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -154,7 +157,8 @@ function syncChatSettingsPanelWatcher(state, token) {
   const panelScope = createDomScope();
   state.chatSettingsPanelScope = panelScope;
   state.scope?.cleanup?.(() => panelScope.destroy());
-  state.chatSettingsPanelObserver = panelScope.observe(panel, () => {
+  state.chatSettingsPanelObserver = panelScope.observe(panel, (mutations) => {
+    if (shouldIgnoreBridgeOwnedMutations(mutations)) return;
     if (!document.body?.contains(panel) || !isVisibleElement(panel)) {
       logCapabilitySlotState(state, "chat-settings:panel", "chat settings panel disappeared", describeElement(panel));
       syncChatSettingsPanelWatcher(state, token);
@@ -540,8 +544,13 @@ function findChatSettingsSectionStack(section) {
 
 function insertGeneratedAgentSettingsCard(parent, card, context, contribution) {
   const after = findChatSettingsSectionInsertionAnchor(parent, context, contribution);
-  if (after?.parentElement === parent) after.after(card);
-  else parent.prepend(card);
+  if (after?.parentElement === parent) {
+    if (card.parentElement === parent && card.previousElementSibling === after) return;
+    after.after(card);
+    return;
+  }
+  if (card.parentElement === parent && parent.firstElementChild === card) return;
+  parent.prepend(card);
 }
 
 function findChatSettingsSectionInsertionAnchor(parent, context) {
@@ -612,6 +621,28 @@ function ensureTopbarPanelHost(topbarHost, contribution) {
 
 function cleanupEmptyHost(host) {
   if (host instanceof HTMLElement && host.childElementCount === 0) host.remove();
+}
+
+function shouldIgnoreBridgeOwnedMutations(mutations) {
+  const list = Array.from(mutations || []);
+  return list.length > 0 && list.every(isBridgeOwnedMutation);
+}
+
+function isBridgeOwnedMutation(mutation) {
+  if (isBridgeOwnedNode(mutation.target)) return true;
+  const changedNodes = [...Array.from(mutation.addedNodes || []), ...Array.from(mutation.removedNodes || [])];
+  return changedNodes.length > 0 && changedNodes.every(isBridgeOwnedNode);
+}
+
+function isBridgeOwnedNode(node) {
+  if (!(node instanceof Node)) return false;
+  const element = node instanceof HTMLElement ? node : node.parentElement;
+  if (!(element instanceof HTMLElement)) return false;
+  return Boolean(
+    element.closest(
+      `${GENERATED_AGENT_CARD_SELECTOR}, [data-mari-bridge-slot-host], [data-mari-bridge-capability-slot]`,
+    ),
+  );
 }
 
 function logCapabilitySlotState(state, key, message, details = {}) {
