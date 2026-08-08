@@ -1,6 +1,6 @@
 // Shared runtime coordinator for bridge copies bundled by different packages.
 
-export const MARI_BRIDGE_VERSION = "1.0.7";
+export const MARI_BRIDGE_VERSION = "1.0.8";
 
 const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
 const DEFAULT_CAPABILITIES = [
@@ -24,10 +24,12 @@ export function getMariBridgeRuntime() {
     capabilities: new Set(),
     subsystems: new Map(),
     warnings: [],
+    warningKeys: new Map(),
   };
   if (!(runtime.capabilities instanceof Set)) runtime.capabilities = new Set(runtime.capabilities || []);
   if (!(runtime.subsystems instanceof Map)) runtime.subsystems = new Map();
   if (!Array.isArray(runtime.warnings)) runtime.warnings = [];
+  if (!(runtime.warningKeys instanceof Map)) runtime.warningKeys = new Map();
   if (compareBridgeVersions(MARI_BRIDGE_VERSION, runtime.version) > 0) runtime.version = MARI_BRIDGE_VERSION;
   for (const capability of DEFAULT_CAPABILITIES) runtime.capabilities.add(capability);
   root[MARI_BRIDGE_RUNTIME_KEY] = runtime;
@@ -123,9 +125,19 @@ export function compareBridgeVersions(left, right) {
 
 export function warnBridgeRuntime(message) {
   const runtime = getMariBridgeRuntime();
-  runtime.warnings.push({ message, at: Date.now() });
+  const now = Date.now();
+  const normalized = String(message || "");
+  const previous = runtime.warningKeys.get(normalized) || 0;
+  if (now - previous < 60_000) return;
+  runtime.warningKeys.set(normalized, now);
+  runtime.warnings.push({ message: normalized, at: now });
   if (runtime.warnings.length > 25) runtime.warnings.splice(0, runtime.warnings.length - 25);
-  globalThis.console?.warn?.(`[mari-bridge] ${message}`);
+  if (runtime.warningKeys.size > 50) {
+    for (const [key, at] of runtime.warningKeys) {
+      if (now - at > 300_000) runtime.warningKeys.delete(key);
+    }
+  }
+  globalThis.console?.warn?.(`[mari-bridge] ${normalized}`);
 }
 
 function parseVersion(value) {

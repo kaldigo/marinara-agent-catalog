@@ -17,6 +17,8 @@ const KNOWN_CAPABILITY_SLOTS = new Set([
   CAPABILITY_SLOT_MESSAGE_ACTIONS,
   CAPABILITY_SLOT_TOPBAR_PANEL,
 ]);
+const AGENT_SETTINGS_SURFACE_CLASS = "border border-[var(--border)] bg-[var(--secondary)]/70";
+const GENERATED_AGENT_CARD_SELECTOR = "[data-mari-bridge-generated-agent-card]";
 
 registerBridgeCapabilities([
   "ui-slots:chat-settings",
@@ -152,11 +154,13 @@ function findSlotContexts(contribution) {
 
 function findChatSettingsContexts(contribution) {
   const panel = findChatSettingsPanel();
+  if (!panel) return [];
   const chatId = getActiveChatIdFromClient();
   const agentId = contribution.match.agentId || contribution.packageId;
   const agentEntry = findAgentEntry(panel, agentId);
-  if (!panel || !chatId || !agentEntry) return [];
-  return [{ slot: contribution.slot, chatId, panel, agentId, agentEntry, mountKey: "chat-settings" }];
+  const agentCard = findAgentSettingsCard(panel, chatId, agentId);
+  if (!agentEntry && !agentCard) return [];
+  return [{ slot: contribution.slot, chatId, panel, agentId, agentEntry, agentCard, mountKey: "chat-settings" }];
 }
 
 function findMessageActionContexts(contribution) {
@@ -179,7 +183,7 @@ function findTopbarPanelContexts(contribution) {
 }
 
 function ensureSlotContributionHost(contribution, context) {
-  if (context.slot === CAPABILITY_SLOT_CHAT_SETTINGS) return ensureChatSettingsHost(context.agentEntry, contribution);
+  if (context.slot === CAPABILITY_SLOT_CHAT_SETTINGS) return ensureChatSettingsHost(context, contribution);
   if (context.slot === CAPABILITY_SLOT_MESSAGE_ACTIONS) return ensureMessageActionHost(context.node, contribution);
   if (context.slot === CAPABILITY_SLOT_TOPBAR_PANEL) return ensureTopbarPanelHost(context.topbarHost, contribution);
   return null;
@@ -236,7 +240,9 @@ function setCapabilityProps(element, contribution, context) {
 
 function findChatSettingsPanel() {
   const panels = Array.from(
-    document.querySelectorAll(".mari-chat-settings-drawer[data-chat-floating-panel], [data-chat-floating-panel].mari-chat-settings-drawer"),
+    document.querySelectorAll(
+      ".mari-chat-settings-drawer[data-chat-floating-panel], [data-chat-floating-panel].mari-chat-settings-drawer, .mari-chat-settings-popover[data-chat-floating-panel], [data-chat-floating-panel].mari-chat-settings-popover",
+    ),
   );
   return panels.find((panel) => panel instanceof HTMLElement && isVisibleElement(panel)) || null;
 }
@@ -248,13 +254,121 @@ function findAgentEntry(panel, agentId) {
   return entry instanceof HTMLElement && isVisibleElement(entry) ? entry : null;
 }
 
-function ensureChatSettingsHost(agentEntry, contribution) {
-  let host = agentEntry.querySelector(`:scope > [data-mari-bridge-slot-host="${contribution.key}"]`);
+function findAgentSettingsCard(panel, chatId, agentId) {
+  if (!panel || !agentId) return null;
+  const cardId = getAgentSettingsCardId(chatId, agentId);
+  if (cardId) {
+    const escaped = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(cardId) : cardId.replaceAll('"', '\\"');
+    const existing = panel.querySelector(`#${escaped}`);
+    if (existing instanceof HTMLElement) return existing;
+  }
+  const generated = panel.querySelector(`${GENERATED_AGENT_CARD_SELECTOR}[data-mari-bridge-agent-id="${cssAttributeValue(agentId)}"]`);
+  return generated instanceof HTMLElement ? generated : null;
+}
+
+function ensureChatSettingsHost(context, contribution) {
+  const card = context.agentCard || ensureGeneratedAgentSettingsCard(context.panel, context.agentId, contribution);
+  if (card) {
+    const body = ensureGeneratedAgentSettingsBody(card);
+    if (body) return ensureContributionHost(body, contribution, "div", "mari-bridge-slot-host mari-bridge-chat-settings-host");
+  }
+  if (!context.agentEntry) return null;
+  return ensureContributionHost(context.agentEntry, contribution, "div", "mari-bridge-slot-host mari-bridge-chat-settings-host");
+}
+
+function ensureGeneratedAgentSettingsCard(panel, agentId, contribution) {
+  if (!panel || !agentId) return null;
+  const existing = findAgentSettingsCard(panel, getActiveChatIdFromClient(), agentId);
+  if (existing) return existing;
+  const parent = findAgentSettingsCardContainer(panel);
+  if (!parent) return null;
+  const card = document.createElement("div");
+  const cardId = getAgentSettingsCardId(getActiveChatIdFromClient(), agentId);
+  if (cardId) {
+    card.id = cardId;
+    card.tabIndex = -1;
+  }
+  card.dataset.mariBridgeGeneratedAgentCard = contribution.key;
+  card.dataset.mariBridgeAgentId = agentId;
+  card.className = `scroll-mt-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-[var(--primary)]/45 ${AGENT_SETTINGS_SURFACE_CLASS}`;
+  if (Number.isFinite(contribution.order)) card.style.order = String(contribution.order);
+
+  const header = document.createElement("div");
+  header.className = "flex items-start p-3";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className =
+    "-m-1 flex min-w-0 flex-1 items-start gap-2 rounded-lg p-1 text-left transition-colors hover:bg-[var(--accent)]/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--primary)]/60";
+  button.setAttribute("aria-expanded", "true");
+  const icon = document.createElement("span");
+  icon.className = "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-[0.5625rem] font-semibold text-[var(--primary)] ring-1 ring-[var(--primary)]/30";
+  icon.textContent = contribution.iconText || contribution.title.charAt(0) || "P";
+  const text = document.createElement("span");
+  text.className = "min-w-0 flex-1";
+  const title = document.createElement("span");
+  title.className = "flex min-w-0 items-center gap-1.5 text-[0.6875rem] font-medium";
+  const titleText = document.createElement("span");
+  titleText.className = "min-w-0 truncate";
+  titleText.textContent = contribution.title;
+  title.appendChild(titleText);
+  const description = document.createElement("span");
+  description.className = "mt-1 block text-[0.625rem] text-[var(--muted-foreground)]";
+  description.textContent = contribution.description;
+  text.append(title, description);
+  const chevron = document.createElement("span");
+  chevron.className = "mt-0.5 shrink-0 text-[var(--muted-foreground)]";
+  chevron.textContent = "›";
+  chevron.style.transform = "rotate(90deg)";
+  button.append(icon, text, chevron);
+  header.appendChild(button);
+  const body = document.createElement("div");
+  body.className = "space-y-2 px-3 pb-2";
+  body.dataset.mariBridgeAgentSettingsBody = "true";
+  button.addEventListener("click", () => {
+    const open = body.hidden === true;
+    body.hidden = !open;
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    chevron.style.transform = open ? "rotate(90deg)" : "rotate(0deg)";
+  });
+  card.append(header, body);
+  parent.appendChild(card);
+  return card;
+}
+
+function findAgentSettingsCardContainer(panel) {
+  const generated = panel.querySelector(GENERATED_AGENT_CARD_SELECTOR);
+  if (generated?.parentElement instanceof HTMLElement) return generated.parentElement;
+  const existingCards = Array.from(panel.querySelectorAll('[id^="chat-settings-agent-menu-"]')).filter(
+    (node) => node instanceof HTMLElement,
+  );
+  const lastCard = existingCards.at(-1);
+  if (lastCard?.parentElement instanceof HTMLElement) return lastCard.parentElement;
+  const agentEntries = Array.from(panel.querySelectorAll("[data-chat-agent-entry]")).filter((node) => node instanceof HTMLElement);
+  const lastEntry = agentEntries.at(-1);
+  return lastEntry?.parentElement instanceof HTMLElement ? lastEntry.parentElement : null;
+}
+
+function ensureGeneratedAgentSettingsBody(card) {
+  const body = card.querySelector(":scope > [data-mari-bridge-agent-settings-body]");
+  if (body instanceof HTMLElement) return body;
+  const nativeBody = Array.from(card.children).find(
+    (child) =>
+      child instanceof HTMLElement &&
+      child.classList.contains("space-y-2") &&
+      child.classList.contains("px-3") &&
+      child.classList.contains("pb-2"),
+  );
+  if (nativeBody instanceof HTMLElement) return nativeBody;
+  return card;
+}
+
+function ensureContributionHost(parent, contribution, tagName, className) {
+  let host = parent.querySelector(`:scope > [data-mari-bridge-slot-host="${contribution.key}"]`);
   if (!(host instanceof HTMLElement)) {
-    host = document.createElement("div");
+    host = document.createElement(tagName);
     host.dataset.mariBridgeSlotHost = contribution.key;
-    host.className = "mari-bridge-slot-host mari-bridge-chat-settings-host";
-    agentEntry.appendChild(host);
+    host.className = className;
+    parent.appendChild(host);
   }
   return host;
 }
@@ -309,9 +423,22 @@ function normalizeCapabilitySlotContribution(contribution) {
     match: normalizeObject(contribution.match),
     className: String(contribution.className || ""),
     priority: Number.isFinite(Number(contribution.priority)) ? Number(contribution.priority) : 100,
+    order: Number.isFinite(Number(contribution.order)) ? Number(contribution.order) : null,
+    title: String(contribution.title || contribution.packageId || packageId),
+    description: String(contribution.description || ""),
+    iconText: String(contribution.iconText || "").trim().slice(0, 2),
     props: typeof contribution.props === "function" ? contribution.props : normalizeObject(contribution.props),
     shouldShow: typeof contribution.shouldShow === "function" ? contribution.shouldShow : () => true,
   };
+}
+
+function getAgentSettingsCardId(chatId, agentId) {
+  if (!chatId || !agentId) return "";
+  return `chat-settings-agent-menu-${chatId}-${agentId}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function cssAttributeValue(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function defaultViewForSlot(slot) {
