@@ -8,7 +8,12 @@ import {
   stripTerminalNextSpeakerMarker
 } from "../src/shared/state.js";
 import fs from "node:fs/promises";
-import { createGroupSortRoutes, registerGroupSortHooks, resolveAvailableCandidateCount } from "../src/server/routes.js";
+import {
+  createGroupSortRoutes,
+  registerGroupSortHooks,
+  resolveAvailableCandidateCount,
+  resolveGeneratedAssistantTarget
+} from "../src/server/routes.js";
 import { activate, selfCheck } from "../src/server/index.js";
 
 const candidates = [
@@ -25,6 +30,23 @@ assert(instruction.includes("  name: Bob"), "instruction labels candidate names"
 const parsed = parseTerminalNextSpeakerMarker("Hello.\n<next_speaker>bob</next_speaker>\n");
 assert(parsed?.speakerId === "bob", "terminal marker parsed");
 assert(stripTerminalNextSpeakerMarker("Hello.\n<next_speaker>bob</next_speaker>\n") === "Hello.", "terminal marker stripped");
+assert(parseTerminalNextSpeakerMarker("Hello.\n<NEXT_SPEAKER>bob</NEXT_SPEAKER>")?.speakerId === "bob", "marker tags are case-insensitive");
+assert(
+  parseTerminalNextSpeakerMarker("Hello.\n&lt;next_speaker&gt;bob&lt;/next_speaker&gt;")?.speakerId === "bob",
+  "escaped marker tags are parsed"
+);
+assert(
+  parseTerminalNextSpeakerMarker("Hello.\n<next_speaker;>;bob;</next_speaker;>;")?.speakerId === "bob",
+  "stray semicolons in marker syntax are tolerated"
+);
+assert(
+  parseTerminalNextSpeakerMarker("Hello.\n<next_speaker>;;bob;;</next_speaker>")?.speakerId === "bob",
+  "stray semicolons around marker id are ignored"
+);
+assert(
+  stripTerminalNextSpeakerMarker("Hello.\n&lt;next_speaker&gt;bob&lt;/next_speaker&gt;") === "Hello.",
+  "escaped marker tags are stripped"
+);
 assert(parseTerminalNextSpeakerMarker("<next_speaker>bob</next_speaker>\nHello.") === null, "non-terminal marker rejected");
 assert(parseSmartGroupSelectionIds('```json\n["james"]\n```', candidates)[0] === "james", "smart selector JSON array parsed");
 assert(parseSmartGroupSelectionIds('{"characters":["Alice"]}', candidates)[0] === "alice", "smart selector names parsed");
@@ -56,6 +78,30 @@ assert(
   "swipe change invalidates derived next speaker"
 );
 assert(
+  deriveNextSpeaker({
+    state,
+    messages: [
+      { id: "m1", role: "assistant", activeSwipeIndex: 0 },
+      { id: "m2", role: "assistant", activeSwipeIndex: 0 }
+    ],
+    candidates,
+    candidateHash
+  }) === null,
+  "newer unanchored assistant message invalidates stale next speaker"
+);
+assert(
+  deriveNextSpeaker({
+    state,
+    messages: [
+      { id: "m1", role: "assistant", activeSwipeIndex: 0 },
+      { id: "u2", role: "user", activeSwipeIndex: 0 }
+    ],
+    candidates,
+    candidateHash
+  }) === null,
+  "newer unanchored user message invalidates stale next speaker"
+);
+assert(
   resolveAvailableCandidateCount(
     { characterIds: ["bob", "james"], personaId: "alice", metadata: {} },
     { includePersonaCandidate: false }
@@ -68,6 +114,29 @@ assert(
     { includePersonaCandidate: false }
   ) === 2,
   "inactive characters are excluded from available candidates"
+);
+assert(
+  resolveGeneratedAssistantTarget({
+    messages: [
+      { id: "u1", role: "user", content: "Hello" },
+      { id: "a1", role: "assistant", content: "Old" },
+      { id: "a2", role: "assistant", content: "New" }
+    ],
+    beforeMessageIds: new Set(["u1", "a1"]),
+    targetMessageId: ""
+  })?.id === "a2",
+  "fresh generation target resolves from created assistant message"
+);
+assert(
+  resolveGeneratedAssistantTarget({
+    messages: [
+      { id: "u1", role: "user", content: "Hello" },
+      { id: "a1", role: "assistant", content: "Regenerated", activeSwipeIndex: 2 }
+    ],
+    beforeMessageIds: new Set(["u1", "a1"]),
+    targetMessageId: "a1"
+  })?.id === "a1",
+  "regeneration target resolves from explicit existing assistant message"
 );
 
 const routes = [];
@@ -135,6 +204,8 @@ assert(routesSource.includes("resolveAvailableCandidateCount(chat, state)"), "vi
 assert(routesSource.includes("hidden: availableCandidateCount <= 2"), "two characters plus persona keeps the UI visible");
 assert(routesSource.includes("canRefresh: candidates.length > 2"), "refresh remains gated on the included candidate list");
 assert(routesSource.includes("view.candidates.length <= 2"), "refresh route skips raw selection until more than two candidates are included");
+assert(routesSource.includes("hasVisibleIncomingUserTurn(body)"), "incoming user turns suppress stale next-speaker forcing");
+assert(routesSource.includes("hasIncomingUserTurn"), "generation prepare path checks for incoming user turns");
 assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not write tracker metadata");
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
@@ -143,7 +214,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.21"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.22"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
@@ -178,6 +249,7 @@ await selfCheck({
 assert(typeof createGroupSortRoutes === "function", "routes export exists");
 assert(typeof registerGroupSortHooks === "function", "hooks export exists");
 assert(typeof resolveAvailableCandidateCount === "function", "available candidate helper export exists");
+assert(typeof resolveGeneratedAssistantTarget === "function", "generation target helper export exists");
 
 function fakeDb() {
   return {
