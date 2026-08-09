@@ -12,7 +12,8 @@ import {
   createGroupSortRoutes,
   registerGroupSortHooks,
   resolveAvailableCandidateCount,
-  resolveGeneratedAssistantTarget
+  resolveGeneratedAssistantTarget,
+  sanitizeOutgoingSseChunk
 } from "../src/server/routes.js";
 import { activate, selfCheck } from "../src/server/index.js";
 
@@ -138,6 +139,33 @@ assert(
   })?.id === "a1",
   "regeneration target resolves from explicit existing assistant message"
 );
+const sseState = {};
+const savedMessageChunk = `data: ${JSON.stringify({
+  type: "message_saved",
+  data: {
+    id: "a1",
+    role: "assistant",
+    characterId: "bob",
+    activeSwipeIndex: 2,
+    content: "Regenerated.\n<next_speaker>james</next_speaker>"
+  }
+})}\n\n`;
+const sanitizedSavedMessageChunk = sanitizeOutgoingSseChunk(savedMessageChunk, sseState);
+assert(
+  typeof sanitizedSavedMessageChunk === "string" &&
+    sanitizedSavedMessageChunk.includes("Regenerated.") &&
+    !sanitizedSavedMessageChunk.includes("<next_speaker>"),
+  "outgoing message_saved SSE strips terminal next speaker marker"
+);
+assert(sseState.outgoingMarker?.nextSpeakerId === "james", "outgoing message_saved SSE records parsed marker");
+const contentReplaceChunk = `data: ${JSON.stringify({
+  type: "content_replace",
+  data: "Regenerated.\n<next_speaker>james</next_speaker>"
+})}\n\n`;
+assert(
+  !String(sanitizeOutgoingSseChunk(contentReplaceChunk, {})).includes("<next_speaker>"),
+  "outgoing content_replace SSE strips terminal next speaker marker"
+);
 
 const routes = [];
 const hooks = [];
@@ -206,6 +234,7 @@ assert(routesSource.includes("canRefresh: candidates.length > 2"), "refresh rema
 assert(routesSource.includes("view.candidates.length <= 2"), "refresh route skips raw selection until more than two candidates are included");
 assert(routesSource.includes("hasVisibleIncomingUserTurn(body)"), "incoming user turns suppress stale next-speaker forcing");
 assert(routesSource.includes("hasIncomingUserTurn"), "generation prepare path checks for incoming user turns");
+assert(routesSource.includes("installOutgoingMarkerFilter(reply"), "generation prepare path installs SSE marker filter");
 assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not write tracker metadata");
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
@@ -214,7 +243,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.22"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.23"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
