@@ -42,8 +42,8 @@ export function registerGroupSortHooks({ app, runtime }) {
       return buildInstructionText(candidates);
     },
   });
-  app.addHook("preHandler", async (request) => {
-    await prepareGeneration({ runtime, request });
+  app.addHook("preHandler", async (request, reply) => {
+    await prepareGeneration({ runtime, request, reply });
   });
   app.addHook("onResponse", async (request, reply) => {
     try {
@@ -161,7 +161,7 @@ export function createGroupSortRoutes({ app, runtime }) {
   });
 }
 
-async function prepareGeneration({ runtime, request }) {
+async function prepareGeneration({ runtime, request, reply }) {
   if (isInternalRequest(request)) return;
   if (String(request.method || "").toUpperCase() !== "POST") return;
   if (!/^\/api\/generate(?:[?#].*)?$/u.test(String(request.url || ""))) return;
@@ -186,7 +186,9 @@ async function prepareGeneration({ runtime, request }) {
     body.forCharacterId = next.id;
   }
   request.body = body;
-  REQUEST_STATE.set(request, { chatId, beforeMessageIds, candidateHash, candidateIds: candidates.map((c) => c.id), targetMessageId });
+  const requestState = { chatId, beforeMessageIds, candidateHash, candidateIds: candidates.map((c) => c.id), targetMessageId };
+  REQUEST_STATE.set(request, requestState);
+  installOutgoingMarkerFilter(reply, requestState);
 }
 
 async function finishGeneration({ app, runtime, request, reply }) {
@@ -260,6 +262,47 @@ export function resolveGeneratedAssistantTarget({ messages, beforeMessageIds, ta
     .find((message) => message.role === "assistant" && typeof message.content === "string");
   if (fromCreated) return fromCreated;
   return [...list].reverse().find((message) => message.role === "assistant" && typeof message.content === "string") ?? null;
+}
+
+export function sanitizeOutgoingSseChunk(chunk, requestState) {
+  const text = chunkToString(chunk);
+  if (!text || !text.includes("next_speaker")) return chunk;
+  const sanitized = text.replace(/^data: (.+)$/gmu, (line, rawPayload) => {
+    const payload = sanitizeOutgoingSsePayload(rawPayload, requestState);
+    return payload ? `data: ${JSON.stringify(payload)}` : line;
+  });
+  if (sanitized === text) return chunk;
+  if (Buffer.isBuffer(chunk)) return Buffer.from(sanitized);
+  return sanitized;
+}
+
+export function sanitizeOutgoingSsePayload(rawPayload, requestState) {
+  let payload;
+  try {
+    payload = JSON.parse(String(rawPayload || ""));
+  } catch {
+    return null;
+  }
+  const obj = normalizeObject(payload);
+  if (obj.type === "message_saved") {
+    const data = normalizeObject(obj.data);
+    if (typeof data.content !== "string") return null;
+    const parsed = parseTerminalNextSpeakerMarker(data.content);
+    if (!parsed) return null;
+    requestState.outgoingMarker = {
+      messageId: readString(data.id),
+      swipeIndex: Number.isInteger(data.activeSwipeIndex) ? data.activeSwipeIndex : 0,
+      messageSpeakerId: readString(data.characterId),
+      nextSpeakerId: parsed.speakerId,
+    };
+    return { ...obj, data: { ...data, content: stripTerminalNextSpeakerMarker(data.content) } };
+  }
+  if (obj.type === "content_replace" && typeof obj.data === "string") {
+    const parsed = parseTerminalNextSpeakerMarker(obj.data);
+    if (!parsed) return null;
+    return { ...obj, data: stripTerminalNextSpeakerMarker(obj.data) };
+  }
+  return null;
 }
 
 async function buildView(runtime, chat) {
@@ -485,6 +528,17 @@ async function patchChatState(runtime, chat, statePatch) {
   });
 }
 
+function installOutgoingMarkerFilter(reply, requestState) {
+  const raw = reply?.raw;
+  if (!raw || typeof raw.write !== "function" || raw.__groupSortOrderMarkerFilterInstalled) return;
+  const originalWrite = raw.write.bind(raw);
+  raw.__groupSortOrderMarkerFilterInstalled = true;
+  raw.write = (chunk, encoding, callback) => {
+    const sanitized = sanitizeOutgoingSseChunk(chunk, requestState);
+    return originalWrite(sanitized, encoding, callback);
+  };
+}
+
 async function injectJson(app, method, url, payload) {
   return injectHostJson(app, method, url, payload, { internalHeader: INTERNAL_HEADER });
 }
@@ -492,4 +546,10 @@ async function injectJson(app, method, url, payload) {
 function isInternalRequest(request) {
   const value = request.headers?.[INTERNAL_HEADER];
   return value === "1" || value === "true" || (Array.isArray(value) && value.includes("1"));
+}
+
+function chunkToString(chunk) {
+  if (typeof chunk === "string") return chunk;
+  if (Buffer.isBuffer(chunk)) return chunk.toString("utf8");
+  return "";
 }
