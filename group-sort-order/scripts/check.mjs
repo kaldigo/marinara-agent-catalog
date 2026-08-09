@@ -154,8 +154,10 @@ const sanitizedSavedMessageChunk = sanitizeOutgoingSseChunk(savedMessageChunk, s
 assert(
   typeof sanitizedSavedMessageChunk === "string" &&
     sanitizedSavedMessageChunk.includes("Regenerated.") &&
+    sanitizedSavedMessageChunk.includes('"type":"content_replace"') &&
+    sanitizedSavedMessageChunk.includes('"type":"message_saved"') &&
     !sanitizedSavedMessageChunk.includes("<next_speaker>"),
-  "outgoing message_saved SSE strips terminal next speaker marker"
+  "outgoing message_saved SSE strips terminal next speaker marker and replaces live content"
 );
 assert(sseState.outgoingMarker?.nextSpeakerId === "james", "outgoing message_saved SSE records parsed marker");
 const contentReplaceChunk = `data: ${JSON.stringify({
@@ -165,6 +167,35 @@ const contentReplaceChunk = `data: ${JSON.stringify({
 assert(
   !String(sanitizeOutgoingSseChunk(contentReplaceChunk, {})).includes("<next_speaker>"),
   "outgoing content_replace SSE strips terminal next speaker marker"
+);
+const textRewriteState = {};
+const textRewriteChunk = `data: ${JSON.stringify({
+  type: "text_rewrite",
+  data: {
+    editedText: "Rewritten.\n<next_speaker>james</next_speaker>",
+    changes: [],
+    rewriteApplied: true
+  }
+})}\n\n`;
+const sanitizedTextRewriteChunk = sanitizeOutgoingSseChunk(textRewriteChunk, textRewriteState);
+assert(
+  typeof sanitizedTextRewriteChunk === "string" &&
+    sanitizedTextRewriteChunk.includes("Rewritten.") &&
+    !sanitizedTextRewriteChunk.includes("<next_speaker>"),
+  "outgoing text_rewrite SSE strips terminal next speaker marker"
+);
+assert(textRewriteState.outgoingMarker?.nextSpeakerId === "james", "outgoing text_rewrite SSE records parsed marker");
+const upperCaseSseChunk = `data: ${JSON.stringify({
+  type: "message_saved",
+  data: {
+    id: "a1",
+    role: "assistant",
+    content: "Regenerated.\n<NEXT_SPEAKER>james</NEXT_SPEAKER>"
+  }
+})}\n\n`;
+assert(
+  !String(sanitizeOutgoingSseChunk(upperCaseSseChunk, {})).includes("NEXT_SPEAKER"),
+  "outgoing SSE marker scan is case-insensitive"
 );
 
 const routes = [];
@@ -235,6 +266,15 @@ assert(routesSource.includes("view.candidates.length <= 2"), "refresh route skip
 assert(routesSource.includes("hasVisibleIncomingUserTurn(body)"), "incoming user turns suppress stale next-speaker forcing");
 assert(routesSource.includes("hasIncomingUserTurn"), "generation prepare path checks for incoming user turns");
 assert(routesSource.includes("installOutgoingMarkerFilter(reply"), "generation prepare path installs SSE marker filter");
+assert(
+  routesSource.indexOf("installOutgoingMarkerFilter(reply") < routesSource.indexOf("if (candidates.length <= 2) return;"),
+  "SSE marker filter is installed before candidate-count generation gate"
+);
+assert(
+  routesSource.indexOf("installOutgoingMarkerFilter(reply") < routesSource.indexOf("if (!chat) return;"),
+  "SSE marker filter is installed before chat enablement checks"
+);
+assert(routesSource.includes("if (!groupSortEnabled) return;"), "state update remains gated on active GSO");
 assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not write tracker metadata");
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
@@ -243,7 +283,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.23"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.24"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
