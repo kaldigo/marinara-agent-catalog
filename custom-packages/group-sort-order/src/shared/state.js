@@ -1,7 +1,14 @@
 export const GROUP_SORT_ORDER_PACKAGE_ID = "group-sort-order";
 export const GROUP_SORT_ORDER_AGENT_TYPE = "group-sort-order";
 export const GROUP_SORT_ORDER_STATE_KEY = "groupSortOrder";
-export const NEXT_SPEAKER_MARKER_RE = /(?:\r?\n\s*)?<next_speaker>\s*([^<\s]+)\s*<\/next_speaker>\s*$/u;
+const XML_LT = "(?:<|&lt;?)";
+const XML_GT = "(?:>|&gt;?)";
+const NEXT_SPEAKER_OPEN = `${XML_LT}\\s*;?\\s*next_speaker\\s*;?\\s*${XML_GT}`;
+const NEXT_SPEAKER_CLOSE = `${XML_LT}\\s*;?\\s*/\\s*;?\\s*next_speaker\\s*;?\\s*${XML_GT}`;
+export const NEXT_SPEAKER_MARKER_RE = new RegExp(
+  `(?:\\r?\\n\\s*)?${NEXT_SPEAKER_OPEN}\\s*;?\\s*([^<\\s&]+?)\\s*;?\\s*${NEXT_SPEAKER_CLOSE}\\s*;?\\s*$`,
+  "iu",
+);
 
 export function normalizeObject(value) {
   if (!value) return {};
@@ -94,7 +101,8 @@ export function buildInstructionText(candidates) {
 export function parseTerminalNextSpeakerMarker(content) {
   const match = String(content || "").match(NEXT_SPEAKER_MARKER_RE);
   if (!match) return null;
-  return { speakerId: match[1].trim() };
+  const speakerId = match[1].trim().replace(/^;+|;+$/gu, "");
+  return speakerId ? { speakerId } : null;
 }
 
 export function parseSmartGroupSelectionIds(raw, candidates) {
@@ -152,16 +160,12 @@ export function deriveNextSpeaker({ state, messages, candidates, candidateHash }
   const normalizedState = normalizeGroupSortState(state);
   if (!candidateHash || normalizedState.candidateHash !== candidateHash) return null;
   const candidateById = new Map((candidates || []).map((candidate) => [candidate.id, candidate]));
-  for (let index = (messages || []).length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (!message?.id) continue;
-    const swipeIndex = Number.isInteger(message.activeSwipeIndex) ? message.activeSwipeIndex : 0;
-    const anchor = normalizedState.byAnchor[anchorKey(message.id, swipeIndex)];
-    if (!anchor || anchor.candidateHash !== candidateHash) continue;
-    const candidate = candidateById.get(anchor.nextSpeakerId);
-    return candidate || null;
-  }
-  return null;
+  const latest = [...(messages || [])].reverse().find((message) => message?.id && isAnchorableMessage(message));
+  if (!latest) return null;
+  const swipeIndex = Number.isInteger(latest.activeSwipeIndex) ? latest.activeSwipeIndex : 0;
+  const anchor = normalizedState.byAnchor[anchorKey(latest.id, swipeIndex)];
+  if (!anchor || anchor.candidateHash !== candidateHash) return null;
+  return candidateById.get(anchor.nextSpeakerId) || null;
 }
 
 export function upsertAnchor(state, anchor) {
@@ -232,6 +236,10 @@ function normalizeTextForMatch(value) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+}
+
+function isAnchorableMessage(message) {
+  return message?.role === "user" || message?.role === "assistant" || !message?.role;
 }
 
 function sortJson(value) {

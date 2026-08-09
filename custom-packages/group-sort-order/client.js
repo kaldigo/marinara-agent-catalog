@@ -768,7 +768,7 @@
     const ROOT_ID = "marinara-group-sort-order-root";
     const STYLE_ID = "marinara-group-sort-order-style";
     const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-    const RUNTIME_VERSION = "1.0.21";
+    const RUNTIME_VERSION = "1.0.22";
 
     const previousState = window[RUNTIME_KEY];
     if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -777,6 +777,7 @@
       previousState.cleanups?.forEach?.((cleanup) => cleanup());
       window.clearTimeout(previousState.pollTimer);
       window.clearTimeout(previousState.renderTimer);
+      window.clearTimeout(previousState.followupTimer);
       document.getElementById(ROOT_ID)?.remove();
       document.getElementById(STYLE_ID)?.remove();
       window[RUNTIME_KEY] = null;
@@ -793,6 +794,8 @@
       barNode: null,
       pollTimer: 0,
       renderTimer: 0,
+      followupTimer: 0,
+      refreshing: false,
       slotCleanup: null,
       cleanups: [],
       ensureInFlight: new Set(),
@@ -858,9 +861,18 @@
       state.cleanups.push(() => target.removeEventListener(type, handler, options));
     }
 
-    function scheduleRefreshFromEvent() {
-      scheduleViewRefresh(100);
+    function scheduleRefreshFromEvent(event) {
+      const eventChatId = typeof event?.detail?.chatId === "string" ? event.detail.chatId : "";
+      if (eventChatId && state.activeChatId && eventChatId !== state.activeChatId) return;
+      state.lastRefreshAt = 0;
+      scheduleViewRefresh(150);
       scheduleComposerSlotRender(100);
+      if (state.followupTimer) window.clearTimeout(state.followupTimer);
+      state.followupTimer = window.setTimeout(() => {
+        state.followupTimer = 0;
+        state.lastRefreshAt = 0;
+        scheduleViewRefresh(0);
+      }, 1250);
     }
 
     function scheduleViewRefresh(delay) {
@@ -887,6 +899,7 @@
       if (nextChatId === state.activeChatId) return;
       state.activeChatId = nextChatId;
       state.lastView = null;
+      state.lastRefreshAt = 0;
       updateBar(state.barNode, null);
       if (nextChatId) scheduleViewRefresh(0);
     }
@@ -946,6 +959,8 @@
       const chatId = state.activeChatId;
       if (!chatId) return;
       const button = state.barNode?.querySelector(".gso-refresh");
+      state.refreshing = true;
+      updateBar(state.barNode, state.lastView);
       if (button) button.disabled = true;
       try {
         const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/refresh`, { method: "POST", body: "{}" });
@@ -957,7 +972,8 @@
         warn("refresh failed", error);
         await refreshView(chatId);
       } finally {
-        if (button) button.disabled = false;
+        state.refreshing = false;
+        updateBar(state.barNode, state.lastView);
       }
     }
 
@@ -990,11 +1006,11 @@
       root.hidden = shouldHide;
       root.dataset.status = typeof view?.status === "string" ? view.status : "unknown";
       if (root.dataset.chatId !== (state.activeChatId || "")) root.dataset.chatId = state.activeChatId || "";
-      root.querySelector(".gso-next").textContent = view?.nextSpeaker?.name || "Unknown";
+      root.querySelector(".gso-next").textContent = state.refreshing ? "Refreshing..." : view?.nextSpeaker?.name || "Unknown";
       const personaButton = root.querySelector(".gso-persona");
       if (personaButton) personaButton.setAttribute("aria-pressed", view?.includePersonaCandidate === true ? "true" : "false");
       const refreshButton = root.querySelector(".gso-refresh");
-      if (refreshButton) refreshButton.disabled = view?.canRefresh !== true;
+      if (refreshButton) refreshButton.disabled = state.refreshing || view?.canRefresh !== true;
     }
 
     async function readPersonaCandidate(chatId) {
@@ -1064,6 +1080,7 @@
         state.cleanups = [];
         window.clearTimeout(state.pollTimer);
         window.clearTimeout(state.renderTimer);
+        window.clearTimeout(state.followupTimer);
         state.slotCleanup = null;
         state.barNode = null;
         document.getElementById(ROOT_ID)?.remove();

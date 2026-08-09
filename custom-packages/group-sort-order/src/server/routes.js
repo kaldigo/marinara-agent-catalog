@@ -176,46 +176,90 @@ async function prepareGeneration({ runtime, request }) {
   if (candidates.length <= 2) return;
 
   const candidateHash = buildCandidateHash(candidates, { includePersonaCandidate: readGroupSortState(chat.metadata).includePersonaCandidate });
-  const next = deriveNextSpeaker({ state: readGroupSortState(chat.metadata), messages, candidates, candidateHash });
+  const hasIncomingUserTurn = hasVisibleIncomingUserTurn(body);
+  const next = hasIncomingUserTurn
+    ? null
+    : deriveNextSpeaker({ state: readGroupSortState(chat.metadata), messages, candidates, candidateHash });
   const beforeMessageIds = new Set(messages.map((message) => message.id));
+  const targetMessageId = readString(body.regenerateMessageId) || readString(body.continueMessageId);
   if (next && next.kind !== "persona" && !body.forCharacterId) {
     body.forCharacterId = next.id;
   }
   request.body = body;
-  REQUEST_STATE.set(request, { chatId, beforeMessageIds, candidateHash, candidateIds: candidates.map((c) => c.id) });
+  REQUEST_STATE.set(request, { chatId, beforeMessageIds, candidateHash, candidateIds: candidates.map((c) => c.id), targetMessageId });
 }
 
 async function finishGeneration({ app, runtime, request, reply }) {
   if (reply.statusCode < 200 || reply.statusCode >= 300) return;
-  const state = REQUEST_STATE.get(request);
-  if (!state) return;
-  REQUEST_STATE.delete(request);
-  const chat = await runtime.persistence.getChat(state.chatId);
+  if (isInternalRequest(request)) return;
+  if (String(request.method || "").toUpperCase() !== "POST") return;
+  if (!/^\/api\/generate(?:[?#].*)?$/u.test(String(request.url || ""))) return;
+  const body = normalizeObject(request.body);
+  if (body.impersonate === true || body.turnGameBots === true) return;
+  const storedRequestState = REQUEST_STATE.get(request);
+  if (storedRequestState) REQUEST_STATE.delete(request);
+  const chatId = storedRequestState?.chatId || readString(body.chatId);
+  if (!chatId) return;
+  const chat = await runtime.persistence.getChat(chatId);
   if (!chat || !isGroupSortEnabled(chat)) return;
-  const messages = await runtime.persistence.listMessages(state.chatId);
-  const created = messages.filter((message) => !state.beforeMessageIds.has(message.id));
-  const target = created.reverse().find((message) => message.role === "assistant" && typeof message.content === "string");
+  const messages = await runtime.persistence.listMessages(chatId);
+  const currentState = readGroupSortState(chat.metadata);
+  const candidates = await resolveCandidates(runtime, chat, currentState);
+  const candidateHash =
+    storedRequestState?.candidateHash || buildCandidateHash(candidates, { includePersonaCandidate: currentState.includePersonaCandidate });
+  const candidateIds = storedRequestState?.candidateIds || candidates.map((candidate) => candidate.id);
+  const targetMessageId =
+    storedRequestState?.targetMessageId || readString(body.regenerateMessageId) || readString(body.continueMessageId);
+  const target = resolveGeneratedAssistantTarget({
+    messages,
+    beforeMessageIds: storedRequestState?.beforeMessageIds,
+    targetMessageId,
+  });
   if (!target) return;
   const parsed = parseTerminalNextSpeakerMarker(target.content);
-  if (!parsed || !state.candidateIds.includes(parsed.speakerId)) return;
+  if (!parsed) return;
   const cleaned = stripTerminalNextSpeakerMarker(target.content);
   if (cleaned !== target.content) {
     await injectJson(
       app,
       "PATCH",
-      `/api/chats/${encodeURIComponent(state.chatId)}/messages/${encodeURIComponent(target.id)}`,
+      `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(target.id)}`,
       { content: cleaned },
     );
   }
-  const current = readGroupSortState(chat.metadata);
-  const nextState = upsertAnchor(current, {
+  if (!candidateIds.includes(parsed.speakerId)) {
+    runtime.logger.warn(
+      "[Group Sort Order] stripped next_speaker marker with unknown candidate %s in chat %s",
+      parsed.speakerId,
+      chatId,
+    );
+    return;
+  }
+  const nextState = upsertAnchor(currentState, {
     messageId: target.id,
     swipeIndex: Number.isInteger(target.activeSwipeIndex) ? target.activeSwipeIndex : 0,
     messageSpeakerId: target.characterId ?? "",
     nextSpeakerId: parsed.speakerId,
-    candidateHash: state.candidateHash,
+    candidateHash,
   });
   await patchChatState(runtime, chat, nextState);
+}
+
+export function resolveGeneratedAssistantTarget({ messages, beforeMessageIds, targetMessageId }) {
+  const list = Array.isArray(messages) ? messages : [];
+  if (targetMessageId) {
+    const explicit = list.find(
+      (message) => message?.id === targetMessageId && message.role === "assistant" && typeof message.content === "string",
+    );
+    if (explicit) return explicit;
+  }
+  const created =
+    beforeMessageIds instanceof Set ? list.filter((message) => message?.id && !beforeMessageIds.has(message.id)) : [];
+  const fromCreated = [...created]
+    .reverse()
+    .find((message) => message.role === "assistant" && typeof message.content === "string");
+  if (fromCreated) return fromCreated;
+  return [...list].reverse().find((message) => message.role === "assistant" && typeof message.content === "string") ?? null;
 }
 
 async function buildView(runtime, chat) {
@@ -404,6 +448,16 @@ function normalizePersonaCandidate(value) {
     name: typeof obj.name === "string" && obj.name.trim() ? obj.name.trim() : obj.id,
     kind: "persona",
   };
+}
+
+function readString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function hasVisibleIncomingUserTurn(body) {
+  if (typeof body.userMessage === "string" && body.userMessage.trim()) return true;
+  if (Array.isArray(body.attachments) && body.attachments.length > 0) return true;
+  return Boolean(normalizeObject(body.pendingSpatialTransition).commandId);
 }
 
 function reconcileGroupSortPromptContribution(chatId, candidates) {
