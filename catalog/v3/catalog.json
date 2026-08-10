@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-10T19:24:56.248Z",
+  "generatedAt": "2026-08-10T21:04:45.315Z",
   "packages": [
     {
       "manifest": {
@@ -1691,7 +1691,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.2.zip",
-        "sha256": "12ec2966bc45a7058471f431fd4173b3db25613bd65882c0c73acf9a43191d0d",
+        "sha256": "fc76a33885fa03c42635475442f8d534d97cfcc594e725ebc043cb73294bb731",
         "bytes": 44742
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"
