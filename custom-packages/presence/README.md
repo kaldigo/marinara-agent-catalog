@@ -67,4 +67,6 @@ into a chat-scoped lorebook assigned to `{{outlet::presence_chat_summaries}}`:
 
 Native summary enabled states are snapshotted, disabled for the generation
 window so the global summary marker stays empty, then restored when generation
-finishes. The temporary lorebook entries are cleared afterward.
+finishes. Presence also stores a pending restore record and runs a server-side
+watchdog so suspended tabs or dropped generation streams can recover the native
+summary state. The temporary lorebook entries are cleared afterward.

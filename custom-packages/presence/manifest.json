@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
   "engine": {
     "min": "2.3.3",
@@ -144,8 +144,8 @@
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "dea42a8328b9b0bdebc22e5237404c37cb850b7ba9c071f7dd79939f4e044f2f",
-      "bytes": 36036
+      "sha256": "89fcbb290b0ef7849d90626d50b5ad56949878c405934844c8de30cc4fae2c37",
+      "bytes": 40176
     },
     {
       "path": "src/server/summary-mirror.js",
@@ -154,8 +154,8 @@
     },
     {
       "path": "src/shared/chat-state.js",
-      "sha256": "65d23ee293cdd60c25a25f00037baaf30bfa1245fec0a003c5eb3d89b8a289e5",
-      "bytes": 1572
+      "sha256": "4ede35c7dec6d84a7beeef702244924c2e2ecc975dc77d4ef134d651b8b2daf3",
+      "bytes": 2631
     },
     {
       "path": "src/shared/constants.js",

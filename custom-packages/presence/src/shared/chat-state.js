@@ -14,6 +14,7 @@ export function readPresenceChatState(chat) {
     rosterCharacterIds: uniqueStrings(state.rosterCharacterIds),
     summaryLorebookId: typeof state.summaryLorebookId === "string" ? state.summaryLorebookId : null,
     summaryPresenceById: normalizeStringArrayMap(state.summaryPresenceById),
+    pendingSummaryRestore: normalizePendingSummaryRestore(state.pendingSummaryRestore),
     updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
   };
 }
@@ -43,4 +44,28 @@ function normalizeStringArrayMap(value) {
     if (Array.isArray(ids)) output[key] = uniqueStrings(ids);
   }
   return output;
+}
+
+function normalizeBooleanMap(value) {
+  const input = normalizeObject(value);
+  const output = {};
+  for (const [key, enabled] of Object.entries(input)) {
+    if (typeof enabled === "boolean") output[key] = enabled;
+  }
+  return output;
+}
+
+function normalizePendingSummaryRestore(value) {
+  const input = normalizeObject(value);
+  const enabledStateById = normalizeBooleanMap(input.enabledStateById);
+  const chatId = typeof input.chatId === "string" && input.chatId.trim() ? input.chatId.trim() : "";
+  const runId = typeof input.runId === "string" && input.runId.trim() ? input.runId.trim() : "";
+  if (!chatId || !runId || Object.keys(enabledStateById).length === 0) return null;
+  return {
+    chatId,
+    runId,
+    lorebookId: typeof input.lorebookId === "string" && input.lorebookId.trim() ? input.lorebookId.trim() : null,
+    enabledStateById,
+    startedAt: typeof input.startedAt === "string" && input.startedAt.trim() ? input.startedAt.trim() : null,
+  };
 }

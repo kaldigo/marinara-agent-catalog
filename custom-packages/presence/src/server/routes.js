@@ -15,6 +15,10 @@ import { buildSummaryAudience, buildSummaryLorebookEntries } from "./summary-mir
 const MESSAGE_CREATE_HOOK_KEY = Symbol.for("marinara.presence.messageCreateHook");
 const GENERATE_REQUEST_STATE = new WeakMap();
 const SUMMARY_REQUEST_STATE = new WeakMap();
+const SUMMARY_RESTORE_TIMERS = new Map();
+const SUMMARY_RESTORE_WATCHDOG_DELAY_MS = 10_000;
+const SUMMARY_RESTORE_FALLBACK_WAIT_MS = 120_000;
+const SUMMARY_RESTORE_FORCE_MS = 20 * 60_000;
 
 export function registerPresenceMessageCreateHook({ app, runtime }) {
   if (app[MESSAGE_CREATE_HOOK_KEY]) return;
@@ -316,11 +320,14 @@ async function runPresenceCommand({ tokens, app, runtime, chat }) {
 
 async function ensurePresenceChatLifecycle({ app, runtime, chat }) {
   if (!isPresenceTrackerEnabled(chat)) {
+    await recoverPendingSummaryRestore({ app, runtime, chat, force: true });
     await clearPresenceSummaryLorebook({ app, runtime, chat });
     return { skipped: true, enabled: false };
   }
-  const roster = await reconcileRoster({ app, runtime, chat });
-  const afterRoster = (await runtime.persistence.getChat(chat.id)) || chat;
+  await recoverPendingSummaryRestore({ app, runtime, chat });
+  const afterRestore = (await runtime.persistence.getChat(chat.id)) || chat;
+  const roster = await reconcileRoster({ app, runtime, chat: afterRestore });
+  const afterRoster = (await runtime.persistence.getChat(chat.id)) || afterRestore;
   const summaries = await ensureSummaryPresence({ runtime, chat: afterRoster });
   return { enabled: true, roster, summaries };
 }
@@ -447,7 +454,10 @@ async function preparePresenceGenerationRun({ app, runtime, chat, messages }) {
   const enabledStateById = Object.fromEntries(
     summaries.filter((summary) => summary?.id).map((summary) => [summary.id, summary.enabled !== false]),
   );
+  const runId = createRunId();
+  const startedAt = new Date().toISOString();
   let lorebookId = null;
+  let run = null;
   try {
     await ensureSummaryPresence({ runtime, chat, summaries, messages });
     const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
@@ -455,9 +465,19 @@ async function preparePresenceGenerationRun({ app, runtime, chat, messages }) {
     const freshSummaries = readSummaryEntries(freshChat);
     const lorebook = await ensureSummaryLorebook({ app, runtime, chat: freshChat, state: freshState });
     lorebookId = lorebook.id;
-    if (freshState.summaryLorebookId !== lorebook.id) {
-      await patchChatState(runtime.persistence, freshChat, { summaryLorebookId: lorebook.id });
-    }
+    run = {
+      chatId: freshChat.id,
+      runId,
+      startedAt,
+      lorebookId: lorebook.id,
+      enabledStateById,
+      disabledNativeSummaries: 0,
+      temporaryEntries: 0,
+    };
+    await patchChatState(runtime.persistence, freshChat, {
+      ...(freshState.summaryLorebookId !== lorebook.id ? { summaryLorebookId: lorebook.id } : {}),
+      pendingSummaryRestore: serializeSummaryRestoreRun(run),
+    });
     const audienceBySummaryId = new Map(Object.entries(freshState.summaryPresenceById));
     const entries = buildSummaryLorebookEntries({
       chatId: freshChat.id,
@@ -466,16 +486,15 @@ async function preparePresenceGenerationRun({ app, runtime, chat, messages }) {
     });
     await replaceOwnedLorebookEntries(app, lorebook.id, entries);
     const disabledNativeSummaries = await disableNativeSummaryEntries(app, freshChat.id, freshSummaries);
-    return {
-      chatId: freshChat.id,
-      lorebookId: lorebook.id,
-      enabledStateById,
-      disabledNativeSummaries,
-      temporaryEntries: entries.length,
-    };
+    run.disabledNativeSummaries = disabledNativeSummaries;
+    run.temporaryEntries = entries.length;
+    scheduleSummaryRestoreWatchdog({ app, runtime, run });
+    return run;
   } catch (error) {
     runtime.logger.warn(error, "[Presence] Could not prepare summary presence for generation");
-    if (lorebookId) {
+    if (run) {
+      await finishPresenceGenerationRun({ app, runtime, run });
+    } else if (lorebookId) {
       try {
         await replaceOwnedLorebookEntries(app, lorebookId, []);
       } catch (cleanupError) {
@@ -487,17 +506,98 @@ async function preparePresenceGenerationRun({ app, runtime, chat, messages }) {
 }
 
 async function finishPresenceGenerationRun({ app, runtime, run }) {
+  clearSummaryRestoreWatchdog(run.chatId);
   try {
     await restoreNativeSummaryEntries(app, run.chatId, run.enabledStateById);
   } catch (error) {
     runtime.logger.warn(error, "[Presence] Could not restore native summary enabled state");
   }
-  if (!run.lorebookId) return;
-  try {
-    await replaceOwnedLorebookEntries(app, run.lorebookId, []);
-  } catch (error) {
-    runtime.logger.warn(error, "[Presence] Could not clear temporary summary lorebook entries");
+  if (run.lorebookId) {
+    try {
+      await replaceOwnedLorebookEntries(app, run.lorebookId, []);
+    } catch (error) {
+      runtime.logger.warn(error, "[Presence] Could not clear temporary summary lorebook entries");
+    }
   }
+  await clearPendingSummaryRestore({ runtime, chatId: run.chatId, runId: run.runId });
+}
+
+async function recoverPendingSummaryRestore({ app, runtime, chat, force = false }) {
+  const pending = readPresenceChatState(chat).pendingSummaryRestore;
+  if (!pending) return { restored: false, pending: false };
+  if (!force && shouldWaitForSummaryRestore(app, pending)) {
+    scheduleSummaryRestoreWatchdog({ app, runtime, run: pending });
+    return { restored: false, pending: true };
+  }
+  await finishPresenceGenerationRun({ app, runtime, run: pending });
+  return { restored: true, pending: false };
+}
+
+function scheduleSummaryRestoreWatchdog({ app, runtime, run, delayMs = SUMMARY_RESTORE_WATCHDOG_DELAY_MS }) {
+  if (!run?.chatId || !run.runId) return;
+  clearSummaryRestoreWatchdog(run.chatId);
+  const timer = setTimeout(async () => {
+    SUMMARY_RESTORE_TIMERS.delete(run.chatId);
+    try {
+      const chat = await runtime.persistence.getChat(run.chatId);
+      if (!chat) return;
+      await recoverPendingSummaryRestore({ app, runtime, chat });
+    } catch (error) {
+      runtime.logger.warn(error, "[Presence] Summary restore watchdog failed");
+      scheduleSummaryRestoreWatchdog({ app, runtime, run, delayMs: SUMMARY_RESTORE_WATCHDOG_DELAY_MS });
+    }
+  }, delayMs);
+  timer.unref?.();
+  SUMMARY_RESTORE_TIMERS.set(run.chatId, timer);
+}
+
+function clearSummaryRestoreWatchdog(chatId) {
+  const timer = SUMMARY_RESTORE_TIMERS.get(chatId);
+  if (timer) clearTimeout(timer);
+  SUMMARY_RESTORE_TIMERS.delete(chatId);
+}
+
+function shouldWaitForSummaryRestore(app, run) {
+  const age = Date.now() - readTimestampMs(run.startedAt);
+  if (age >= SUMMARY_RESTORE_FORCE_MS) return false;
+  const active = isChatGenerationActive(app, run.chatId);
+  if (active === true) return true;
+  if (active === null && age < SUMMARY_RESTORE_FALLBACK_WAIT_MS) return true;
+  return false;
+}
+
+function isChatGenerationActive(app, chatId) {
+  const activeGenerations = app?.activeGenerations;
+  if (activeGenerations && typeof activeGenerations.has === "function") {
+    return activeGenerations.has(chatId);
+  }
+  return null;
+}
+
+async function clearPendingSummaryRestore({ runtime, chatId, runId }) {
+  const chat = await runtime.persistence.getChat(chatId);
+  if (!chat) return;
+  const pending = readPresenceChatState(chat).pendingSummaryRestore;
+  if (pending && pending.runId !== runId) return;
+  await patchChatState(runtime.persistence, chat, { pendingSummaryRestore: null });
+}
+
+function serializeSummaryRestoreRun(run) {
+  return {
+    chatId: run.chatId,
+    runId: run.runId,
+    lorebookId: run.lorebookId || null,
+    enabledStateById: normalizeBooleanRecord(run.enabledStateById),
+    startedAt: run.startedAt || new Date().toISOString(),
+  };
+}
+
+function normalizeBooleanRecord(value) {
+  const output = {};
+  for (const [key, enabled] of Object.entries(normalizeObject(value))) {
+    if (typeof enabled === "boolean") output[key] = enabled;
+  }
+  return output;
 }
 
 async function ensureSummaryPresence({ runtime, chat, summaries = readSummaryEntries(chat), messages = null }) {
@@ -833,6 +933,15 @@ function isNormalGenerateUrl(url) {
 function isPresenceInternalRequest(request) {
   const value = request.headers?.["x-presence-internal"];
   return value === "1" || value === "true" || (Array.isArray(value) && value.includes("1"));
+}
+
+function createRunId() {
+  return `presence-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function readTimestampMs(value) {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function fingerprintChatSummary(value) {
