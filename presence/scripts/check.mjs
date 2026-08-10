@@ -299,6 +299,10 @@ assert(
   "normal generate stores positive summary audience before disabling native summaries",
 );
 assert(
+  testChat.metadata.marinaraPresencePackage?.pendingSummaryRestore?.enabledStateById?.["summary-1"] === true,
+  "normal generate persists pending summary restore state",
+);
+assert(
   injectedRequests.some(
     (request) =>
       request.method === "PATCH" &&
@@ -356,9 +360,46 @@ assert(
 );
 assert(lorebookEntries.length === 0, "normal generate clears temporary summary lorebook entries");
 assert(
+  testChat.metadata.marinaraPresencePackage?.pendingSummaryRestore === null,
+  "normal generate clears pending summary restore state",
+);
+assert(
   testChat.metadata.marinaraPresencePackage?.summaryPresenceById?.["summary-2"]?.join(",") === "a,b",
   "normal generate records positive audience for generated summaries",
 );
+
+testChat = {
+  ...testChat,
+  metadata: {
+    enableAgents: true,
+    activeAgentIds: ["presence"],
+    inactiveCharacterIds: ["b"],
+    summaryEntries: [{ id: "summary-1", content: "Existing summary", enabled: false, messageIds: ["m1"] }],
+    marinaraPresencePackage: {
+      pendingSummaryRestore: {
+        chatId: "chat-1",
+        runId: "stale-run",
+        lorebookId: "presence-lorebook",
+        enabledStateById: { "summary-1": true },
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    },
+  },
+};
+lorebookEntries = [{ id: "stale-entry", tag: "presence", dynamicState: { owner: "presence" } }];
+await registeredRouteHandlers.get("POST /chat/:chatId/ensure")(
+  { params: { chatId: "chat-1" }, body: {} },
+  replyStub(),
+);
+assert(
+  testChat.metadata.summaryEntries?.find((entry) => entry.id === "summary-1")?.enabled === true,
+  "ensure restores stale pending summary state",
+);
+assert(
+  testChat.metadata.marinaraPresencePackage?.pendingSummaryRestore === null,
+  "ensure clears stale pending summary state",
+);
+assert(lorebookEntries.length === 0, "ensure clears stale temporary summary lorebook entries");
 
 const afterGenerateRequestCount = injectedRequests.length;
 currentMessages = [{ id: "m1", role: "user", extra: {} }];
