@@ -408,18 +408,19 @@ async function refreshSmartSelection({ app, runtime, chat, candidates, candidate
   return selected;
 }
 
+export async function resolveSmartSelectorConnectionId(runtime, chat) {
+  const chatConnectionId = typeof chat?.connectionId === "string" && chat.connectionId.trim() ? chat.connectionId : null;
+  const resolved = await runtime.languageModels.resolveForRequest({ chatConnectionId });
+  return typeof resolved?.connectionId === "string" ? resolved.connectionId.trim() : "";
+}
+
 async function selectSmartSpeakerViaRaw({ app, runtime, chat, messages, candidates, personaName }) {
-  const connectionId = typeof chat.connectionId === "string" ? chat.connectionId : "";
-  if (!connectionId) return "";
   try {
+    const connectionId = await resolveSmartSelectorConnectionId(runtime, chat);
+    if (!connectionId) return "";
     const response = await injectJson(app, "POST", "/api/generate/raw", {
       connectionId,
       messages: buildSmartSelectionPrompt({ messages, candidates, personaName }),
-      parameters: {
-        temperature: 0.2,
-        maxTokens: 512,
-        topP: 1,
-      },
       streaming: false,
     });
     return parseSmartGroupSelectionIds(response.content, candidates)[0] || "";

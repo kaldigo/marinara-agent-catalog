@@ -42,7 +42,7 @@ function manifest() {
     name: "Group Sort Order",
     version,
     description: "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
-    engine: { min: "2.3.3", maxExclusive: "3.0.0" },
+    engine: { min: "2.4.0", maxExclusive: "3.0.0" },
     kind: ["agent"],
     entrypoints: {
       server: "server.mjs",

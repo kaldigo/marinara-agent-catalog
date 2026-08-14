@@ -1,6 +1,6 @@
 {
   "name": "marinara-group-sort-order-package",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "private": true,
   "type": "module",
   "description": "Package-era Group Sort Order source for Marinara Engine.",

@@ -13,6 +13,7 @@ import {
   registerGroupSortHooks,
   resolveAvailableCandidateCount,
   resolveGeneratedAssistantTarget,
+  resolveSmartSelectorConnectionId,
   sanitizeOutgoingSseChunk
 } from "../src/server/routes.js";
 import { activate, selfCheck } from "../src/server/index.js";
@@ -51,6 +52,23 @@ assert(
 assert(parseTerminalNextSpeakerMarker("<next_speaker>bob</next_speaker>\nHello.") === null, "non-terminal marker rejected");
 assert(parseSmartGroupSelectionIds('```json\n["james"]\n```', candidates)[0] === "james", "smart selector JSON array parsed");
 assert(parseSmartGroupSelectionIds('{"characters":["Alice"]}', candidates)[0] === "alice", "smart selector names parsed");
+
+let selectorRequest = null;
+assert(
+  (await resolveSmartSelectorConnectionId(
+    {
+      languageModels: {
+        async resolveForRequest(request) {
+          selectorRequest = request;
+          return { connectionId: "agent-default" };
+        }
+      }
+    },
+    { connectionId: "chat-default" }
+  )) === "agent-default",
+  "smart selector uses the capability request resolver"
+);
+assert(selectorRequest?.chatConnectionId === "chat-default", "chat connection is supplied only as resolver fallback");
 
 const state = normalizeGroupSortState({
   includePersonaCandidate: false,
@@ -242,7 +260,7 @@ await activate({
         }
       },
       resources: { listCharacters() {} },
-      languageModels: { resolve() {} }
+      languageModels: { resolveForRequest() {} }
     }
   }
 });
@@ -258,6 +276,10 @@ assert(hooks.some((hook) => hook.name === "onResponse"), "onResponse hook regist
 
 const routesSource = await fs.readFile(new URL("../src/server/routes.js", import.meta.url), "utf8");
 assert(routesSource.includes("/api/generate/raw"), "refresh uses raw generation selector route");
+assert(routesSource.includes("languageModels.resolveForRequest({ chatConnectionId })"), "refresh resolves the Agent connection through the capability host");
+assert(!routesSource.includes("temperature: 0.2"), "refresh does not override the connection temperature");
+assert(!routesSource.includes("maxTokens: 512"), "refresh does not impose the legacy 512-token limit");
+assert(!routesSource.includes("topP: 1"), "refresh does not override the connection top-p setting");
 assert(routesSource.includes("statePersona?.name"), "refresh transcript can name persona outside candidate list");
 assert(routesSource.includes("resolveAvailableCandidateCount(chat, state)"), "view visibility uses available candidates");
 assert(routesSource.includes("hidden: availableCandidateCount <= 2"), "two characters plus persona keeps the UI visible");
@@ -283,7 +305,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.24"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.25"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
@@ -310,7 +332,7 @@ await selfCheck({
     runtime: {
       persistence: { getChat() {}, listMessages() {}, updateChatMetadata() {} },
       resources: { listCharacters() {} },
-      languageModels: { resolve() {} }
+      languageModels: { resolveForRequest() {} }
     }
   }
 });
@@ -319,6 +341,7 @@ assert(typeof createGroupSortRoutes === "function", "routes export exists");
 assert(typeof registerGroupSortHooks === "function", "hooks export exists");
 assert(typeof resolveAvailableCandidateCount === "function", "available candidate helper export exists");
 assert(typeof resolveGeneratedAssistantTarget === "function", "generation target helper export exists");
+assert(typeof resolveSmartSelectorConnectionId === "function", "smart selector connection helper export exists");
 
 function fakeDb() {
   return {
