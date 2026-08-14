@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-14T08:40:04.146Z",
+  "generatedAt": "2026-08-14T10:26:39.523Z",
   "packages": [
     {
       "manifest": {
@@ -996,7 +996,7 @@
         "schemaVersion": 1,
         "id": "noodle",
         "name": "Noodle",
-        "version": "1.0.9",
+        "version": "1.0.10",
         "description": "Explore the Noodle public timeline and the NoodleR creator-and-fan roleplay feed as an optional local social world. Install it, restart Marinara Engine when prompted, then open Home → Noodle.",
         "localizations": {
           "de": {
@@ -1057,13 +1057,13 @@
           },
           {
             "path": "server.mjs",
-            "sha256": "e87731d4a5938954f679321f4c9ac8eb43272b3e0c1bdfd37d799b05d0997f4c",
-            "bytes": 2480233
+            "sha256": "33436549df031c3d73a5c40e4d22a456068e1ec05a65e970511358b82dab1727",
+            "bytes": 2481456
           },
           {
             "path": "client.js",
-            "sha256": "7a812830737c90e21e8692bb04cf78cc6c0df898d669f6783936306b46e30939",
-            "bytes": 2543050
+            "sha256": "732dabbd4ffa79eed6b222f511ac81aac4bac0675422354b8af71af83bebf11d",
+            "bytes": 2544223
           },
           {
             "path": "noodle-klusek.png",
@@ -1089,9 +1089,9 @@
       "category": "misc",
       "iconUrl": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artwork/agent-covers/noodle.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/noodle-1.0.9.zip",
-        "sha256": "63b31fd27cfeb93f09d2fa686ccaea2804d5caab0ad743444d13d7caa0d8818f",
-        "bytes": 1264748
+        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/noodle-1.0.10.zip",
+        "sha256": "988f0178da5d5978dc57b0d1b0402f7a8ff75fcdb6d6863375f4b8fb9096bbb5",
+        "bytes": 1265107
       },
       "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Agents/blob/main/packages/noodle/README.md"
     },
@@ -1819,7 +1819,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.24.zip",
-        "sha256": "12063b34ff6db1c21381ff59722dff979fc743488ff549280909a3cdc014f39e",
+        "sha256": "1569bc3872c666038229095b4aa4f1431cf96099cf0c82498b93b0a31853b40e",
         "bytes": 58824
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1866,7 +1866,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.6.zip",
-        "sha256": "2d28fc5d9463177bd6f09bbf91594c362b48b32be77021e6df134e28c526474a",
+        "sha256": "b2ca4d6b0eccc8bc7d26eebb08b3234273a269910c690478345237b95c739b64",
         "bytes": 22037
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -2066,7 +2066,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.1.10.zip",
-        "sha256": "09c38625b2aa351595e32a561b9373fd958d093f6bce37490f567f24167025ae",
+        "sha256": "5eba31011302c0b2db86b2d0cb8e5475f074d78eaa416eed3616e2d3ecc3b209",
         "bytes": 70818
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -2109,7 +2109,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.5.zip",
-        "sha256": "a3d39169a03855b6e083e3ab7497c1013976e3f74107265d0174a7cacf6fb0ee",
+        "sha256": "da224755014ebfa64056eda6dc4f6f3a0f07f95acf0cdeba2cbcf3f2860b7d4a",
         "bytes": 15624
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -2154,7 +2154,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/response-keeper-1.0.1.zip",
-        "sha256": "b4bbf844e1b2d3afd36c4117aa93dabcbb0a09eac6c1d32032d82a941820be1c",
+        "sha256": "f2f4e1df329bb035c64dc6416214baa2917319307eba74ad507332b135883dd0",
         "bytes": 8015
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#response-keeper"
@@ -2193,7 +2193,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/tracker-json-editor-1.0.2.zip",
-        "sha256": "fe50c2148c4bde7fe1723d6c445eab18a3c811bb88875a97e65b99b77be0121e",
+        "sha256": "b7d7c5fb16bd17c5aedf909eb1ac2aa27589dec77416e3fd35161f8c98dcb307",
         "bytes": 6002
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#tracker-json-editor"
@@ -2334,7 +2334,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.2.zip",
-        "sha256": "a0cd89e605209ed4cd9665d27f2c6ab6418364d2179524b0edb554736fe26e06",
+        "sha256": "977b54f150554dd37cb10cf10cc4787afe42c40ea9e0bdbc9a2f8d78199012b5",
         "bytes": 44742
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"
