@@ -292,7 +292,12 @@ testChat = {
   },
 };
 currentMessages = [{ id: "m1", role: "user", extra: {} }];
-const generateRequest = { method: "POST", url: "/api/generate", body: { chatId: "chat-1" }, headers: {} };
+const generateRequest = {
+  method: "POST",
+  url: "/api/generate",
+  body: { chatId: "chat-1", userMessage: "Hello", submissionId: "submission-1" },
+  headers: {},
+};
 await registeredHooks.find((hook) => hook.name === "preHandler").handler(generateRequest, {});
 assert(
   testChat.metadata.marinaraPresencePackage?.summaryPresenceById?.["summary-1"]?.join(",") === "a,b",
@@ -316,6 +321,19 @@ assert(
   lorebookEntries.some((entry) => entry.name === "summary-1" && entry.position === 7 && entry.outletName === PRESENCE_SUMMARY_OUTLET_NAME),
   "normal generate creates temporary outlet summary entry",
 );
+currentMessages = [
+  { id: "m1", role: "user", extra: {} },
+  { id: "m2", role: "user", extra: { submissionId: "submission-1", hiddenFromAICharacterIds: [] } },
+];
+await waitForCondition(
+  () =>
+    injectedRequests.some(
+      (request) =>
+        request.url.includes("/messages/m2/extra") &&
+        request.payload?.hiddenFromAICharacterIds?.join(",") === "b",
+    ),
+  "normal generate early-stamps submitted user message before completion",
+);
 testChat = {
   ...testChat,
   metadata: {
@@ -327,9 +345,8 @@ testChat = {
   },
 };
 currentMessages = [
-  { id: "m1", role: "user", extra: {} },
-  { id: "m2", role: "user", extra: {} },
-  { id: "m3", role: "assistant", characterId: "a", extra: {} },
+  ...currentMessages,
+  { id: "m3", role: "assistant", characterId: "a", extra: { hiddenFromAICharacterIds: [] } },
 ];
 await registeredHooks.find((hook) => hook.name === "onResponse").handler(generateRequest, { statusCode: 200 });
 assert(
@@ -423,6 +440,15 @@ await selfCheck({
 
 function assert(condition, message) {
   if (!condition) throw new Error(`Check failed: ${message}`);
+}
+
+async function waitForCondition(predicate, message) {
+  const deadline = Date.now() + 1_000;
+  do {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < deadline);
+  assert(false, message);
 }
 
 function replyStub() {
