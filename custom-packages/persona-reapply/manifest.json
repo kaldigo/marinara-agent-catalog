@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "persona-reapply",
   "name": "Persona Reapply",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Refreshes saved persona colours on individual messages or across a whole chat.",
   "engine": {
     "min": "2.4.2",
@@ -109,8 +109,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "888fc9cb8315299613d6260a26c022adf3c37d0c749a70e8648c1497289c1b3d",
-      "bytes": 71446
+      "sha256": "43ee542ece5a7ae186615f4c2c25bed3fc8b4a978ff76e2cf5f4435af3f9a580",
+      "bytes": 72633
     },
     {
       "path": "server.mjs",

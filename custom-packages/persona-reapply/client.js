@@ -1457,7 +1457,10 @@
     constructor() {
       super();
       this.onCapabilityProps = () => this.render();
-      this.onClick = () => this.reapply();
+      this.onClick = (event) => {
+        event.stopPropagation();
+        this.reapply();
+      };
       this.busy = false;
     }
 
@@ -1579,10 +1582,14 @@
   }
 
   async function fetchJson(url, options) {
-    const response = await fetch(url, {
-      ...options,
-      headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
-    });
+    const headers = { ...(options?.headers || {}) };
+    const hasBody = options?.body !== undefined && options?.body !== null;
+    const hasContentType = Object.keys(headers).some((name) => name.toLowerCase() === "content-type");
+    if (hasBody && !hasContentType) headers["Content-Type"] = "application/json";
+    const request = { ...options };
+    if (Object.keys(headers).length > 0) request.headers = headers;
+    else delete request.headers;
+    const response = await fetch(url, request);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data?.error || `${response.status} ${response.statusText}`);
     return data;
@@ -1738,34 +1745,65 @@
 
   .persona-reapply-message-button {
     display: inline-flex;
-    min-width: 1.75rem;
-    height: 1.75rem;
+    width: 1.7em;
+    height: 1.7em;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
+    border: 0;
     border-radius: 0.375rem;
-    color: var(--marinara-chat-chrome-button-text, var(--muted-foreground));
-    font-size: 0.875rem;
+    background: transparent;
+    color: color-mix(in srgb, var(--foreground) 40%, transparent);
+    padding: 0;
+    font: inherit;
+    font-size: 0.8125rem;
     line-height: 1;
-    transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease;
+    cursor: pointer;
+    transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease, transform 100ms ease;
   }
 
   .persona-reapply-message-button:hover {
-    background: var(--marinara-chat-chrome-button-bg-hover, var(--accent));
-    color: var(--marinara-chat-chrome-button-text-hover, var(--foreground));
+    background: color-mix(in srgb, var(--foreground) 10%, transparent);
+    color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  }
+
+  .persona-reapply-message-button:active {
+    transform: scale(0.9);
   }
 
   .persona-reapply-message-button:disabled {
-    cursor: wait;
-    opacity: 0.55;
+    pointer-events: none;
+    cursor: not-allowed;
+    opacity: 0.3;
   }
 
   .persona-reapply-message-icon {
     display: block;
-    width: 0.9rem;
-    height: 0.9rem;
+    width: 1em;
+    height: 1em;
     background: currentColor;
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21a8 8 0 0 1 16 0z'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21a8 8 0 0 1 16 0z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  [data-chat-mode="conversation"] .persona-reapply-message-button {
+    width: auto;
+    height: auto;
+    border-radius: 0.25rem;
+    color: color-mix(in srgb, var(--foreground) 70%, transparent);
+    padding: 0.25rem;
+    font-size: 0.75rem;
+  }
+
+  [data-chat-mode="conversation"] .persona-reapply-message-button:hover {
+    background: color-mix(in srgb, var(--foreground) 20%, transparent);
+    color: var(--foreground);
+  }
+
+  [data-chat-mode="conversation"] .persona-reapply-message-icon {
+    width: 0.75rem;
+    height: 0.75rem;
   }
 
   .persona-reapply-message-button--busy .persona-reapply-message-icon {
