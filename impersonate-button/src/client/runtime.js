@@ -80,6 +80,7 @@ function quickActions(runtime) {
       label: "Impersonate",
       title: "Generate as your persona",
       icon: ICONS.impersonate,
+      closeQuickReplyMenu: true,
       handler: () => startDryRun(runtime, "impersonate"),
     },
     {
@@ -87,6 +88,7 @@ function quickActions(runtime) {
       label: "Continue draft",
       title: "Continue the current draft",
       icon: ICONS.continue,
+      closeQuickReplyMenu: true,
       handler: () => startDryRun(runtime, "continue"),
     },
     {
@@ -94,6 +96,7 @@ function quickActions(runtime) {
       label: "Inner State",
       title: "Use the current text as private thoughts or feelings",
       icon: ICONS.innerState,
+      closeQuickReplyMenu: true,
       handler: () => startDryRun(runtime, "inner_state"),
     },
     {
@@ -120,9 +123,40 @@ function createQuickActionButton(runtime, action) {
     event.preventDefault();
     event.stopPropagation();
     if (btn.disabled) return;
+    if (action.closeQuickReplyMenu) closeQuickReplyMenuFromAction(btn);
     action.handler();
   });
   return btn;
+}
+
+function closeQuickReplyMenuFromAction(button) {
+  const menu = button.closest?.('[role="menu"]');
+  if (!(menu instanceof HTMLElement)) return;
+
+  document.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+
+  const owner = findQuickReplyMenuOwnerTrigger(menu);
+  if (!(owner instanceof HTMLButtonElement)) return;
+  window.setTimeout(() => {
+    if (!menu.isConnected) return;
+    if (owner.getAttribute("aria-expanded") !== "true") return;
+    owner.click();
+  }, 40);
+}
+
+function findQuickReplyMenuOwnerTrigger(menu) {
+  const id = menu?.id || "";
+  if (!id) return null;
+  return Array.from(document.querySelectorAll('button[aria-haspopup="menu"][aria-controls]')).find(
+    (trigger) => trigger instanceof HTMLButtonElement && trigger.getAttribute("aria-controls") === id,
+  );
 }
 
 function renderQuickActionSlot(runtime) {
