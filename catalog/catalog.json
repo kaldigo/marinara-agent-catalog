@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-15T14:42:29.984Z",
+  "generatedAt": "2026-08-15T15:27:26.370Z",
   "packages": [
     {
       "manifest": {
@@ -1819,7 +1819,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.25.zip",
-        "sha256": "e430a6571496fa1b62527a68b970cc20ef7c13ca92cc692b719e95ac900eb20d",
+        "sha256": "99ba7880c1034ee576629265578e43f4be2107f388f36ee781acf80d309c912c",
         "bytes": 58861
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1866,7 +1866,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.7.zip",
-        "sha256": "bfb4eef826a9d7a32a9ea12f1e12f1ceb18a9b4188f2da0845442c8ad4f4d8cd",
+        "sha256": "4960586999ed743d34f4855d2f3f531364216da82438bbf95823bbb3d941fe95",
         "bytes": 22346
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -1876,7 +1876,7 @@
         "schemaVersion": 1,
         "id": "persona-reapply",
         "name": "Persona Reapply",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "description": "Refreshes saved persona colours on individual messages or across a whole chat.",
         "engine": {
           "min": "2.4.2",
@@ -1983,8 +1983,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "9c98402ae1c632b1f936e37463690000a39da2d38b13fa6a25d0d1ca0cb0259a",
-            "bytes": 71396
+            "sha256": "888fc9cb8315299613d6260a26c022adf3c37d0c749a70e8648c1497289c1b3d",
+            "bytes": 71446
           },
           {
             "path": "server.mjs",
@@ -2017,9 +2017,9 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/persona-reapply-1.0.1.zip",
-        "sha256": "98159a10fa3e7c67312536a076527647bfa71c53d55e15812a1faa416b080b2f",
-        "bytes": 54603
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/persona-reapply-1.0.2.zip",
+        "sha256": "1a5a564d94b49d5ad4c336ae698b8defc6be1600ba9b55a1c52f96476fe013a3",
+        "bytes": 54604
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#persona-reapply"
     },
@@ -2218,7 +2218,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.1.10.zip",
-        "sha256": "0e1346ccf288b842799eb191124178691e1cbc366404032495ba812b085243fd",
+        "sha256": "291ea9867fe56742534a2c544c1be6e8a49dc8181be5c8a37a7cf90fd4b07864",
         "bytes": 70818
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -2261,7 +2261,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.5.zip",
-        "sha256": "cd891005ac8d3c14ca8bccc7db9c4c2963ba2db705c0c49c5c6e4d8d686b1a60",
+        "sha256": "14fe3c099a0ef420b87beeb8e70b0a32ecc8926d01bef07a9f4b6a7cb0ec8ac1",
         "bytes": 15624
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -2306,7 +2306,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/response-keeper-1.0.1.zip",
-        "sha256": "9f86c705dc0c90506dc5b045f5f43ef64adb73a43bbde2ae7cc0eef4c678df84",
+        "sha256": "13e4954bf06c4ac316368425439408dd137265d777ca6ef48c239b976a5a961a",
         "bytes": 8015
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#response-keeper"
@@ -2345,7 +2345,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/tracker-json-editor-1.0.2.zip",
-        "sha256": "58f3d6bd76ca5e787da69cf63e9878874a15074cfd214f2a9ac1ecd5fb51dea2",
+        "sha256": "77b912bc1fc363e10fbf2bf4eac0c711e6e2fe357c9bcf6255dcc920f9f23c1d",
         "bytes": 6002
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#tracker-json-editor"
@@ -2486,7 +2486,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.2.zip",
-        "sha256": "226afb3f85846b11c164d4c57ce39b264529c9ae85c98790218cb0f9cf9978be",
+        "sha256": "bf4412ca63ec1c978fdfc3840f231d4618dff1e868b0e9c8c2034d266d3891d8",
         "bytes": 44742
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"

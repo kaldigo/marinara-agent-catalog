@@ -1528,7 +1528,7 @@
 
   if (!state.initialized) {
     state.initialized = true;
-    injectStyle(STYLE_ID, STYLES);
+    injectStyle(STYLE_ID, personaReapplyStyles());
     registerMessageAction();
     registerSlashCommand();
   }
@@ -1730,7 +1730,8 @@
     state.toastTimer = window.setTimeout(() => toast.classList.add("persona-reapply-toast--out"), 2800);
   }
 
-  const STYLES = `
+  function personaReapplyStyles() {
+    return `
   ${TAG_NAME}[view="message-actions"] {
     display: inline-flex;
   }
@@ -1801,5 +1802,6 @@
     pointer-events: none;
   }
   `;
+  }
 
 })();
