@@ -11,7 +11,7 @@ const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 const server = fs.readFileSync(path.join(packageRoot, "server.mjs"), "utf8");
 
 assert.equal(manifest.id, "persona-reapply");
-assert.equal(manifest.version, "1.0.2");
+assert.equal(manifest.version, "1.0.3");
 assert.deepEqual(manifest.permissions, ["chat-read", "chat-write", "routes", "ui"]);
 assert.equal(manifest.restartRequired, true);
 assert.equal(manifest.entrypoints.client, "client.js");
@@ -20,6 +20,12 @@ assert.equal(agents[0]?.execution, "feature");
 assert(!/^\s*import\s/m.test(client), "client entrypoint is self-contained");
 assert(client.includes("function registerMessageActionContribution"), "client bundles the message-action bridge");
 assert(client.includes("function registerBridgeSlashCommand"), "client bundles the command bridge");
+assert(client.includes("if (hasBody && !hasContentType)"), "bodyless POSTs do not claim to contain JSON");
+assert(client.includes("width: 1.7em;"), "roleplay action uses Marinara's native button dimensions");
+assert(
+  client.includes('[data-chat-mode="conversation"] .persona-reapply-message-button'),
+  "conversation action uses Marinara's native compact styling",
+);
 assert(server.includes('./src/server/index.js'), "server entrypoint targets packaged server source");
 assert(fs.existsSync(path.join(packageRoot, "bridge", "host-routes.js")), "server bridge helper is packaged");
 assert(fs.existsSync(path.join(packageRoot, "bridge", "capability-slots.js")), "message-action bridge is packaged");

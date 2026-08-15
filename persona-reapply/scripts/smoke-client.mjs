@@ -416,6 +416,17 @@ const sandbox = {
   clearInterval() {},
   async fetch(url, options = {}) {
     requests.push({ url, options });
+    const contentType = Object.entries(options.headers || {}).find(
+      ([name]) => name.toLowerCase() === "content-type",
+    )?.[1];
+    if (String(contentType || "").includes("application/json") && options.body === undefined) {
+      return {
+        ok: false,
+        status: 400,
+        statusText: "Bad Request",
+        async json() { return { error: "Body cannot be empty when content-type is application/json" }; },
+      };
+    }
     const update = {
       messageId: "message-1",
       previousSnapshot: { nameColor: "#111111", dialogueColor: "#222222", boxColor: "#333333" },
@@ -456,7 +467,10 @@ assert.equal(button.getAttribute("aria-label"), "Reapply this message's persona 
 
 await capability.reapply();
 flushTimers();
-assert(requests.some((request) => String(request.url).endsWith("/chat/chat-1/messages/message-1")));
+const singleRequest = requests.find((request) => String(request.url).endsWith("/chat/chat-1/messages/message-1"));
+assert(singleRequest);
+assert.equal(singleRequest.options.body, undefined);
+assert.equal(singleRequest.options.headers, undefined, "bodyless POST does not claim to contain JSON");
 assert.equal(name.style.color, "#aaaaaa");
 assert.equal(bubble.style.backgroundColor, "#cccccc");
 assert.equal(dialogue.style.color, "#bbbbbb");
@@ -464,7 +478,10 @@ assert.equal(dialogue.style.color, "#bbbbbb");
 const command = sandbox.__mariBridgeSlashCommandState.registrations.get("persona-reapply:reapply-persona");
 await command.handler({ context: { chatId: "chat-1" } });
 flushTimers();
-assert(requests.some((request) => String(request.url).endsWith("/chat/chat-1/all")));
+const bulkRequest = requests.find((request) => String(request.url).endsWith("/chat/chat-1/all"));
+assert(bulkRequest);
+assert.equal(bulkRequest.options.body, undefined);
+assert.equal(bulkRequest.options.headers, undefined, "bulk bodyless POST does not claim to contain JSON");
 
 console.log("Persona Reapply client startup and UI smoke checks passed.");
 
