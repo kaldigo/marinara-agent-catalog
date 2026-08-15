@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-15T11:38:00.462Z",
+  "generatedAt": "2026-08-15T12:08:43.681Z",
   "packages": [
     {
       "manifest": {
@@ -1819,7 +1819,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.25.zip",
-        "sha256": "6fe3b435c3051eb138990d2974142c89fe97965ee028697c462d1bc59e400d9c",
+        "sha256": "27c666f607c1cb5a4a6636a9fd1227437ad6bc1646ad6ba65c1c6c79f171cc78",
         "bytes": 58861
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1850,8 +1850,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "61459c01af17fc27bddcdefd4be3ee076ac640c2270220bef08eb99cf5266b28",
-            "bytes": 90077
+            "sha256": "5a391f36f1c55a0616beada1d25a2d5abddb47ecf7ec0a875b9c968866e757e8",
+            "bytes": 91195
           }
         ],
         "permissions": [
@@ -1866,10 +1866,162 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.6.zip",
-        "sha256": "cf8e189f66e080181d11faca4c62ae292a0871e51b2bd7977500a2c022be3680",
-        "bytes": 22037
+        "sha256": "85cdebe14f1afe959e90f6affb5080f5699c2bd78e290754a9f6c32ec803e6ef",
+        "bytes": 22347
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "persona-reapply",
+        "name": "Persona Reapply",
+        "version": "1.0.0",
+        "description": "Refreshes saved persona colours on individual messages or across a whole chat.",
+        "engine": {
+          "min": "2.4.2",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "server": "server.mjs",
+          "client": "client.js",
+          "agents": "agents.json"
+        },
+        "files": [
+          {
+            "path": "agents.json",
+            "sha256": "d99b1c8217c8d75e866da5db7b9cc5554c9a3474503bb32c302c526f0c834b6a",
+            "bytes": 505
+          },
+          {
+            "path": "bridge/capability-slots.js",
+            "sha256": "5347256833e03c270b1588f674008c4b9daf9daf9b32d400b598f6f7637094ef",
+            "bytes": 32608
+          },
+          {
+            "path": "bridge/chat-settings.js",
+            "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
+            "bytes": 633
+          },
+          {
+            "path": "bridge/commands.js",
+            "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
+            "bytes": 9153
+          },
+          {
+            "path": "bridge/composer-actions.js",
+            "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
+            "bytes": 3635
+          },
+          {
+            "path": "bridge/composer-dom.js",
+            "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
+            "bytes": 6719
+          },
+          {
+            "path": "bridge/fetch-intercept.js",
+            "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
+            "bytes": 5720
+          },
+          {
+            "path": "bridge/generation-lifecycle.js",
+            "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
+            "bytes": 15046
+          },
+          {
+            "path": "bridge/generation-stream.js",
+            "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
+            "bytes": 2807
+          },
+          {
+            "path": "bridge/host-routes.js",
+            "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
+            "bytes": 1847
+          },
+          {
+            "path": "bridge/index.js",
+            "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
+            "bytes": 580
+          },
+          {
+            "path": "bridge/message-actions.js",
+            "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
+            "bytes": 481
+          },
+          {
+            "path": "bridge/prompt-contribution.js",
+            "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
+            "bytes": 6771
+          },
+          {
+            "path": "bridge/ranges.js",
+            "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
+            "bytes": 2012
+          },
+          {
+            "path": "bridge/runtime.js",
+            "sha256": "e94a7a51698854572a773c63d3adf914acc48378da4d9d692de1605ae45b7d00",
+            "bytes": 5418
+          },
+          {
+            "path": "bridge/summary-tracking.js",
+            "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
+            "bytes": 2620
+          },
+          {
+            "path": "bridge/topbar-panels.js",
+            "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
+            "bytes": 463
+          },
+          {
+            "path": "bridge/ui-slots.js",
+            "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
+            "bytes": 15676
+          },
+          {
+            "path": "client.js",
+            "sha256": "744ad3d6b0ebaf92730146ebe31bdb7dacc41e03b255f5006111ec2a93294d9c",
+            "bytes": 12902
+          },
+          {
+            "path": "server.mjs",
+            "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+            "bytes": 61
+          },
+          {
+            "path": "src/server/index.js",
+            "sha256": "f3fe7ebd645ad3a0628653e2214d17df561110215cf9a4a7a79d30c4dfacc081",
+            "bytes": 863
+          },
+          {
+            "path": "src/server/reapply.js",
+            "sha256": "0acf0ce50eab3c4fe190df8f8c676193089142caf6b40196e104a19e4775d81b",
+            "bytes": 1755
+          },
+          {
+            "path": "src/server/routes.js",
+            "sha256": "247fcc59a139bdd75c2a1c4bb9c5db0c61835f42d8337c5ed75efeb679e4372c",
+            "bytes": 4151
+          }
+        ],
+        "permissions": [
+          "chat-read",
+          "chat-write",
+          "routes",
+          "ui"
+        ],
+        "restartRequired": true
+      },
+      "category": "misc",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/persona-reapply-1.0.0.zip",
+        "sha256": "b2f493383f018d4154576069aa540ab2d4ae4ee03c4bd22acbba0c8f43ce3525",
+        "bytes": 41858
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#persona-reapply"
     },
     {
       "manifest": {
@@ -2066,7 +2218,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.1.10.zip",
-        "sha256": "0b949cd7858b2c0b09b34177004fbf2e8d4a30a32ffcbf5a66193e776563c2ca",
+        "sha256": "70b3267cfa0c105673ae57b8db23a0922cbc66f47c620c3734be19620eff5c47",
         "bytes": 70818
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -2109,7 +2261,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.5.zip",
-        "sha256": "ddf1eede00b734ba1e925fba2eae636da3788b43c768b1ec719b48f0e55a5e8d",
+        "sha256": "bb7a1e49ab154f6336cce8399d3987b024f634952e9b3d58aac0ac1b316a32a1",
         "bytes": 15624
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -2154,7 +2306,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/response-keeper-1.0.1.zip",
-        "sha256": "176bc2ba8da2321ba80242014147a49adba7a51ef0e714877e3e317a8c334afd",
+        "sha256": "920b4779349172e8f6583c162ff15178e273ac62dad872dd75c1a26a1d11eba4",
         "bytes": 8015
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#response-keeper"
@@ -2193,7 +2345,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/tracker-json-editor-1.0.2.zip",
-        "sha256": "d6f14180aa11df8dad69035c0a5e990c82a89928ba074db12a10957262fa81d3",
+        "sha256": "ed998fb26190da9101369200996c67fc5c0c9d6b372da4268488809902dd8483",
         "bytes": 6002
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#tracker-json-editor"
@@ -2334,7 +2486,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.2.zip",
-        "sha256": "7e8baf81dc7c1936e8c5dbe27d5a61a0909fc56930d56f823f21465871ea665c",
+        "sha256": "82aa369b24b5bd7e661534d66cd201bb653b75af48f4b567f96d45674ddc00ec",
         "bytes": 44742
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"

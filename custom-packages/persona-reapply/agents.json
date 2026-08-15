@@ -1,0 +1,21 @@
+[
+  {
+    "id": "persona-reapply",
+    "name": "Persona Reapply",
+    "description": "Feature runtime for refreshing historical persona message colours.",
+    "category": "misc",
+    "phase": "pre_generation",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "libraryHidden": true,
+    "runtimeDisabled": true,
+    "modeAllowlist": [
+      "conversation",
+      "roleplay",
+      "visual_novel"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]
