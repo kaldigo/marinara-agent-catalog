@@ -11,7 +11,7 @@ const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 const server = fs.readFileSync(path.join(packageRoot, "server.mjs"), "utf8");
 
 assert.equal(manifest.id, "persona-reapply");
-assert.equal(manifest.version, "1.0.1");
+assert.equal(manifest.version, "1.0.2");
 assert.deepEqual(manifest.permissions, ["chat-read", "chat-write", "routes", "ui"]);
 assert.equal(manifest.restartRequired, true);
 assert.equal(manifest.entrypoints.client, "client.js");
