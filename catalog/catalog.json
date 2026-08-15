@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-15T20:42:25.360Z",
+  "generatedAt": "2026-08-15T21:17:09.164Z",
   "packages": [
     {
       "manifest": {
@@ -1819,7 +1819,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.25.zip",
-        "sha256": "7bc2ac0db880faf42943d535ebb08faf1aae8d56f2bbf208c8b91aa27b822029",
+        "sha256": "6d4964390b73c9de93c8e25d65443804de7d0984ce64ec7f0383a6b742ed5526",
         "bytes": 58861
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -1866,7 +1866,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.7.zip",
-        "sha256": "248529ce5e642083e58210d77a8e754d54e6130fd2c35ffa527d7a21a049b5d0",
+        "sha256": "aa03bcb41875de92fd3393debb1539aac86c1f4c603ed9d6e4dbe8d347536843",
         "bytes": 22346
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
@@ -2018,7 +2018,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/persona-reapply-1.0.3.zip",
-        "sha256": "9a26586710b2c50623dc1d7e5c6ea9096234777c102ae24fd90325c1d29f26ab",
+        "sha256": "f54e3f2f2d244aa4779734cab1917dde77fe1a4d99a52a923033f3e2cb5ded98",
         "bytes": 54828
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#persona-reapply"
@@ -2028,7 +2028,7 @@
         "schemaVersion": 1,
         "id": "presence",
         "name": "Presence",
-        "version": "1.1.10",
+        "version": "1.1.11",
         "description": "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
         "engine": {
           "min": "2.3.3",
@@ -2170,8 +2170,8 @@
           },
           {
             "path": "src/server/routes.js",
-            "sha256": "89fcbb290b0ef7849d90626d50b5ad56949878c405934844c8de30cc4fae2c37",
-            "bytes": 40176
+            "sha256": "72628f9e3ec4433646db9385e3213ef23dddf89219ac7d2cecaae5903393a915",
+            "bytes": 42744
           },
           {
             "path": "src/server/summary-mirror.js",
@@ -2217,9 +2217,9 @@
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.1.10.zip",
-        "sha256": "ba4cbf6e4ad3b814dbdbb0a1844e66f657bf960746a095b7bf514bd3ea29ec55",
-        "bytes": 70818
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.1.11.zip",
+        "sha256": "bfefb3700867470ad54cbf8fb12a03d950cac127d5e14b312477efc20ea9741f",
+        "bytes": 71344
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     },
@@ -2261,7 +2261,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.5.zip",
-        "sha256": "dfad0f75cdf56cbc26dc5ba0fa0c343b60f2a706158cad7a71367a91aa421717",
+        "sha256": "2376bfbfa175575d99fafd8991ad5bf439f44d621186b93ad407e355260f5d98",
         "bytes": 15624
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -2306,7 +2306,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/response-keeper-1.0.1.zip",
-        "sha256": "76931854744c041e4fd58781f1a5ed2031d1eaaf54d00372a0c0457d38437ce8",
+        "sha256": "d953b241946373b28b9cc63de4d786dfe66ed4e2bec0a2817c84a0857b83543a",
         "bytes": 8015
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#response-keeper"
@@ -2345,7 +2345,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/tracker-json-editor-1.0.2.zip",
-        "sha256": "236a613a3a8d5431443c9b730d662a7407f7599e5d8caca4f509a9267c145bb8",
+        "sha256": "d9e0d06c9e0ebfe5d71b9ddbd247327e717bb5d2ebc140d1fb5aa8e457709985",
         "bytes": 6002
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#tracker-json-editor"
@@ -2486,7 +2486,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.2.zip",
-        "sha256": "c0bbb69b3e2cf9e3f6dac5b6f541c261a27fdab72367aad9734aec5a7d81d6be",
+        "sha256": "71d5b44dce9660289d9a09debb8ecd1856452c0272ca95314d990915345a1010",
         "bytes": 44742
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"

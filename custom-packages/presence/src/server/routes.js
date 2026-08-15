@@ -19,6 +19,8 @@ const SUMMARY_RESTORE_TIMERS = new Map();
 const SUMMARY_RESTORE_WATCHDOG_DELAY_MS = 10_000;
 const SUMMARY_RESTORE_FALLBACK_WAIT_MS = 120_000;
 const SUMMARY_RESTORE_FORCE_MS = 20 * 60_000;
+const EARLY_USER_STAMP_TIMEOUT_MS = 5_000;
+const EARLY_USER_STAMP_INTERVAL_MS = 50;
 
 export function registerPresenceMessageCreateHook({ app, runtime }) {
   if (app[MESSAGE_CREATE_HOOK_KEY]) return;
@@ -153,14 +155,29 @@ async function captureGenerationRequestState({ app, runtime, request }) {
   const messages = await runtime.persistence.listMessages(chatId);
   const summaryEntriesBefore = readSummaryEntries(chat);
   const generationRun = await preparePresenceGenerationRun({ app, runtime, chat, messages });
-  GENERATE_REQUEST_STATE.set(request, {
+  const beforeMessageIds = new Set(messages.map((message) => message.id).filter(Boolean));
+  const state = {
     chatId,
-    beforeMessageIds: new Set(messages.map((message) => message.id).filter(Boolean)),
+    beforeMessageIds,
     summaryEntriesBefore,
     generationRun,
     regenerateMessageId: typeof body.regenerateMessageId === "string" ? body.regenerateMessageId : "",
     continueMessageId: typeof body.continueMessageId === "string" ? body.continueMessageId : "",
-  });
+    earlyUserStampPromise: null,
+  };
+  if (shouldWatchGeneratedUserMessage(body)) {
+    state.earlyUserStampPromise = stampGeneratedUserMessageSoon({
+      app,
+      runtime,
+      chatId,
+      beforeMessageIds,
+      submissionId: typeof body.submissionId === "string" ? body.submissionId : "",
+    }).catch((error) => {
+      runtime.logger.warn(error, "[Presence] Could not early-stamp generated user message");
+      return { stamped: false };
+    });
+  }
+  GENERATE_REQUEST_STATE.set(request, state);
 }
 
 async function captureSummaryRequestState({ runtime, request }) {
@@ -224,6 +241,7 @@ async function finishGenerationLifecycle({ app, runtime, request, reply }) {
 async function stampGeneratedMessages({ app, runtime, chat, state }) {
   const messages = await runtime.persistence.listMessages(state.chatId);
   const createdMessages = messages.filter((message) => !state.beforeMessageIds.has(message.id));
+  const createdMessageIds = new Set(createdMessages.map((message) => message.id).filter(Boolean));
   const targetIds = new Set(
     [
       ...createdMessages.filter((message) => isStampableMessageRole(message.role)).map((message) => message.id),
@@ -233,9 +251,42 @@ async function stampGeneratedMessages({ app, runtime, chat, state }) {
   );
   for (const message of messages) {
     if (!targetIds.has(message.id)) continue;
-    await stampMessageWithActivePresence({ app, runtime, chat, message, overwriteExisting: false });
+    await stampMessageWithActivePresence({
+      app,
+      runtime,
+      chat,
+      message,
+      overwriteExisting: createdMessageIds.has(message.id),
+    });
   }
   return [...targetIds];
+}
+
+async function stampGeneratedUserMessageSoon({ app, runtime, chatId, beforeMessageIds, submissionId }) {
+  const deadline = Date.now() + EARLY_USER_STAMP_TIMEOUT_MS;
+  do {
+    const messages = await runtime.persistence.listMessages(chatId);
+    const message = findGeneratedUserMessage(messages, beforeMessageIds, submissionId);
+    if (message) {
+      const chat = await runtime.persistence.getChat(chatId);
+      if (!chat || !isPresenceTrackerEnabled(chat)) return { stamped: false };
+      await stampMessageWithActivePresence({ app, runtime, chat, message, overwriteExisting: true });
+      return { stamped: true, messageId: message.id };
+    }
+    await delay(EARLY_USER_STAMP_INTERVAL_MS);
+  } while (Date.now() < deadline);
+  return { stamped: false };
+}
+
+function findGeneratedUserMessage(messages, beforeMessageIds, submissionId) {
+  const createdUsers = (Array.isArray(messages) ? messages : []).filter(
+    (message) => message?.id && message.role === "user" && !beforeMessageIds.has(message.id),
+  );
+  if (!createdUsers.length) return null;
+  if (submissionId) {
+    return createdUsers.find((message) => normalizeObject(message.extra).submissionId === submissionId) || null;
+  }
+  return createdUsers[createdUsers.length - 1];
 }
 
 async function patchGeneratedMessageSummaryFingerprints({ app, chat, messageIds }) {
@@ -930,6 +981,14 @@ function isNormalGenerateUrl(url) {
   return /^\/api\/generate(?:[?#].*)?$/u.test(String(url || ""));
 }
 
+function shouldWatchGeneratedUserMessage(body) {
+  if (normalizeObject(body).impersonate === true) return false;
+  if (typeof body.userMessage === "string" && body.userMessage.length > 0) return true;
+  if (Array.isArray(body.attachments) && body.attachments.length > 0) return true;
+  const pendingSpatialTransition = body.pendingSpatialTransition;
+  return !!pendingSpatialTransition && typeof pendingSpatialTransition === "object" && !Array.isArray(pendingSpatialTransition);
+}
+
 function isPresenceInternalRequest(request) {
   const value = request.headers?.["x-presence-internal"];
   return value === "1" || value === "true" || (Array.isArray(value) && value.includes("1"));
@@ -942,6 +1001,10 @@ function createRunId() {
 function readTimestampMs(value) {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fingerprintChatSummary(value) {
