@@ -26,8 +26,31 @@ await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "R
 console.log(`Built Persona Reapply prepared package: ${path.relative(projectRoot, packageRoot)}`);
 
 async function buildClientEntrypoint() {
-  const source = await fs.readFile(path.join(projectRoot, "src", "client", "runtime.js"), "utf8");
-  return source.replaceAll('../../../_mari-bridge/src/', './assets/bridge/');
+  const files = [
+    path.join(bridgeRoot, "runtime.js"),
+    path.join(bridgeRoot, "ranges.js"),
+    path.join(bridgeRoot, "composer-dom.js"),
+    path.join(bridgeRoot, "capability-slots.js"),
+    path.join(bridgeRoot, "commands.js"),
+    path.join(bridgeRoot, "message-actions.js"),
+    path.join(projectRoot, "src", "client", "runtime.js"),
+  ];
+  const modules = [];
+  for (const file of files) modules.push(stripBrowserModuleSyntax(await fs.readFile(file, "utf8")));
+  return ["(() => {", '  "use strict";', indent(modules.join("\n\n")), "})();", ""].join("\n");
+}
+
+function stripBrowserModuleSyntax(content) {
+  return content
+    .replace(/^import\s+[\s\S]*?\s+from\s+["'][^"']+["'];\r?\n/gm, "")
+    .replace(/^import .*?;\r?\n/gm, "")
+    .replace(/^export async function /gm, "async function ")
+    .replace(/^export function /gm, "function ")
+    .replace(/^export const /gm, "const ")
+    .replace(/^export let /gm, "let ")
+    .replace(/^export var /gm, "var ")
+    .replace(/^export class /gm, "class ")
+    .replace(/^export \{[^}]*\};?\r?\n/gm, "");
 }
 
 function rewriteServerImports(content) {
@@ -91,4 +114,11 @@ async function copyTree(from, to, transform = (content) => content) {
 async function writeFile(file, content) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content);
+}
+
+function indent(content) {
+  return content
+    .split("\n")
+    .map((line) => (line ? `  ${line}` : line))
+    .join("\n");
 }

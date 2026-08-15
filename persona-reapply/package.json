@@ -1,6 +1,6 @@
 {
   "name": "marinara-persona-reapply-package",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "Refreshes saved persona colours on Marinara chat messages.",
