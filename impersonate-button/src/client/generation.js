@@ -13,30 +13,13 @@ function joiner(left, right) {
 
 async function buildDryRunParams({ chatId, mode, originalInput, settings }) {
   const promptTemplate = normalizeImpersonatePromptTemplate(settings.impersonatePromptTemplate);
-  const useRegularPresetDryRun = promptTemplate.trimOnly && !!settings.impersonatePresetId;
-  const params = useRegularPresetDryRun
-    ? {
-        chatId,
-        presetId: settings.impersonatePresetId,
-        streaming: true,
-      }
-    : {
-        chatId,
-        userMessage: mode === "continue" || mode === "inner_state" ? originalInput.trim() : originalInput.trim() || null,
-        impersonate: true,
-        streaming: true,
-        impersonateBlockAgents: settings.impersonateBlockAgents,
-      };
-
-  if (useRegularPresetDryRun) {
-    if (settings.impersonateConnectionId) params.connectionId = settings.impersonateConnectionId;
-    const generationGuide = buildModeGenerationGuide(mode, originalInput);
-    if (generationGuide) {
-      params.generationGuide = generationGuide;
-      params.generationGuideSource = "guide";
-    }
-    return params;
-  }
+  const params = {
+    chatId,
+    userMessage: mode === "continue" || mode === "inner_state" ? originalInput.trim() : originalInput.trim() || null,
+    impersonate: true,
+    streaming: true,
+    impersonateBlockAgents: settings.impersonateBlockAgents,
+  };
 
   if (settings.impersonatePresetId) params.impersonatePresetId = settings.impersonatePresetId;
   if (settings.impersonateConnectionId) params.impersonateConnectionId = settings.impersonateConnectionId;
