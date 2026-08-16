@@ -84,14 +84,17 @@ export function buildCandidateHash(candidates, options = {}) {
   });
 }
 
-export function buildInstructionText(candidates) {
+export function buildInstructionText(candidates, options = {}) {
   if (!Array.isArray(candidates) || candidates.length <= 2) return "";
-  const lines = candidates.flatMap((candidate) => [`- id: ${candidate.id}`, `  name: ${candidate.name}`]);
+  const excludedCandidateId = readNonEmptyString(options.excludedCandidateId);
+  const selectableCandidates = filterNextSpeakerCandidates(candidates, excludedCandidateId);
+  if (selectableCandidates.length === 0) return "";
+  const lines = selectableCandidates.flatMap((candidate) => [`- id: ${candidate.id}`, `  name: ${candidate.name}`]);
   return [
     "At the very end of your response, choose which candidate should speak next in this roleplay group chat, based on the latest user message, recent scene context, relevance, personality, and who has spoken recently.",
     "Use only one candidate ID from this list:",
     ...lines,
-    "Do not always choose the first candidate. Avoid choosing the same candidate twice in a row unless the context clearly calls for it.",
+    "Do not always choose the first candidate. Never choose the participant who just posted or is currently responding.",
     "Append exactly one terminal marker after the response text:",
     "<next_speaker>candidate-id</next_speaker>",
     "Use the selected ID only inside the marker. Do not use names, JSON, prose, or markdown inside the marker.",
@@ -165,7 +168,35 @@ export function deriveNextSpeaker({ state, messages, candidates, candidateHash }
   const swipeIndex = Number.isInteger(latest.activeSwipeIndex) ? latest.activeSwipeIndex : 0;
   const anchor = normalizedState.byAnchor[anchorKey(latest.id, swipeIndex)];
   if (!anchor || anchor.candidateHash !== candidateHash) return null;
+  const latestParticipant = resolveMessageParticipantCandidate(latest, candidates);
+  if (latestParticipant?.id && anchor.nextSpeakerId === latestParticipant.id) return null;
   return candidateById.get(anchor.nextSpeakerId) || null;
+}
+
+export function filterNextSpeakerCandidates(candidates, excludedCandidateId) {
+  const excluded = readNonEmptyString(excludedCandidateId);
+  return (Array.isArray(candidates) ? candidates : []).filter((candidate) => candidate?.id && candidate.id !== excluded);
+}
+
+export function resolveLatestParticipantCandidate(messages, candidates) {
+  for (const message of [...(Array.isArray(messages) ? messages : [])].reverse()) {
+    const participant = resolveMessageParticipantCandidate(message, candidates);
+    if (participant) return participant;
+  }
+  return null;
+}
+
+export function resolveMessageParticipantCandidate(message, candidates) {
+  const candidateList = Array.isArray(candidates) ? candidates : [];
+  const byId = new Map(candidateList.map((candidate) => [candidate.id, candidate]));
+  if (message?.role === "assistant") {
+    const characterId = readNonEmptyString(message.characterId);
+    return characterId ? byId.get(characterId) || null : null;
+  }
+  if (message?.role === "user") {
+    return candidateList.find((candidate) => candidate.kind === "persona") || null;
+  }
+  return null;
 }
 
 export function upsertAnchor(state, anchor) {
@@ -236,6 +267,10 @@ function normalizeTextForMatch(value) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+}
+
+function readNonEmptyString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
 function isAnchorableMessage(message) {

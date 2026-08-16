@@ -2,9 +2,12 @@ import {
   buildCandidateHash,
   buildInstructionText,
   deriveNextSpeaker,
+  filterNextSpeakerCandidates,
   normalizeGroupSortState,
   parseSmartGroupSelectionIds,
   parseTerminalNextSpeakerMarker,
+  resolveLatestParticipantCandidate,
+  resolveMessageParticipantCandidate,
   stripTerminalNextSpeakerMarker
 } from "../src/shared/state.js";
 import fs from "node:fs/promises";
@@ -28,6 +31,22 @@ const instruction = buildInstructionText(candidates);
 assert(instruction.includes("<next_speaker>candidate-id</next_speaker>"), "instruction contains marker example");
 assert(instruction.includes("- id: bob"), "instruction labels candidate ids");
 assert(instruction.includes("  name: Bob"), "instruction labels candidate names");
+const excludingBobInstruction = buildInstructionText(candidates, { excludedCandidateId: "bob" });
+assert(!excludingBobInstruction.includes("- id: bob"), "instruction excludes blocked latest participant id");
+assert(excludingBobInstruction.includes("- id: james"), "instruction keeps other candidates when one is blocked");
+assert(filterNextSpeakerCandidates(candidates, "bob").every((candidate) => candidate.id !== "bob"), "candidate filter excludes blocked id");
+assert(
+  resolveLatestParticipantCandidate([{ id: "a1", role: "assistant", characterId: "bob" }], candidates)?.id === "bob",
+  "latest assistant participant resolves to candidate"
+);
+assert(
+  resolveLatestParticipantCandidate([{ id: "u1", role: "user" }], candidates)?.id === "alice",
+  "latest user participant resolves to persona candidate"
+);
+assert(
+  resolveMessageParticipantCandidate({ id: "a1", role: "assistant", characterId: "james" }, candidates)?.id === "james",
+  "assistant message participant resolves by character id"
+);
 
 const parsed = parseTerminalNextSpeakerMarker("Hello.\n<next_speaker>bob</next_speaker>\n");
 assert(parsed?.speakerId === "bob", "terminal marker parsed");
@@ -86,6 +105,15 @@ assert(
     candidateHash
   })?.id === "bob",
   "next speaker derives from active message swipe"
+);
+assert(
+  deriveNextSpeaker({
+    state,
+    messages: [{ id: "m1", role: "assistant", characterId: "bob", activeSwipeIndex: 0 }],
+    candidates,
+    candidateHash
+  }) === null,
+  "next speaker cannot be the latest participant"
 );
 assert(
   deriveNextSpeaker({
@@ -288,6 +316,10 @@ assert(routesSource.includes("view.candidates.length <= 2"), "refresh route skip
 assert(routesSource.includes("hasVisibleIncomingUserTurn(body)"), "incoming user turns suppress stale next-speaker forcing");
 assert(routesSource.includes("hasIncomingUserTurn"), "generation prepare path checks for incoming user turns");
 assert(routesSource.includes("installOutgoingMarkerFilter(reply"), "generation prepare path installs SSE marker filter");
+assert(routesSource.includes("resolvePromptExcludedCandidate"), "prompt contribution excludes current or latest participant");
+assert(routesSource.includes("filterNextSpeakerCandidates(candidates, excludedCandidate?.id)"), "refresh excludes latest participant candidates");
+assert(routesSource.includes("parsed.speakerId === generatedParticipant.id"), "saved markers cannot select the generated participant");
+assert(routesSource.includes("<excluded_latest_participant_id>"), "refresh prompt names the excluded latest participant id");
 assert(
   routesSource.indexOf("installOutgoingMarkerFilter(reply") < routesSource.indexOf("if (candidates.length <= 2) return;"),
   "SSE marker filter is installed before candidate-count generation gate"
@@ -305,7 +337,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.25"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.26"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
