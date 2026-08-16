@@ -1405,7 +1405,7 @@
   // src/client/constants.js
   const PACKAGE_ID = "impersonate-button";
   const PACKAGE_NAME = "Impersonate Button";
-  const PACKAGE_VERSION = "1.0.8";
+  const PACKAGE_VERSION = "1.0.9";
   const RUNTIME_KEY = "__marinaraImpersonateButtonPackageRuntime";
   const PUBLIC_API_KEY = "__marinaraImpersonateButton";
   const STYLE_ID = "marinara-impersonate-button-style";
@@ -1792,6 +1792,18 @@
     };
   }
 
+  function buildGuidanceTemplate(baseTemplate) {
+    const base = String(baseTemplate || "").trim();
+    const guidanceBlock = [
+      "Guidance for {{user}}'s next in-character response:",
+      "{{impersonate_direction}}",
+      "",
+      "Use this as a suggestion for the generated response, not as dialogue or chat history.",
+      "Do not quote or rush to fulfill the suggestion; let it guide you naturally.",
+    ].join("\n");
+    return base ? `${base}\n\n${guidanceBlock}` : guidanceBlock;
+  }
+
   function buildInnerStateTemplate(baseTemplate) {
     const base = String(baseTemplate || "").trim();
     const innerStateBlock = [
@@ -2041,10 +2053,15 @@
       const baseTemplate = promptTemplate.template || (await readChatImpersonatePrompt(chatId));
       params.impersonatePromptTemplate = buildContinueTemplate(baseTemplate);
     } else if (mode === "inner_state") {
-      const baseTemplate = promptTemplate.trimOnly ? "" : promptTemplate.template || (await readChatImpersonatePrompt(chatId));
+      const baseTemplate = promptTemplate.template || (await readChatImpersonatePrompt(chatId));
       params.impersonatePromptTemplate = buildInnerStateTemplate(baseTemplate);
+    } else if (promptTemplate.trimOnly) {
+      params.impersonatePromptTemplate = buildGuidanceTemplate(promptTemplate.template);
     } else if (promptTemplate.template) {
       params.impersonatePromptTemplate = promptTemplate.template;
+    } else {
+      const chatPromptTemplate = normalizeImpersonatePromptTemplate(await readChatImpersonatePrompt(chatId));
+      if (chatPromptTemplate.trimOnly) params.impersonatePromptTemplate = buildGuidanceTemplate(chatPromptTemplate.template);
     }
 
     return params;
