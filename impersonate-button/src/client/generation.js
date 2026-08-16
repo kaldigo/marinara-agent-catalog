@@ -28,10 +28,15 @@ async function buildDryRunParams({ chatId, mode, originalInput, settings }) {
     const baseTemplate = promptTemplate.template || (await readChatImpersonatePrompt(chatId));
     params.impersonatePromptTemplate = buildContinueTemplate(baseTemplate);
   } else if (mode === "inner_state") {
-    const baseTemplate = promptTemplate.trimOnly ? "" : promptTemplate.template || (await readChatImpersonatePrompt(chatId));
+    const baseTemplate = promptTemplate.template || (await readChatImpersonatePrompt(chatId));
     params.impersonatePromptTemplate = buildInnerStateTemplate(baseTemplate);
+  } else if (promptTemplate.trimOnly) {
+    params.impersonatePromptTemplate = buildGuidanceTemplate(promptTemplate.template);
   } else if (promptTemplate.template) {
     params.impersonatePromptTemplate = promptTemplate.template;
+  } else {
+    const chatPromptTemplate = normalizeImpersonatePromptTemplate(await readChatImpersonatePrompt(chatId));
+    if (chatPromptTemplate.trimOnly) params.impersonatePromptTemplate = buildGuidanceTemplate(chatPromptTemplate.template);
   }
 
   return params;

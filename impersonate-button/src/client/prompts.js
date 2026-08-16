@@ -27,6 +27,18 @@ function normalizeImpersonatePromptTemplate(value) {
   };
 }
 
+function buildGuidanceTemplate(baseTemplate) {
+  const base = String(baseTemplate || "").trim();
+  const guidanceBlock = [
+    "Guidance for {{user}}'s next in-character response:",
+    "{{impersonate_direction}}",
+    "",
+    "Use this as a suggestion for the generated response, not as dialogue or chat history.",
+    "Do not quote or rush to fulfill the suggestion; let it guide you naturally.",
+  ].join("\n");
+  return base ? `${base}\n\n${guidanceBlock}` : guidanceBlock;
+}
+
 function buildInnerStateTemplate(baseTemplate) {
   const base = String(baseTemplate || "").trim();
   const innerStateBlock = [

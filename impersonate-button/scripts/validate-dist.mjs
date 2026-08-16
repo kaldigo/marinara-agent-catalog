@@ -9,7 +9,7 @@ const manifestPath = path.join(packageRoot, "manifest.json");
 const manifest = readJson(manifestPath);
 
 assert(manifest.id === "impersonate-button", "manifest id must be impersonate-button");
-assert(manifest.version === "1.0.8", "manifest version must be 1.0.8");
+assert(manifest.version === "1.0.9", "manifest version must be 1.0.9");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint must be client.js");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint must be agents.json");
 assert(fs.existsSync(path.join(packageRoot, "client.js")), "missing client.js");
@@ -19,7 +19,7 @@ assert(fs.existsSync(path.join(packageRoot, "README.md")), "missing README.md");
 const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 assert(client.includes("startImpersonateButtonPackage"), "client bundle missing runtime start");
 assert(client.includes("createDomScope"), "client bundle missing _mari-bridge DOM scope");
-assert(client.includes('PACKAGE_VERSION = "1.0.8"'), "client package version must match manifest");
+assert(client.includes('PACKAGE_VERSION = "1.0.9"'), "client package version must match manifest");
 assert(client.includes("MARI_BRIDGE_VERSION"), "client bundles bridge runtime version metadata");
 assert(client.includes("current.installed || current.installing"), "client bundles bridge recursive install guard");
 assert(client.includes("menu.insertBefore(host, menu.firstChild)"), "client inserts bridge quick actions at the top");
@@ -30,6 +30,9 @@ assert(client.includes("isNativeMainGenerationActive"), "client bundle preserves
 assert(client.includes("marinara-chat-input-shell"), "client bundle anchors slots to the native input shell");
 assert(client.includes("mari-ib-icon-shell"), "client bundle includes native-style quick action icon shells");
 assert(!client.includes("useRegularPresetDryRun"), "client bundle must keep trim prompts on the impersonate route");
+assert(client.includes("Guidance for {{user}}'s next in-character response:"), "client bundle wraps trim guidance prompts");
+assert(client.includes("Private inner state for {{user}}:"), "client bundle wraps trim inner-state prompts");
+assert(client.includes("Continue {{user}}'s current in-character draft."), "client bundle wraps trim continue prompts");
 
 console.log("Dist validation passed.");
 
