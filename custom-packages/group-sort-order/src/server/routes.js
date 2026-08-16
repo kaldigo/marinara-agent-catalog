@@ -12,6 +12,7 @@ import {
   buildCandidateHash,
   buildInstructionText,
   deriveNextSpeaker,
+  filterNextSpeakerCandidates,
   isGroupSortEnabled,
   normalizeGroupSortState,
   normalizeObject,
@@ -19,6 +20,8 @@ import {
   parseTerminalNextSpeakerMarker,
   readGroupSortState,
   resolveActiveCharacterIds,
+  resolveLatestParticipantCandidate,
+  resolveMessageParticipantCandidate,
   stripTerminalNextSpeakerMarker,
   upsertAnchor,
   writeGroupSortState,
@@ -39,7 +42,10 @@ export function registerGroupSortHooks({ app, runtime }) {
       const state = readGroupSortState(chat.metadata);
       const candidates = await resolveCandidates(runtime, chat, state);
       if (candidates.length <= 2) return null;
-      return buildInstructionText(candidates);
+      const messages = await runtime.persistence.listMessages(chatId);
+      const candidateHash = buildCandidateHash(candidates, { includePersonaCandidate: state.includePersonaCandidate });
+      const excludedCandidate = resolvePromptExcludedCandidate({ body, messages, candidates, state, candidateHash });
+      return buildInstructionText(candidates, { excludedCandidateId: excludedCandidate?.id });
     },
   });
   app.addHook("preHandler", async (request, reply) => {
@@ -86,7 +92,7 @@ export function createGroupSortRoutes({ app, runtime }) {
       candidateHash,
       byAnchor: candidates.length <= 2 ? {} : current.byAnchor,
     });
-    reconcileGroupSortPromptContribution(chat.id, candidates);
+    await reconcileGroupSortPromptContribution(runtime, chat, candidates);
     return { ok: true, ...(await buildView(runtime, (await runtime.persistence.getChat(chat.id)) || chat)) };
   });
 
@@ -101,7 +107,7 @@ export function createGroupSortRoutes({ app, runtime }) {
     await patchChatState(runtime, chat, { includePersonaCandidate, personaCandidate });
     const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
     const view = await buildView(runtime, freshChat);
-    reconcileGroupSortPromptContribution(chat.id, view.candidates);
+    await reconcileGroupSortPromptContribution(runtime, freshChat, view.candidates);
     return { ok: true, ...view };
   });
 
@@ -250,6 +256,15 @@ async function finishGeneration({ app, runtime, request, reply }) {
     );
     return;
   }
+  const generatedParticipant = resolveMessageParticipantCandidate(target, candidates);
+  if (generatedParticipant?.id && parsed.speakerId === generatedParticipant.id) {
+    runtime.logger.warn(
+      "[Group Sort Order] stripped next_speaker marker selecting the latest participant %s in chat %s",
+      parsed.speakerId,
+      chatId,
+    );
+    return;
+  }
   const nextState = upsertAnchor(currentState, {
     messageId: target.id,
     swipeIndex: Number.isInteger(target.activeSwipeIndex) ? target.activeSwipeIndex : 0,
@@ -390,8 +405,23 @@ async function refreshSmartSelection({ app, runtime, chat, candidates, candidate
   const messages = await runtime.persistence.listMessages(chat.id);
   const anchorMessage = latestAnchorMessage(messages);
   if (!anchorMessage) return null;
-  const selectedId = await selectSmartSpeakerViaRaw({ app, runtime, chat, messages, candidates, personaName });
-  const selected = candidates.find((candidate) => candidate.id === selectedId) || null;
+  const excludedCandidate = resolveLatestParticipantCandidate(messages, candidates);
+  const selectableCandidates = filterNextSpeakerCandidates(candidates, excludedCandidate?.id);
+  if (selectableCandidates.length === 0) {
+    await patchChatState(runtime, chat, { candidateHash, byAnchor: {} });
+    return null;
+  }
+  const selectedId = await selectSmartSpeakerViaRaw({
+    app,
+    runtime,
+    chat,
+    messages,
+    candidates: selectableCandidates,
+    transcriptCandidates: candidates,
+    personaName,
+    excludedCandidate,
+  });
+  const selected = selectableCandidates.find((candidate) => candidate.id === selectedId) || null;
   if (!selected) {
     await patchChatState(runtime, chat, { candidateHash, byAnchor: {} });
     return null;
@@ -414,13 +444,13 @@ export async function resolveSmartSelectorConnectionId(runtime, chat) {
   return typeof resolved?.connectionId === "string" ? resolved.connectionId.trim() : "";
 }
 
-async function selectSmartSpeakerViaRaw({ app, runtime, chat, messages, candidates, personaName }) {
+async function selectSmartSpeakerViaRaw({ app, runtime, chat, messages, candidates, transcriptCandidates, personaName, excludedCandidate }) {
   try {
     const connectionId = await resolveSmartSelectorConnectionId(runtime, chat);
     if (!connectionId) return "";
     const response = await injectJson(app, "POST", "/api/generate/raw", {
       connectionId,
-      messages: buildSmartSelectionPrompt({ messages, candidates, personaName }),
+      messages: buildSmartSelectionPrompt({ messages, candidates, transcriptCandidates, personaName, excludedCandidate }),
       streaming: false,
     });
     return parseSmartGroupSelectionIds(response.content, candidates)[0] || "";
@@ -430,7 +460,7 @@ async function selectSmartSpeakerViaRaw({ app, runtime, chat, messages, candidat
   }
 }
 
-function buildSmartSelectionPrompt({ messages, candidates, personaName }) {
+function buildSmartSelectionPrompt({ messages, candidates, transcriptCandidates, personaName, excludedCandidate }) {
   return [
     {
       role: "system",
@@ -438,7 +468,7 @@ function buildSmartSelectionPrompt({ messages, candidates, personaName }) {
         "You are a hidden response orchestrator for a roleplay group chat.",
         "Choose which character or characters should respond next, based on the latest user message, recent scene context, relevance, personality, and who has spoken recently.",
         "Usually choose exactly one character. Choose multiple only when multiple characters have a strong immediate reason to answer.",
-        "Do not always choose the first character. Avoid making the same character speak twice in a row unless the context clearly calls for it.",
+        "Do not always choose the first character. Never choose the participant who just posted.",
         'Return ONLY a valid JSON array of character IDs, such as ["character-id"]. No prose, no object wrapper, no markdown.',
       ].join("\n"),
     },
@@ -449,10 +479,11 @@ function buildSmartSelectionPrompt({ messages, candidates, personaName }) {
         "<candidates>",
         formatSmartGroupCandidates(candidates),
         "</candidates>",
+        excludedCandidate ? `<excluded_latest_participant_id>${excludedCandidate.id}</excluded_latest_participant_id>` : "",
         "<recent_transcript>",
-        buildRecentTranscript({ messages, candidates, personaName }) || "No recent transcript.",
+        buildRecentTranscript({ messages, candidates: transcriptCandidates || candidates, personaName }) || "No recent transcript.",
         "</recent_transcript>",
-      ].join("\n"),
+      ].filter(Boolean).join("\n"),
     },
   ];
 }
@@ -525,6 +556,21 @@ function resolvePersonaName(chat, candidates, state) {
   return candidates.find((candidate) => candidate.id === personaId)?.name ?? statePersona?.name ?? "Persona";
 }
 
+function resolvePromptExcludedCandidate({ body, messages, candidates, state, candidateHash }) {
+  const candidateList = Array.isArray(candidates) ? candidates : [];
+  const currentResponderId = readString(body?.forCharacterId);
+  if (currentResponderId) {
+    const currentResponder = candidateList.find((candidate) => candidate.id === currentResponderId);
+    if (currentResponder) return currentResponder;
+  }
+  if (hasVisibleIncomingUserTurn(body)) {
+    return candidateList.find((candidate) => candidate.kind === "persona") || null;
+  }
+  const directedResponder = deriveNextSpeaker({ state, messages, candidates: candidateList, candidateHash });
+  if (directedResponder) return directedResponder;
+  return resolveLatestParticipantCandidate(messages, candidateList);
+}
+
 function normalizePersonaCandidate(value) {
   const obj = normalizeObject(value);
   if (typeof obj.id !== "string" || !obj.id.trim()) return null;
@@ -545,15 +591,18 @@ function hasVisibleIncomingUserTurn(body) {
   return Boolean(normalizeObject(body.pendingSpatialTransition).commandId);
 }
 
-function reconcileGroupSortPromptContribution(chatId, candidates) {
+async function reconcileGroupSortPromptContribution(runtime, chat, candidates) {
+  const chatId = chat?.id;
   if (!Array.isArray(candidates) || candidates.length <= 2) {
     clearGroupSortPromptContribution(chatId);
     return null;
   }
+  const messages = await runtime.persistence.listMessages(chatId);
+  const excludedCandidate = resolveLatestParticipantCandidate(messages, candidates);
   return setPromptContribution(chatId, {
     agentType: GROUP_SORT_ORDER_AGENT_TYPE,
     agentName: "Group Sort Order",
-    text: buildInstructionText(candidates),
+    text: buildInstructionText(candidates, { excludedCandidateId: excludedCandidate?.id }),
   });
 }
 
