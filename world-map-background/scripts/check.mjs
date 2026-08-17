@@ -11,6 +11,17 @@ assert(runtimeSource.includes("/global-gallery"), "client resolves global galler
 assert(runtimeSource.includes("global-gallery:"), "client uses current World Maps global reference prefix");
 assert(runtimeSource.includes("/metadata"), "client persists chat background metadata");
 assert(runtimeSource.includes("x-marinara-csrf"), "client sends CSRF header for metadata writes");
+assert(runtimeSource.includes("marinara-capability-server-event"), "client listens for World Maps response reconciliation");
+assert(runtimeSource.includes("spatial_transition_committed"), "client reacts to committed spatial transitions");
+assert(runtimeSource.includes("spatial_context_refresh"), "client reacts to missed-transition reconciliation");
+assert(runtimeSource.includes("state.syncRequested = true"), "urgent response sync survives an in-flight poll");
+assert(runtimeSource.includes("state.syncDueAt <= dueAt"), "routine polling cannot replace an earlier response sync");
+assert(runtimeSource.includes("...options,\n        headers,"), "computed JSON headers are not replaced by request options");
+assert(runtimeSource.includes("API_TIMEOUT_MS"), "stalled API requests cannot stop synchronization permanently");
+assert(runtimeSource.includes("image.naturalWidth > 0"), "client verifies the background image loaded before persisting it");
+assert(runtimeSource.includes('image.addEventListener("error"'), "failed background images are detected");
+assert(runtimeSource.includes("image.remove();\n        scheduleSync(1000)"), "failed background images are removed and retried");
+assert(runtimeSource.includes("findRoleplayRoot"), "client retains a fallback for the stable Roleplay root contract");
 assert(runtimeSource.includes("wmb-live-background"), "client installs live Roleplay background overlay");
 assert(!runtimeSource.includes('type="checkbox"'), "client does not expose a toggle UI");
 
