@@ -370,9 +370,11 @@
     const STYLE_ID = "marinara-world-map-background-style";
     const RUNTIME_KEY = "__marinaraWorldMapBackgroundRuntime";
     const OWNER_STORAGE_KEY = "marinara-world-map-background-owner";
-    const RUNTIME_VERSION = "1.0.2";
+    const RUNTIME_VERSION = "1.0.3";
+    const CAPABILITY_SERVER_EVENT = "marinara-capability-server-event";
     const GLOBAL_GALLERY_PREFIX = "global-gallery:";
     const SYNC_INTERVAL_MS = 2500;
+    const API_TIMEOUT_MS = 10000;
 
     const previousState = window[RUNTIME_KEY];
     if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -389,7 +391,9 @@
       disposed: false,
       activeChatId: "",
       syncing: false,
+      syncRequested: false,
       syncTimer: 0,
+      syncDueAt: 0,
       lastSyncKey: "",
       lastAppliedUrl: "",
       cleanups: [],
@@ -433,9 +437,24 @@
         if (!document.hidden) scheduleSync(100);
       });
       on(window, "focus", () => scheduleSync(100));
-      on(window, "marinara:generation-complete", () => scheduleSync(250));
-      on(window, "marinara:generation-error", () => scheduleSync(250));
+      on(window, CAPABILITY_SERVER_EVENT, handleCapabilityServerEvent);
+      on(window, "marinara:generation-complete", handleGenerationSettled);
+      on(window, "marinara:generation-error", handleGenerationSettled);
       scheduleSync(0);
+    }
+
+    function handleCapabilityServerEvent(event) {
+      const detail = normalizeObject(event?.detail);
+      if (detail.packageId !== WORLD_MAPS_AGENT_ID) return;
+      if (detail.chatId && detail.chatId !== state.activeChatId) return;
+      if (detail.type !== "spatial_transition_committed" && detail.type !== "spatial_context_refresh") return;
+      scheduleSync(0);
+    }
+
+    function handleGenerationSettled(event) {
+      const detail = normalizeObject(event?.detail);
+      if (detail.chatId && detail.chatId !== state.activeChatId) return;
+      scheduleSync(250);
     }
 
     function on(target, type, handler, options) {
@@ -454,13 +473,27 @@
 
     function scheduleSync(delayMs = SYNC_INTERVAL_MS) {
       if (state.disposed) return;
+      if (state.syncing) {
+        state.syncRequested = true;
+        return;
+      }
+
+      const normalizedDelay = Math.max(0, Number(delayMs) || 0);
+      const dueAt = Date.now() + normalizedDelay;
+      if (state.syncTimer && state.syncDueAt && state.syncDueAt <= dueAt) return;
       if (state.syncTimer) window.clearTimeout(state.syncTimer);
-      state.syncTimer = window.setTimeout(runSync, delayMs);
+      state.syncDueAt = dueAt;
+      state.syncTimer = window.setTimeout(runSync, normalizedDelay);
     }
 
     async function runSync() {
       state.syncTimer = 0;
-      if (state.disposed || state.syncing) return scheduleSync(SYNC_INTERVAL_MS);
+      state.syncDueAt = 0;
+      if (state.disposed) return;
+      if (state.syncing) {
+        state.syncRequested = true;
+        return;
+      }
       state.syncing = true;
       try {
         const chatId = state.activeChatId;
@@ -489,13 +522,17 @@
         }
 
         const syncKey = `${chatId}:${image.referenceImageId}:${image.url}`;
-        applyLiveBackground(image.url);
+        if (!applyLiveBackground(image.url)) return;
         if (state.lastSyncKey === syncKey && metadata.background === image.url) return;
         state.lastSyncKey = syncKey;
         await persistOwnedBackground(chatId, metadata, image);
+      } catch (error) {
+        warn("background synchronization failed", error);
       } finally {
         state.syncing = false;
-        scheduleSync(SYNC_INTERVAL_MS);
+        const nextDelay = state.syncRequested ? 0 : SYNC_INTERVAL_MS;
+        state.syncRequested = false;
+        scheduleSync(nextDelay);
       }
     }
 
@@ -584,8 +621,8 @@
     }
 
     function applyLiveBackground(url) {
-      const root = document.querySelector('[data-component="ChatArea.Roleplay"] .rpg-chat-area[data-chat-mode="roleplay"]');
-      if (!root) return;
+      const root = findRoleplayRoot();
+      if (!root) return false;
 
       let image = root.querySelector(":scope > .wmb-live-background");
       if (!image) {
@@ -595,9 +632,31 @@
         image.draggable = false;
         const overlay = root.querySelector(":scope > .rpg-overlay");
         root.insertBefore(image, overlay || root.firstChild);
+        image.addEventListener("load", () => {
+          image.dataset.loadState = "loaded";
+          scheduleSync(0);
+        });
+        image.addEventListener("error", () => {
+          warn("background image failed to load; retrying", new Error(image.currentSrc || image.src || url));
+          image.remove();
+          scheduleSync(1000);
+        });
       }
-      if (image.getAttribute("src") !== url) image.setAttribute("src", url);
+      if (image.getAttribute("src") !== url) {
+        image.dataset.loadState = "loading";
+        image.setAttribute("src", url);
+      }
       image.setAttribute("data-reference-owned-by", PACKAGE_ID);
+      if (image.complete && image.naturalWidth > 0) image.dataset.loadState = "loaded";
+      return image.dataset.loadState === "loaded";
+    }
+
+    function findRoleplayRoot() {
+      const exact = document.querySelector(
+        '[data-component="ChatArea.Roleplay"] .rpg-chat-area[data-chat-mode="roleplay"]',
+      );
+      if (exact) return exact;
+      return document.querySelector('.rpg-chat-area[data-chat-mode="roleplay"]');
     }
 
     function removeLiveBackground() {
@@ -617,13 +676,20 @@
       if (options.body !== undefined && !headers["content-type"] && !headers["Content-Type"]) {
         headers["content-type"] = "application/json";
       }
-      const response = await fetch(`/api${path}`, {
-        headers,
-        ...options,
-      });
-      if (!response.ok) throw new Error(await response.text());
-      if (response.status === 204) return {};
-      return response.json();
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+      try {
+        const response = await fetch(`/api${path}`, {
+          ...options,
+          headers,
+          signal: options.signal || controller.signal,
+        });
+        if (!response.ok) throw new Error(await response.text());
+        if (response.status === 204) return {};
+        return response.json();
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
 
     function normalizeObject(value) {
