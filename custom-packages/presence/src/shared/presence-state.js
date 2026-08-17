@@ -1,3 +1,5 @@
+import { PRESENCE_MESSAGE_KEY, PRESENCE_SCHEMA_VERSION } from "./constants.js";
+
 export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds, alwaysPresentCharacterIds = [] }) {
   const normalizedExtra = normalizeObject(extra);
   const roster = uniqueStrings(rosterIds);
@@ -13,6 +15,11 @@ export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds,
   return {
     hiddenFromAI: normalizedExtra.hiddenFromAI === true ? true : false,
     hiddenFromAICharacterIds,
+    [PRESENCE_MESSAGE_KEY]: {
+      version: PRESENCE_SCHEMA_VERSION,
+      presentCharacterIds: present,
+      updatedAt: new Date().toISOString(),
+    },
   };
 }
 
@@ -20,6 +27,10 @@ export function readPresenceState(message, rosterIds) {
   const extra = normalizeObject(message?.extra);
   const roster = uniqueStrings(rosterIds);
   const rosterSet = new Set(roster);
+  const storedPresence = normalizeObject(extra[PRESENCE_MESSAGE_KEY]);
+  if (Array.isArray(storedPresence.presentCharacterIds)) {
+    return new Set(uniqueStrings(storedPresence.presentCharacterIds).filter((id) => rosterSet.has(id)));
+  }
   const hidden = new Set(uniqueStrings(extra.hiddenFromAICharacterIds).filter((id) => rosterSet.has(id)));
   return new Set(roster.filter((id) => !hidden.has(id)));
 }

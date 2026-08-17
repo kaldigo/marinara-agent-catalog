@@ -1,5 +1,4 @@
 export const PRESENCE_PACKAGE_KEY = "marinaraPresencePackage";
 export const PRESENCE_SCHEMA_VERSION = 1;
 export const PRESENCE_PACKAGE_ID = "presence";
-export const PRESENCE_LOREBOOK_NAME_PREFIX = "Presence Chat Summaries";
-export const PRESENCE_SUMMARY_OUTLET_NAME = "presence_chat_summaries";
+export const PRESENCE_MESSAGE_KEY = "marinaraPresence";

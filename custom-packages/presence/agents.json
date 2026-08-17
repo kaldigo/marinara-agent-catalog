@@ -2,7 +2,7 @@
   {
     "id": "presence",
     "name": "Presence",
-    "description": "Feature runtime for per-message character presence and scoped chat summaries.",
+    "description": "Feature runtime for per-message character presence.",
     "category": "tracker",
     "phase": "pre_generation",
     "execution": "feature",
