@@ -29,6 +29,7 @@ import {
 
 const REQUEST_STATE = new WeakMap();
 const INTERNAL_HEADER = "x-group-sort-order-internal";
+const MARKER_CLEANUP_DONE_TIMEOUT_MS = 1500;
 
 export function registerGroupSortHooks({ app, runtime }) {
   const cleanupBridge = registerPromptContributionBridge({ app, runtime, internalHeader: INTERNAL_HEADER });
@@ -49,7 +50,7 @@ export function registerGroupSortHooks({ app, runtime }) {
     },
   });
   app.addHook("preHandler", async (request, reply) => {
-    await prepareGeneration({ runtime, request, reply });
+    await prepareGeneration({ app, runtime, request, reply });
   });
   app.addHook("onResponse", async (request, reply) => {
     try {
@@ -167,7 +168,7 @@ export function createGroupSortRoutes({ app, runtime }) {
   });
 }
 
-async function prepareGeneration({ runtime, request, reply }) {
+async function prepareGeneration({ app, runtime, request, reply }) {
   if (isInternalRequest(request)) return;
   if (String(request.method || "").toUpperCase() !== "POST") return;
   if (!/^\/api\/generate(?:[?#].*)?$/u.test(String(request.url || ""))) return;
@@ -180,8 +181,12 @@ async function prepareGeneration({ runtime, request, reply }) {
     beforeMessageIds: new Set(),
     candidateHash: "",
     candidateIds: [],
+    markerCleanupKeys: new Set(),
+    markerCleanupTasks: new Set(),
     targetMessageId: readString(body.regenerateMessageId) || readString(body.continueMessageId),
   };
+  requestState.scheduleMarkerCleanup = (marker) => applyEarlyMarkerCleanup({ app, runtime, requestState, marker });
+  requestState.logger = runtime.logger;
   REQUEST_STATE.set(request, requestState);
   installOutgoingMarkerFilter(reply, requestState);
   const chat = await runtime.persistence.getChat(chatId);
@@ -293,63 +298,180 @@ export function resolveGeneratedAssistantTarget({ messages, beforeMessageIds, ta
 }
 
 export function sanitizeOutgoingSseChunk(chunk, requestState) {
+  return sanitizeOutgoingSseChunkResult(chunk, requestState).chunk;
+}
+
+export function sanitizeOutgoingSseChunkResult(chunk, requestState) {
   const text = chunkToString(chunk);
-  if (!text || !/next_speaker/iu.test(text)) return chunk;
+  if (!text) return { chunk, delayDone: false };
+  let delayDone = false;
   const sanitized = text.replace(/^data: (.+)$/gmu, (line, rawPayload) => {
+    const payload = parseSsePayload(rawPayload);
+    if (payload?.type === "done" && hasPendingMarkerCleanup(requestState)) {
+      delayDone = true;
+    }
     const payloads = sanitizeOutgoingSsePayload(rawPayload, requestState);
     if (!payloads) return line;
     const list = Array.isArray(payloads) ? payloads : [payloads];
     return list.map((payload) => `data: ${JSON.stringify(payload)}`).join("\n\n");
   });
-  if (sanitized === text) return chunk;
-  if (Buffer.isBuffer(chunk)) return Buffer.from(sanitized);
-  return sanitized;
+  const sanitizedChunk = sanitized === text ? chunk : Buffer.isBuffer(chunk) ? Buffer.from(sanitized) : sanitized;
+  return { chunk: sanitizedChunk, delayDone };
 }
 
 export function sanitizeOutgoingSsePayload(rawPayload, requestState) {
-  let payload;
-  try {
-    payload = JSON.parse(String(rawPayload || ""));
-  } catch {
-    return null;
-  }
-  const obj = normalizeObject(payload);
+  const obj = parseSsePayload(rawPayload);
+  if (!obj) return null;
   if (obj.type === "message_saved") {
     const data = normalizeObject(obj.data);
+    if (readString(data.id) && data.role === "assistant") {
+      requestState.lastSavedAssistantMessage = {
+        messageId: readString(data.id),
+        swipeIndex: Number.isInteger(data.activeSwipeIndex) ? data.activeSwipeIndex : 0,
+        messageSpeakerId: readString(data.characterId),
+      };
+    }
     if (typeof data.content !== "string") return null;
     const parsed = parseTerminalNextSpeakerMarker(data.content);
     if (!parsed) return null;
+    const cleaned = stripTerminalNextSpeakerMarker(data.content);
     requestState.outgoingMarker = {
       messageId: readString(data.id),
       swipeIndex: Number.isInteger(data.activeSwipeIndex) ? data.activeSwipeIndex : 0,
       messageSpeakerId: readString(data.characterId),
       nextSpeakerId: parsed.speakerId,
+      cleanedContent: cleaned,
     };
-    const cleaned = stripTerminalNextSpeakerMarker(data.content);
+    scheduleOutgoingMarkerCleanup(requestState, requestState.outgoingMarker);
     const cleanedMessage = { ...obj, data: { ...data, content: cleaned } };
     return cleaned !== data.content ? [{ type: "content_replace", data: cleaned }, cleanedMessage] : cleanedMessage;
   }
   if (obj.type === "content_replace" && typeof obj.data === "string") {
     const parsed = parseTerminalNextSpeakerMarker(obj.data);
     if (!parsed) return null;
+    const cleaned = stripTerminalNextSpeakerMarker(obj.data);
     requestState.outgoingMarker = {
       ...(normalizeObject(requestState.outgoingMarker) || {}),
       nextSpeakerId: parsed.speakerId,
+      cleanedContent: cleaned,
     };
-    return { ...obj, data: stripTerminalNextSpeakerMarker(obj.data) };
+    scheduleOutgoingMarkerCleanup(requestState, requestState.outgoingMarker);
+    return { ...obj, data: cleaned };
   }
   if (obj.type === "text_rewrite") {
     const data = normalizeObject(obj.data);
     if (typeof data.editedText !== "string") return null;
     const parsed = parseTerminalNextSpeakerMarker(data.editedText);
     if (!parsed) return null;
+    const cleaned = stripTerminalNextSpeakerMarker(data.editedText);
     requestState.outgoingMarker = {
+      ...(normalizeObject(requestState.lastSavedAssistantMessage) || {}),
       ...(normalizeObject(requestState.outgoingMarker) || {}),
       nextSpeakerId: parsed.speakerId,
+      cleanedContent: cleaned,
     };
-    return { ...obj, data: { ...data, editedText: stripTerminalNextSpeakerMarker(data.editedText) } };
+    scheduleOutgoingMarkerCleanup(requestState, requestState.outgoingMarker);
+    return { ...obj, data: { ...data, editedText: cleaned } };
   }
   return null;
+}
+
+export async function waitForPendingMarkerCleanup(requestState, timeoutMs = MARKER_CLEANUP_DONE_TIMEOUT_MS) {
+  const tasks = requestState?.markerCleanupTasks instanceof Set ? Array.from(requestState.markerCleanupTasks) : [];
+  if (tasks.length === 0) return;
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise((resolve) => setTimeout(resolve, Math.max(0, timeoutMs))),
+  ]);
+}
+
+async function applyEarlyMarkerCleanup({ app, runtime, requestState, marker }) {
+  const chatId = readString(requestState?.chatId);
+  const messageId = readString(marker?.messageId);
+  const nextSpeakerId = readString(marker?.nextSpeakerId);
+  if (!chatId || !nextSpeakerId) return;
+  if (messageId && typeof marker.cleanedContent === "string") {
+    await injectJson(
+      app,
+      "PATCH",
+      `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
+      { content: marker.cleanedContent },
+    );
+  }
+  const chat = await runtime.persistence.getChat(chatId);
+  if (!chat || !isGroupSortEnabled(chat)) return;
+  const currentState = readGroupSortState(chat.metadata);
+  const candidates = await resolveCandidates(runtime, chat, currentState);
+  const candidateHash =
+    requestState?.candidateHash || buildCandidateHash(candidates, { includePersonaCandidate: currentState.includePersonaCandidate });
+  const candidateIds = requestState?.candidateIds?.length
+    ? requestState.candidateIds
+    : candidates.map((candidate) => candidate.id);
+  if (!candidateIds.includes(nextSpeakerId)) {
+    runtime.logger.warn(
+      "[Group Sort Order] stripped next_speaker marker with unknown candidate %s in chat %s",
+      nextSpeakerId,
+      chatId,
+    );
+    return;
+  }
+  const messageSpeakerId = readString(marker?.messageSpeakerId);
+  if (messageSpeakerId && messageSpeakerId === nextSpeakerId) {
+    runtime.logger.warn(
+      "[Group Sort Order] stripped next_speaker marker selecting the latest participant %s in chat %s",
+      nextSpeakerId,
+      chatId,
+    );
+    return;
+  }
+  if (!messageId) return;
+  const nextState = upsertAnchor(currentState, {
+    messageId,
+    swipeIndex: Number.isInteger(marker?.swipeIndex) ? marker.swipeIndex : 0,
+    messageSpeakerId,
+    nextSpeakerId,
+    candidateHash,
+  });
+  await patchChatState(runtime, chat, nextState);
+}
+
+function scheduleOutgoingMarkerCleanup(requestState, marker) {
+  if (!requestState || typeof requestState.scheduleMarkerCleanup !== "function") return;
+  const key = [
+    readString(marker?.messageId),
+    Number.isInteger(marker?.swipeIndex) ? marker.swipeIndex : 0,
+    readString(marker?.nextSpeakerId),
+    typeof marker?.cleanedContent === "string" ? marker.cleanedContent : "",
+  ].join(":");
+  if (!key.trim()) return;
+  if (!(requestState.markerCleanupKeys instanceof Set)) requestState.markerCleanupKeys = new Set();
+  if (requestState.markerCleanupKeys.has(key)) return;
+  requestState.markerCleanupKeys.add(key);
+  if (!(requestState.markerCleanupTasks instanceof Set)) requestState.markerCleanupTasks = new Set();
+  let task;
+  try {
+    task = Promise.resolve(requestState.scheduleMarkerCleanup(marker));
+  } catch (error) {
+    requestState.logger?.warn?.(error, "[Group Sort Order] early marker cleanup failed");
+    return;
+  }
+  requestState.markerCleanupTasks.add(task);
+  task
+    .catch((error) => requestState.logger?.warn?.(error, "[Group Sort Order] early marker cleanup failed"))
+    .finally(() => requestState.markerCleanupTasks.delete(task));
+}
+
+function hasPendingMarkerCleanup(requestState) {
+  return requestState?.markerCleanupTasks instanceof Set && requestState.markerCleanupTasks.size > 0;
+}
+
+function parseSsePayload(rawPayload) {
+  try {
+    const parsed = JSON.parse(String(rawPayload || ""));
+    return normalizeObject(parsed);
+  } catch {
+    return null;
+  }
 }
 
 function resolveOutgoingMarkerForTarget(requestState, target) {
@@ -625,9 +747,20 @@ function installOutgoingMarkerFilter(reply, requestState) {
   const originalWrite = raw.write.bind(raw);
   raw.__groupSortOrderMarkerFilterInstalled = true;
   raw.write = (chunk, encoding, callback) => {
-    const sanitized = sanitizeOutgoingSseChunk(chunk, requestState);
-    return originalWrite(sanitized, encoding, callback);
+    const result = sanitizeOutgoingSseChunkResult(chunk, requestState);
+    if (result.delayDone) {
+      void waitForPendingMarkerCleanup(requestState).finally(() => {
+        writeOriginalSseChunk(originalWrite, result.chunk, encoding, callback);
+      });
+      return true;
+    }
+    return writeOriginalSseChunk(originalWrite, result.chunk, encoding, callback);
   };
+}
+
+function writeOriginalSseChunk(originalWrite, chunk, encoding, callback) {
+  if (typeof encoding === "function") return originalWrite(chunk, encoding);
+  return originalWrite(chunk, encoding, callback);
 }
 
 async function injectJson(app, method, url, payload) {
