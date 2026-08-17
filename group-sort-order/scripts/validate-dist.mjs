@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "group-sort-order", "manifest id is group-sort-order");
-assert(manifest.version === "1.0.26", "manifest version is 1.0.26");
+assert(manifest.version === "1.0.27", "manifest version is 1.0.27");
 assert(manifest.engine?.min === "2.4.0", "manifest requires the capability request resolver introduced in Engine 2.4");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");

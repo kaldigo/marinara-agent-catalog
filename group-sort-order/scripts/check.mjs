@@ -17,7 +17,9 @@ import {
   resolveAvailableCandidateCount,
   resolveGeneratedAssistantTarget,
   resolveSmartSelectorConnectionId,
-  sanitizeOutgoingSseChunk
+  sanitizeOutgoingSseChunk,
+  sanitizeOutgoingSseChunkResult,
+  waitForPendingMarkerCleanup
 } from "../src/server/routes.js";
 import { activate, selfCheck } from "../src/server/index.js";
 
@@ -185,7 +187,12 @@ assert(
   })?.id === "a1",
   "regeneration target resolves from explicit existing assistant message"
 );
-const sseState = {};
+const earlyCleanupMarkers = [];
+const sseState = {
+  scheduleMarkerCleanup(marker) {
+    earlyCleanupMarkers.push(marker);
+  }
+};
 const savedMessageChunk = `data: ${JSON.stringify({
   type: "message_saved",
   data: {
@@ -206,6 +213,26 @@ assert(
   "outgoing message_saved SSE strips terminal next speaker marker and replaces live content"
 );
 assert(sseState.outgoingMarker?.nextSpeakerId === "james", "outgoing message_saved SSE records parsed marker");
+assert(earlyCleanupMarkers[0]?.messageId === "a1", "outgoing message_saved SSE schedules early durable cleanup");
+assert(earlyCleanupMarkers[0]?.cleanedContent === "Regenerated.", "early durable cleanup receives cleaned message content");
+const pendingCleanupState = { markerCleanupTasks: new Set([new Promise((resolve) => setTimeout(resolve, 5))]) };
+assert(
+  sanitizeOutgoingSseChunkResult(`data: ${JSON.stringify({ type: "done", data: "" })}\n\n`, pendingCleanupState).delayDone === true,
+  "done SSE is delayed while marker cleanup is pending"
+);
+let cleanupSettled = false;
+const waitState = {
+  markerCleanupTasks: new Set([
+    new Promise((resolve) =>
+      setTimeout(() => {
+        cleanupSettled = true;
+        resolve();
+      }, 5)
+    )
+  ])
+};
+await waitForPendingMarkerCleanup(waitState, 100);
+assert(cleanupSettled, "done gate waits for pending marker cleanup");
 const contentReplaceChunk = `data: ${JSON.stringify({
   type: "content_replace",
   data: "Regenerated.\n<next_speaker>james</next_speaker>"
@@ -320,6 +347,8 @@ assert(routesSource.includes("resolvePromptExcludedCandidate"), "prompt contribu
 assert(routesSource.includes("filterNextSpeakerCandidates(candidates, excludedCandidate?.id)"), "refresh excludes latest participant candidates");
 assert(routesSource.includes("parsed.speakerId === generatedParticipant.id"), "saved markers cannot select the generated participant");
 assert(routesSource.includes("<excluded_latest_participant_id>"), "refresh prompt names the excluded latest participant id");
+assert(routesSource.includes("applyEarlyMarkerCleanup"), "SSE marker detection schedules early durable cleanup");
+assert(routesSource.includes("waitForPendingMarkerCleanup(requestState)"), "done SSE waits for marker cleanup before client final refresh");
 assert(
   routesSource.indexOf("installOutgoingMarkerFilter(reply") < routesSource.indexOf("if (candidates.length <= 2) return;"),
   "SSE marker filter is installed before candidate-count generation gate"
@@ -337,7 +366,7 @@ assert(clientSource.includes("registerComposerSlotContribution"), "client uses b
 assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.26"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "1.0.27"'), "client runtime version matches package version");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
