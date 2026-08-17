@@ -1,12 +1,9 @@
 import fs from "node:fs";
 import { createSlashCommandRouter, matchSlashCommand } from "../../_mari-bridge/src/commands.js";
-import { diffSummaryEntries } from "../../_mari-bridge/src/summary-tracking.js";
 import { readPresenceChatState } from "../src/shared/chat-state.js";
 import { buildPresenceExtraPatch, readPresenceState } from "../src/shared/presence-state.js";
 import { planRosterBackfill } from "../src/shared/roster.js";
 import { activate, selfCheck } from "../src/server/index.js";
-import { buildSummaryAudience, buildSummaryLorebookEntries } from "../src/server/summary-mirror.js";
-import { PRESENCE_SUMMARY_OUTLET_NAME } from "../src/shared/constants.js";
 
 const command = {
   id: "presence-hide",
@@ -14,284 +11,183 @@ const command = {
   owns: ({ tokens }) => tokens[0] === "Sophie",
   handler: () => null,
 };
-
 assert(matchSlashCommand("/hide Sophie 4-46", [command])?.hijacked === true, "hijacked hide command");
 assert(matchSlashCommand("/hide 4-46", [command]) === null, "native hide command passes through");
 
 const router = createSlashCommandRouter();
-router.register({
-  id: "context-check",
-  commands: ["/presence"],
-  handler: ({ context }) => context.chatId,
-});
+router.register({ id: "context-check", commands: ["/presence"], handler: ({ context }) => context.chatId });
 assert((await router.run("/presence test", { chatId: "chat-1" })).result === "chat-1", "router passes context");
 
 const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientRuntime.includes("registerBridgeSlashCommand"), "client registers commands through the bridge");
-assert(clientRuntime.includes('getAttribute("view") !== "settings"'), "client exposes settings through the capability element view");
 assert(clientRuntime.includes("registerCapabilityChatSettingsContribution"), "client registers chat settings through the bridge");
-assert(clientRuntime.includes("settingsLoadPromisesByChatId"), "client reuses in-flight settings loads");
-assert(clientRuntime.includes("Always present characters"), "client labels the always-present settings clearly");
-assert(!clientRuntime.includes('document.addEventListener("keydown"'), "client does not own keydown command capture");
-assert(!clientRuntime.includes('document.addEventListener("submit"'), "client does not own submit command capture");
-assert(!clientRuntime.includes("function matchSlashCommand"), "client does not own slash command matching");
+assert(clientRuntime.includes("mari-presence-character-choice"), "settings use an avatar character picker");
+assert(clientRuntime.includes("Selected characters see every non-globally-hidden message"), "settings explain always-present behavior");
+assert(!clientRuntime.includes("summary"), "client no longer describes summary behavior");
 assert(!clientRuntime.includes("MutationObserver"), "client does not DOM-inject chat settings");
-
-const events = diffSummaryEntries([], [{ id: "s1", content: "Summary", enabled: true }], { source: "generation" });
-assert(events[0]?.type === "generated", "summary generation event");
 
 const patch = buildPresenceExtraPatch({
   extra: { hiddenFromAI: true, hiddenFromAICharacterIds: ["outside-roster"] },
   rosterIds: ["a", "b"],
   presentCharacterIds: ["a"],
 });
-assert(patch.hiddenFromAICharacterIds.includes("b"), "presence hidden character added");
-assert(patch.hiddenFromAICharacterIds.includes("outside-roster"), "non-roster hidden character preserved");
-assert(patch.hiddenFromAI === true, "global hidden flag preserved");
-assert(!Object.prototype.hasOwnProperty.call(patch, "marinaraPresencePackage"), "message patch does not stamp shadow metadata");
+assert(patch.hiddenFromAICharacterIds.join(",") === "outside-roster,b", "native hidden IDs project positive presence");
+assert(patch.hiddenFromAI === true, "global hidden flag is preserved");
+assert(patch.marinaraPresence.presentCharacterIds.join(",") === "a", "positive presence is stored explicitly");
 
-const alwaysPresentPatch = buildPresenceExtraPatch({
-  extra: { hiddenFromAICharacterIds: ["a", "b"] },
-  rosterIds: ["a", "b"],
-  presentCharacterIds: [],
-  alwaysPresentCharacterIds: ["b"],
-});
-assert(!alwaysPresentPatch.hiddenFromAICharacterIds.includes("b"), "always-present character cannot be hidden by message patch");
-
-const nobodyPresent = readPresenceState(
-  { extra: { hiddenFromAICharacterIds: ["a", "b"] } },
-  ["a", "b"],
-);
-assert(nobodyPresent.size === 0, "empty stored presence means nobody present");
+const positiveWins = readPresenceState({
+  extra: {
+    hiddenFromAICharacterIds: [],
+    marinaraPresence: { version: 1, presentCharacterIds: ["a"] },
+  },
+}, ["a", "b"]);
+assert(positiveWins.has("a") && !positiveWins.has("b"), "positive presence is authoritative");
 assert(
-  readPresenceState({ extra: { hiddenFromAICharacterIds: ["b"] } }, ["a", "b"]).has("a") &&
-    !readPresenceState({ extra: { hiddenFromAICharacterIds: ["b"] } }, ["a", "b"]).has("b"),
-  "presence reads per-character hide as canonical state",
+  readPresenceState({ extra: { hiddenFromAICharacterIds: ["b"] } }, ["a", "b"]).has("a"),
+  "legacy messages fall back to native hidden IDs",
 );
 
 const backfill = planRosterBackfill({
   previousRosterIds: ["a"],
   currentRosterIds: ["a", "b"],
-  messages: [{ id: "m1", extra: {} }],
+  messages: [{ id: "m1", extra: { marinaraPresence: { presentCharacterIds: ["a"] } } }],
 });
-assert(backfill.messagePatches.length === 1, "new character backfill planned");
+assert(backfill.messagePatches.length === 1, "new character backfill is planned");
+assert(backfill.messagePatches[0].patch.hiddenFromAICharacterIds.join(",") === "b", "new character is hidden from history");
+assert(backfill.messagePatches[0].patch.marinaraPresence.presentCharacterIds.join(",") === "a", "backfill preserves positive history");
 assert(
   planRosterBackfill({
     previousRosterIds: ["a"],
     currentRosterIds: ["a", "b"],
-    messages: [{ id: "m1", extra: {} }],
+    messages: [{ id: "m1", extra: { marinaraPresence: { presentCharacterIds: ["a"] } } }],
     alwaysPresentCharacterIds: ["b"],
-  }).messagePatches[0].patch.hiddenFromAICharacterIds.length === 0,
-  "always-present character is not hidden by roster backfill",
+  }).messagePatches[0].patch.marinaraPresence.presentCharacterIds.join(",") === "a,b",
+  "always-present characters are included during backfill",
 );
-assert(
-  planRosterBackfill({ previousRosterIds: [], currentRosterIds: ["a"], messages: [{ id: "m1", extra: {} }] })
-    .messagePatches.length === 0,
-  "backfill waits for a previous roster snapshot",
-);
-
-const messagesById = new Map([
-  ["m1", { id: "m1", extra: { hiddenFromAICharacterIds: ["b"] } }],
-  ["m2", { id: "m2", extra: { hiddenFromAICharacterIds: [] } }],
-]);
-assert(
-  buildSummaryAudience({ summary: { id: "s1", messageIds: ["m1"] }, messagesById, rosterIds: ["a", "b"] }).join(",") ===
-    "a",
-  "summary audience excludes absent characters",
-);
-assert(
-  buildSummaryAudience({
-    summary: { id: "s1", messageIds: ["m1"] },
-    messagesById,
-    rosterIds: ["a", "b"],
-    alwaysPresentCharacterIds: ["b"],
-  }).join(",") === "a,b",
-  "summary audience includes always-present characters",
-);
-
-const entries = buildSummaryLorebookEntries({
-  chatId: "chat-1",
-  summaries: [{ id: "s1", content: "Inside <tag>raw</tag>", enabled: true }],
-  audienceBySummaryId: new Map([["s1", ["a"]]]),
-});
-assert(entries.length === 1, "summary mirror only creates summary entries");
-assert(entries[0].name === "s1", "summary id used as entry name");
-assert(!entries.some((entry) => String(entry.content || "").includes("<chat_summaries>")), "summary mirror does not add XML wrappers");
-assert(entries[0].position === 7, "summary mirror uses outlet injection");
-assert(entries[0].outletName === PRESENCE_SUMMARY_OUTLET_NAME, "summary mirror uses Presence outlet name");
-assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.characterFilterMode)), "valid character filters");
-assert(entries.every((entry) => ["any", "include", "exclude"].includes(entry.generationTriggerFilterMode)), "valid trigger filters");
-assert(entries.every((entry) => entry.dynamicState?.owner === "presence"), "summary mirror ownership is schema-shaped");
-assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { alwaysPresentCharacterIds: ["b"] } } }).alwaysPresentCharacterIds[0] === "b", "chat state reads always-present characters");
+assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { rosterCharacterIds: ["a"] } } }).rosterCharacterIds[0] === "a", "chat state keeps roster snapshot");
 
 const registeredRoutes = [];
 const registeredRouteHandlers = new Map();
 const registeredHooks = [];
 const injectedRequests = [];
-let lorebookEntries = [];
 let testChat = {
   id: "chat-1",
   characterIds: ["a", "b"],
   metadata: { enableAgents: true, activeAgentIds: ["presence"], inactiveCharacterIds: ["b"] },
 };
 let currentMessages = [];
-await activate({
-  app: {
-    addHook(name, handler) {
-      registeredHooks.push({ name, handler });
+const runtime = {
+  logger: { info() {}, warn() {} },
+  persistence: {
+    getChat(chatId) {
+      return chatId === testChat.id ? testChat : null;
     },
-    async register(callback, options) {
-      assert(options?.prefix === "/api/presence", "activate uses package route prefix");
-      await callback({
-        get(route) {
-          registeredRoutes.push(`GET ${route}`);
-          registeredRouteHandlers.set(`GET ${route}`, arguments[1]);
-        },
-        post(route) {
-          registeredRoutes.push(`POST ${route}`);
-          registeredRouteHandlers.set(`POST ${route}`, arguments[1]);
-        },
-        patch(route) {
-          registeredRoutes.push(`PATCH ${route}`);
-          registeredRouteHandlers.set(`PATCH ${route}`, arguments[1]);
-        },
-      });
+    listMessages() {
+      return currentMessages;
     },
-    async inject(request) {
-      injectedRequests.push(request);
-      if (request.method === "GET" && request.url === "/api/lorebooks?chatId=chat-1") {
-        return { statusCode: 200, payload: "[]" };
-      }
-      if (request.method === "GET" && request.url === "/api/lorebooks/presence-lorebook") {
-        return { statusCode: 200, payload: JSON.stringify({ id: "presence-lorebook", enabled: true }) };
-      }
-      if (request.method === "POST" && request.url === "/api/lorebooks") {
-        return { statusCode: 200, payload: JSON.stringify({ id: "presence-lorebook", enabled: true }) };
-      }
-      if (request.method === "GET" && request.url === "/api/lorebooks/presence-lorebook/entries") {
-        return { statusCode: 200, payload: JSON.stringify(lorebookEntries) };
-      }
-      if (request.method === "POST" && request.url === "/api/lorebooks/presence-lorebook/entries") {
-        const entry = { id: `entry-${lorebookEntries.length + 1}`, ...request.payload };
-        lorebookEntries.push(entry);
-        return { statusCode: 200, payload: JSON.stringify(entry) };
-      }
-      if (request.method === "DELETE" && request.url.startsWith("/api/lorebooks/presence-lorebook/entries/")) {
-        const entryId = decodeURIComponent(request.url.split("/").pop());
-        lorebookEntries = lorebookEntries.filter((entry) => entry.id !== entryId);
-        return { statusCode: 204, payload: "" };
-      }
-      if (request.method === "PATCH" && request.url === "/api/chats/chat-1/summary-entries") {
-        testChat = {
-          ...testChat,
-          metadata: {
-            ...testChat.metadata,
-            summaryEntries: (testChat.metadata.summaryEntries || []).map((entry) =>
-              entry.id === request.payload.entryId ? { ...entry, enabled: request.payload.enabled } : entry,
-            ),
-          },
-        };
-        return { statusCode: 200, payload: JSON.stringify(testChat) };
-      }
-      if (request.method === "PATCH" && /^\/api\/chats\/chat-1\/messages\/[^/]+\/extra$/u.test(request.url)) {
-        const messageId = decodeURIComponent(request.url.split("/").at(-2));
-        currentMessages = currentMessages.map((message) =>
-          message.id === messageId
-            ? { ...message, extra: { ...message.extra, ...request.payload } }
-            : message,
-        );
-        return { statusCode: 200, payload: JSON.stringify({ ok: true }) };
-      }
-      return { statusCode: 200, payload: "{}" };
+    updateChatMetadata({ metadata }) {
+      testChat = { ...testChat, metadata };
     },
   },
-  api: {
-    runtime: {
-      logger: { info() {}, warn() {} },
-      persistence: {
-        getChat(chatId) {
-          return chatId === testChat.id ? testChat : null;
-        },
-        listMessages() {
-          return currentMessages;
-        },
-        updateChatMetadata({ metadata }) {
-          testChat = { ...testChat, metadata };
-        },
+  resources: {
+    listCharacters() {
+      return [
+        { id: "a", data: { name: "Alice" }, comment: "" },
+        { id: "b", data: { name: "Bob" }, comment: "" },
+      ];
+    },
+  },
+};
+const hostApp = {
+  addHook(name, handler) {
+    registeredHooks.push({ name, handler });
+  },
+  async register(callback, options) {
+    assert(options?.prefix === "/api/presence", "activate uses package route prefix");
+    await callback({
+      get(route, handler) {
+        registeredRoutes.push(`GET ${route}`);
+        registeredRouteHandlers.set(`GET ${route}`, handler);
       },
-      resources: { listCharacters() { return []; } },
-    },
+      post(route, handler) {
+        registeredRoutes.push(`POST ${route}`);
+        registeredRouteHandlers.set(`POST ${route}`, handler);
+      },
+      patch(route, handler) {
+        registeredRoutes.push(`PATCH ${route}`);
+        registeredRouteHandlers.set(`PATCH ${route}`, handler);
+      },
+    });
   },
-});
-assert(registeredRoutes.includes("GET /chat/:chatId/state"), "activate registers state route");
-assert(registeredRoutes.includes("POST /chat/:chatId/command"), "activate registers command route");
-assert(registeredRoutes.includes("POST /chat/:chatId/ensure"), "activate registers chat lifecycle ensure route");
-assert(registeredRoutes.includes("PATCH /chat/:chatId/settings"), "activate registers chat settings route");
-assert(registeredHooks.some((hook) => hook.name === "onSend"), "activate registers message save hook");
-assert(registeredHooks.some((hook) => hook.name === "preHandler"), "activate registers generation capture hook");
-assert(registeredHooks.some((hook) => hook.name === "onResponse"), "activate registers generation completion hook");
-await registeredHooks
-  .find((hook) => hook.name === "onSend")
-  .handler(
-    { method: "POST", url: "/api/chats/chat-1/messages" },
-    { statusCode: 200 },
-    JSON.stringify({ id: "m1", chatId: "chat-1", role: "user", extra: {} }),
-  );
-const messagePatch = injectedRequests.find((request) => request.url.includes("/messages/m1/extra"));
-assert(messagePatch, "message save hook patches created message extra");
-assert(!Object.prototype.hasOwnProperty.call(messagePatch.payload, "marinaraPresencePackage"), "message save uses native presence only");
-assert(messagePatch.payload.hiddenFromAICharacterIds.join(",") === "b", "message save hides inactive character");
-
-const disabledRequestCount = injectedRequests.length;
-testChat = {
-  ...testChat,
-  metadata: { enableAgents: true, activeAgentIds: [], inactiveCharacterIds: ["b"] },
+  async inject(request) {
+    injectedRequests.push(request);
+    if (request.method === "GET" && request.url.startsWith("/api/characters/")) {
+      const id = decodeURIComponent(request.url.split("/").pop());
+      return { statusCode: 200, payload: JSON.stringify({ id, avatarPath: `/avatars/${id}.png` }) };
+    }
+    if (request.method === "PATCH" && /^\/api\/chats\/chat-1\/messages\/[^/]+\/extra$/u.test(request.url)) {
+      const messageId = decodeURIComponent(request.url.split("/").at(-2));
+      currentMessages = currentMessages.map((message) =>
+        message.id === messageId ? { ...message, extra: { ...message.extra, ...request.payload } } : message,
+      );
+      return { statusCode: 200, payload: JSON.stringify({ ok: true }) };
+    }
+    return { statusCode: 200, payload: "{}" };
+  },
 };
-await registeredHooks
-  .find((hook) => hook.name === "onSend")
-  .handler(
-    { method: "POST", url: "/api/chats/chat-1/messages" },
-    { statusCode: 200 },
-    JSON.stringify({ id: "m-disabled", chatId: "chat-1", role: "user", extra: {} }),
-  );
-assert(injectedRequests.length === disabledRequestCount, "disabled Presence tracker does not stamp created messages");
 
-testChat = {
-  ...testChat,
-  metadata: { enableAgents: true, activeAgentIds: ["presence"], inactiveCharacterIds: ["b"] },
-};
-currentMessages = [
-  { id: "m-always", role: "user", extra: { hiddenFromAICharacterIds: ["b"] } },
-  { id: "m-global", role: "user", extra: { hiddenFromAI: true, hiddenFromAICharacterIds: ["b"] } },
-];
+await activate({ app: hostApp, api: { runtime } });
+assert(registeredRoutes.includes("GET /chat/:chatId/state"), "state route registered");
+assert(registeredRoutes.includes("POST /chat/:chatId/command"), "command route registered");
+assert(registeredRoutes.includes("POST /chat/:chatId/ensure"), "ensure route registered");
+assert(registeredHooks.some((hook) => hook.name === "onSend"), "message save hook registered");
+assert(registeredHooks.some((hook) => hook.name === "preHandler"), "generation capture hook registered");
+assert(registeredHooks.some((hook) => hook.name === "onResponse"), "generation completion hook registered");
+
+const stateResponse = await registeredRouteHandlers.get("GET /chat/:chatId/state")(
+  { params: { chatId: "chat-1" } },
+  replyStub(),
+);
+assert(stateResponse.roster[0].avatarUrl === "/avatars/a.png", "state route supplies picker avatars");
+assert(!Object.prototype.hasOwnProperty.call(stateResponse, "summaries"), "state route leaves summaries alone");
+
+currentMessages = [{ id: "old", role: "user", extra: {} }];
+await registeredRouteHandlers.get("POST /chat/:chatId/ensure")(
+  { params: { chatId: "chat-1" } },
+  replyStub(),
+);
+assert(currentMessages[0].extra.marinaraPresence.presentCharacterIds.join(",") === "a,b", "first enable initializes old history as everyone present");
+assert(testChat.metadata.marinaraPresencePackage.rosterCharacterIds.join(",") === "a,b", "first enable snapshots roster");
+
+currentMessages = [{ id: "package-era", role: "user", extra: { hiddenFromAICharacterIds: ["b"] } }];
+const migrationEnsure = await registeredRouteHandlers.get("POST /chat/:chatId/ensure")(
+  { params: { chatId: "chat-1" } },
+  replyStub(),
+);
+assert(migrationEnsure.roster.initializedMessages === 1, "ensure initializes missing positive records in package-era chats");
+assert(currentMessages[0].extra.marinaraPresence.presentCharacterIds.join(",") === "a", "package-era migration preserves native visibility");
+
+currentMessages.push({ id: "posted", role: "user", extra: {} });
+await registeredHooks.find((hook) => hook.name === "onSend").handler(
+  { method: "POST", url: "/api/chats/chat-1/messages" },
+  { statusCode: 200 },
+  JSON.stringify({ id: "posted", chatId: "chat-1", role: "user", extra: {} }),
+);
+assert(currentMessages.find((message) => message.id === "posted").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "post-only message stores active positive presence");
+assert(currentMessages.find((message) => message.id === "posted").extra.hiddenFromAICharacterIds.join(",") === "b", "post-only message projects native hidden IDs");
+
 await registeredRouteHandlers.get("PATCH /chat/:chatId/settings")(
   { params: { chatId: "chat-1" }, body: { alwaysPresentCharacterIds: ["b"] } },
   replyStub(),
 );
-assert(
-  testChat.metadata.marinaraPresencePackage?.alwaysPresentCharacterIds?.join(",") === "b",
-  "settings route stores always-present characters in chat metadata",
-);
-assert(
-  currentMessages.find((message) => message.id === "m-always")?.extra.hiddenFromAICharacterIds.length === 0,
-  "settings route removes always-present characters from message hidden lists",
-);
-assert(
-  currentMessages.find((message) => message.id === "m-global")?.extra.hiddenFromAICharacterIds.join(",") === "b",
-  "settings route does not unhide globally hidden messages",
-);
+assert(currentMessages.find((message) => message.id === "posted").extra.marinaraPresence.presentCharacterIds.join(",") === "a,b", "always-present setting updates positive presence");
+assert(currentMessages.find((message) => message.id === "posted").extra.hiddenFromAICharacterIds.length === 0, "always-present setting updates native hidden IDs");
 
 testChat = {
   ...testChat,
-  metadata: {
-    enableAgents: true,
-    activeAgentIds: ["presence"],
-    inactiveCharacterIds: ["b"],
-    summary: "Existing summary",
-    summaryEntries: [{ id: "summary-1", content: "Existing summary", enabled: true, messageIds: ["m1"] }],
-  },
+  metadata: { ...testChat.metadata, marinaraPresencePackage: { ...testChat.metadata.marinaraPresencePackage, alwaysPresentCharacterIds: [] } },
 };
-currentMessages = [{ id: "m1", role: "user", extra: {} }];
+currentMessages = [{ id: "before", role: "user", extra: { marinaraPresence: { presentCharacterIds: ["a", "b"] }, hiddenFromAICharacterIds: [] } }];
 const generateRequest = {
   method: "POST",
   url: "/api/generate",
@@ -299,168 +195,55 @@ const generateRequest = {
   headers: {},
 };
 await registeredHooks.find((hook) => hook.name === "preHandler").handler(generateRequest, {});
-assert(
-  testChat.metadata.marinaraPresencePackage?.summaryPresenceById?.["summary-1"]?.join(",") === "a,b",
-  "normal generate stores positive summary audience before disabling native summaries",
-);
-assert(
-  testChat.metadata.marinaraPresencePackage?.pendingSummaryRestore?.enabledStateById?.["summary-1"] === true,
-  "normal generate persists pending summary restore state",
-);
-assert(
-  injectedRequests.some(
-    (request) =>
-      request.method === "PATCH" &&
-      request.url === "/api/chats/chat-1/summary-entries" &&
-      request.payload?.entryId === "summary-1" &&
-      request.payload?.enabled === false,
-  ),
-  "normal generate temporarily disables enabled native summary entries",
-);
-assert(
-  lorebookEntries.some((entry) => entry.name === "summary-1" && entry.position === 7 && entry.outletName === PRESENCE_SUMMARY_OUTLET_NAME),
-  "normal generate creates temporary outlet summary entry",
-);
-currentMessages = [
-  { id: "m1", role: "user", extra: {} },
-  { id: "m2", role: "user", extra: { submissionId: "submission-1", hiddenFromAICharacterIds: [] } },
-];
+currentMessages.push({ id: "generated-user", role: "user", extra: { submissionId: "submission-1", hiddenFromAICharacterIds: [] } });
 await waitForCondition(
-  () =>
-    injectedRequests.some(
-      (request) =>
-        request.url.includes("/messages/m2/extra") &&
-        request.payload?.hiddenFromAICharacterIds?.join(",") === "b",
-    ),
-  "normal generate early-stamps submitted user message before completion",
+  () => currentMessages.find((message) => message.id === "generated-user")?.extra.marinaraPresence?.presentCharacterIds?.join(",") === "a",
+  "generated user message is stamped before completion",
 );
-testChat = {
-  ...testChat,
-  metadata: {
-    ...testChat.metadata,
-    summaryEntries: [
-      ...(testChat.metadata.summaryEntries || []),
-      { id: "summary-2", content: "Generated summary", enabled: true, messageIds: ["m1", "m2"] },
-    ],
-  },
-};
-currentMessages = [
-  ...currentMessages,
-  { id: "m3", role: "assistant", characterId: "a", extra: { hiddenFromAICharacterIds: [] } },
-];
+currentMessages.push({ id: "generated-assistant", role: "assistant", characterId: "a", extra: { hiddenFromAICharacterIds: [] } });
 await registeredHooks.find((hook) => hook.name === "onResponse").handler(generateRequest, { statusCode: 200 });
-assert(
-  injectedRequests.some((request) => request.url.includes("/messages/m2/extra")),
-  "normal generate stamps created user message",
-);
-assert(
-  injectedRequests.some((request) => request.url.includes("/messages/m3/extra")),
-  "normal generate stamps created assistant message",
-);
-assert(
-  injectedRequests.some(
-    (request) =>
-      request.url.includes("/messages/m3/extra") &&
-      Object.prototype.hasOwnProperty.call(request.payload || {}, "chatSummaryFingerprint"),
-  ),
-  "normal generate refreshes cached prompt summary fingerprint after restoring summaries",
-);
-assert(
-  injectedRequests.some(
-    (request) =>
-      request.method === "PATCH" &&
-      request.url === "/api/chats/chat-1/summary-entries" &&
-      request.payload?.entryId === "summary-1" &&
-      request.payload?.enabled === true,
-  ),
-  "normal generate restores native summary enabled state",
-);
-assert(lorebookEntries.length === 0, "normal generate clears temporary summary lorebook entries");
-assert(
-  testChat.metadata.marinaraPresencePackage?.pendingSummaryRestore === null,
-  "normal generate clears pending summary restore state",
-);
-assert(
-  testChat.metadata.marinaraPresencePackage?.summaryPresenceById?.["summary-2"]?.join(",") === "a,b",
-  "normal generate records positive audience for generated summaries",
-);
+assert(currentMessages.find((message) => message.id === "generated-assistant").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "generated assistant message is stamped");
 
-testChat = {
-  ...testChat,
-  metadata: {
-    enableAgents: true,
-    activeAgentIds: ["presence"],
-    inactiveCharacterIds: ["b"],
-    summaryEntries: [{ id: "summary-1", content: "Existing summary", enabled: false, messageIds: ["m1"] }],
-    marinaraPresencePackage: {
-      pendingSummaryRestore: {
-        chatId: "chat-1",
-        runId: "stale-run",
-        lorebookId: "presence-lorebook",
-        enabledStateById: { "summary-1": true },
-        startedAt: "2026-01-01T00:00:00.000Z",
-      },
-    },
-  },
-};
-lorebookEntries = [{ id: "stale-entry", tag: "presence", dynamicState: { owner: "presence" } }];
-await registeredRouteHandlers.get("POST /chat/:chatId/ensure")(
-  { params: { chatId: "chat-1" }, body: {} },
+currentMessages = [
+  { id: "positive", role: "user", extra: { hiddenFromAICharacterIds: [], marinaraPresence: { presentCharacterIds: ["a"] } } },
+  { id: "legacy", role: "user", extra: { hiddenFromAICharacterIds: ["b"] } },
+  { id: "global", role: "user", extra: { hiddenFromAI: true, hiddenFromAICharacterIds: ["b"] } },
+];
+const resyncResult = await registeredRouteHandlers.get("POST /chat/:chatId/command")(
+  { params: { chatId: "chat-1" }, body: { text: "/presence resync" } },
   replyStub(),
 );
-assert(
-  testChat.metadata.summaryEntries?.find((entry) => entry.id === "summary-1")?.enabled === true,
-  "ensure restores stale pending summary state",
-);
-assert(
-  testChat.metadata.marinaraPresencePackage?.pendingSummaryRestore === null,
-  "ensure clears stale pending summary state",
-);
-assert(lorebookEntries.length === 0, "ensure clears stale temporary summary lorebook entries");
+assert(resyncResult.updated === 2 && resyncResult.skippedGlobal === 1, "resync reports updated and skipped messages");
+assert(currentMessages.find((message) => message.id === "positive").extra.hiddenFromAICharacterIds.join(",") === "b", "resync repairs native IDs from positive presence");
+assert(currentMessages.find((message) => message.id === "legacy").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "resync adopts legacy native state into positive presence");
+assert(!currentMessages.find((message) => message.id === "global").extra.marinaraPresence, "resync leaves globally hidden messages unchanged");
+assert(!injectedRequests.some((request) => request.url.includes("summary") || request.url.includes("lorebook")), "Presence does not touch summaries or lorebooks");
 
-const afterGenerateRequestCount = injectedRequests.length;
-currentMessages = [{ id: "m1", role: "user", extra: {} }];
-const dryRunRequest = { method: "POST", url: "/api/generate/dryRun", body: { chatId: "chat-1" }, headers: {} };
-await registeredHooks.find((hook) => hook.name === "preHandler").handler(dryRunRequest, {});
-currentMessages = [
-  { id: "m1", role: "user", extra: {} },
-  { id: "dry-run-result", role: "assistant", characterId: "a", extra: {} },
-];
-await registeredHooks.find((hook) => hook.name === "onResponse").handler(dryRunRequest, { statusCode: 200 });
-assert(injectedRequests.length === afterGenerateRequestCount, "dry run generation does not stamp messages");
-
-await selfCheck({
-  api: {
-    runtime: {
-      persistence: { getChat() {} },
-      resources: { listCharacters() {} },
-    },
-  },
-});
-
-function assert(condition, message) {
-  if (!condition) throw new Error(`Check failed: ${message}`);
-}
-
-async function waitForCondition(predicate, message) {
-  const deadline = Date.now() + 1_000;
-  do {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  } while (Date.now() < deadline);
-  assert(false, message);
-}
+await selfCheck({ api: { runtime } });
+console.log("Presence checks passed.");
 
 function replyStub() {
   return {
-    status() {
-      return {
-        send(value) {
-          return value;
-        },
-      };
+    statusCode: 200,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    send(payload) {
+      return payload;
     },
   };
 }
 
-console.log("Presence checks passed.");
+async function waitForCondition(predicate, message, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Presence check failed: ${message}`);
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(`Presence check failed: ${message}`);
+}

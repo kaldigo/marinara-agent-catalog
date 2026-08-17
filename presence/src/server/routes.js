@@ -1,24 +1,13 @@
-import {
-  buildPresenceLorebookName,
-  readPresenceChatState,
-  writePresenceChatState,
-} from "../shared/chat-state.js";
+import { readPresenceChatState, writePresenceChatState } from "../shared/chat-state.js";
 import { PRESENCE_PACKAGE_ID } from "../shared/constants.js";
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
 import { injectHostJson } from "../../../_mari-bridge/src/host-routes.js";
 import { parseMessageRange } from "../../../_mari-bridge/src/ranges.js";
-import { diffSummaryEntries, inferSummaryHintFromRoute, readSummaryEntries } from "../../../_mari-bridge/src/summary-tracking.js";
 import { createPresenceCommandRouter } from "./command-router.js";
-import { buildSummaryAudience, buildSummaryLorebookEntries } from "./summary-mirror.js";
 
 const MESSAGE_CREATE_HOOK_KEY = Symbol.for("marinara.presence.messageCreateHook");
 const GENERATE_REQUEST_STATE = new WeakMap();
-const SUMMARY_REQUEST_STATE = new WeakMap();
-const SUMMARY_RESTORE_TIMERS = new Map();
-const SUMMARY_RESTORE_WATCHDOG_DELAY_MS = 10_000;
-const SUMMARY_RESTORE_FALLBACK_WAIT_MS = 120_000;
-const SUMMARY_RESTORE_FORCE_MS = 20 * 60_000;
 const EARLY_USER_STAMP_TIMEOUT_MS = 5_000;
 const EARLY_USER_STAMP_INTERVAL_MS = 50;
 
@@ -27,13 +16,11 @@ export function registerPresenceMessageCreateHook({ app, runtime }) {
   app[MESSAGE_CREATE_HOOK_KEY] = true;
   app.addHook("preHandler", async (request) => {
     await captureGenerationRequestState({ app, runtime, request });
-    await captureSummaryRequestState({ runtime, request });
   });
   app.addHook("onSend", async (request, reply, payload) => {
     try {
       await stampCreatedMessage({ app, runtime, request, reply, payload });
       await ensureAfterChatSettingsChange({ app, runtime, request, reply });
-      await reconcileSummariesAfterHostChange({ app, runtime, request, reply });
     } catch (error) {
       runtime.logger.warn(error, "[Presence] Could not process response hook");
     }
@@ -56,7 +43,7 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
     const messages = await persistence.listMessages(req.params.chatId);
-    const roster = await resolveRoster(runtime, chat);
+    const roster = await resolveRoster(runtime, chat, hostApp);
     return {
       chatId: chat.id,
       enabled: isPresenceTrackerEnabled(chat),
@@ -69,7 +56,6 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
         characterId: message.characterId,
         presence: [...readPresenceState(message, roster.map((character) => character.id))],
       })),
-      summaries: readSummaryEntries(chat),
     };
   });
 
@@ -83,13 +69,12 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
     const message = messages.find((item) => item.id === req.params.messageId);
     if (!message) return reply.status(404).send({ error: "Message not found" });
     const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
-    const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
     const body = normalizeObject(req.body);
     const patch = buildPresenceExtraPatch({
       extra: message.extra,
       rosterIds,
       presentCharacterIds: uniqueStrings(body.presentCharacterIds),
-      alwaysPresentCharacterIds,
+      alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
     });
     await patchMessageExtra(hostApp, req.params.chatId, req.params.messageId, patch);
     return { ok: true, patch };
@@ -143,24 +128,17 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
 
 async function captureGenerationRequestState({ app, runtime, request }) {
   if (isPresenceInternalRequest(request)) return;
-  const method = String(request.method || "").toUpperCase();
-  if (method !== "POST") return;
-  const url = String(request.url || "");
-  if (!isNormalGenerateUrl(url)) return;
+  if (String(request.method || "").toUpperCase() !== "POST" || !isNormalGenerateUrl(request.url)) return;
   const body = normalizeObject(request.body);
   const chatId = typeof body.chatId === "string" ? body.chatId : "";
   if (!chatId) return;
   const chat = await runtime.persistence.getChat(chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
   const messages = await runtime.persistence.listMessages(chatId);
-  const summaryEntriesBefore = readSummaryEntries(chat);
-  const generationRun = await preparePresenceGenerationRun({ app, runtime, chat, messages });
   const beforeMessageIds = new Set(messages.map((message) => message.id).filter(Boolean));
   const state = {
     chatId,
     beforeMessageIds,
-    summaryEntriesBefore,
-    generationRun,
     regenerateMessageId: typeof body.regenerateMessageId === "string" ? body.regenerateMessageId : "",
     continueMessageId: typeof body.continueMessageId === "string" ? body.continueMessageId : "",
     earlyUserStampPromise: null,
@@ -180,30 +158,8 @@ async function captureGenerationRequestState({ app, runtime, request }) {
   GENERATE_REQUEST_STATE.set(request, state);
 }
 
-async function captureSummaryRequestState({ runtime, request }) {
-  if (isPresenceInternalRequest(request)) return;
-  const url = String(request.url || "");
-  if (url.includes("/api/presence/")) return;
-  const body = normalizeObject(request.body);
-  const hint = inferSummaryHintFromRoute(request.method, url, body);
-  if (hint.source === "unknown") return;
-  const chatId = extractChatRouteId(url) || (typeof body.chatId === "string" ? body.chatId : "");
-  if (!chatId) return;
-  const chat = await runtime.persistence.getChat(chatId);
-  if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  SUMMARY_REQUEST_STATE.set(request, {
-    chatId,
-    hint: {
-      ...hint,
-      summaryEntryIds: uniqueStrings(body.summaryEntryIds),
-    },
-    summaryEntriesBefore: readSummaryEntries(chat),
-  });
-}
-
 async function stampCreatedMessage({ app, runtime, request, reply, payload }) {
-  if (request.method !== "POST") return;
-  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
+  if (request.method !== "POST" || reply.statusCode < 200 || reply.statusCode >= 300) return;
   const url = String(request.url || "");
   if (!/^\/api\/chats\/[^/]+\/messages(?:[?#].*)?$/u.test(url)) return;
   const created = parsePayloadObject(payload);
@@ -212,48 +168,32 @@ async function stampCreatedMessage({ app, runtime, request, reply, payload }) {
   if (!chatId) return;
   const chat = await runtime.persistence.getChat(chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  await stampMessageWithActivePresence({ app, runtime, chat, message: created, overwriteExisting: true });
+  await stampMessageWithActivePresence({ app, chat, message: created, overwriteExisting: true });
 }
 
 async function finishGenerationLifecycle({ app, runtime, request, reply }) {
   const state = GENERATE_REQUEST_STATE.get(request);
   if (!state) return;
   GENERATE_REQUEST_STATE.delete(request);
-  if (state.generationRun) {
-    await finishPresenceGenerationRun({ app, runtime, run: state.generationRun });
-  }
   if (reply.statusCode < 200 || reply.statusCode >= 300) return;
   const chat = await runtime.persistence.getChat(state.chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  const generatedMessageIds = await stampGeneratedMessages({ app, runtime, chat, state });
-  const freshChat = (await runtime.persistence.getChat(state.chatId)) || chat;
-  await patchGeneratedMessageSummaryFingerprints({ app, chat: freshChat, messageIds: generatedMessageIds });
-  if (isPresenceTrackerEnabled(freshChat)) {
-    const summaryEvents = diffSummaryEntries(state.summaryEntriesBefore, readSummaryEntries(freshChat), {
-      source: "generation",
-    });
-    if (summaryEvents.length > 0) {
-      await reconcileSummaryPresence({ runtime, chat: freshChat, events: summaryEvents });
-    }
-  }
+  await stampGeneratedMessages({ app, runtime, chat, state });
 }
 
 async function stampGeneratedMessages({ app, runtime, chat, state }) {
   const messages = await runtime.persistence.listMessages(state.chatId);
   const createdMessages = messages.filter((message) => !state.beforeMessageIds.has(message.id));
   const createdMessageIds = new Set(createdMessages.map((message) => message.id).filter(Boolean));
-  const targetIds = new Set(
-    [
-      ...createdMessages.filter((message) => isStampableMessageRole(message.role)).map((message) => message.id),
-      state.regenerateMessageId,
-      state.continueMessageId,
-    ].filter(Boolean),
-  );
+  const targetIds = new Set([
+    ...createdMessages.filter((message) => isStampableMessageRole(message.role)).map((message) => message.id),
+    state.regenerateMessageId,
+    state.continueMessageId,
+  ].filter(Boolean));
   for (const message of messages) {
     if (!targetIds.has(message.id)) continue;
     await stampMessageWithActivePresence({
       app,
-      runtime,
       chat,
       message,
       overwriteExisting: createdMessageIds.has(message.id),
@@ -270,7 +210,7 @@ async function stampGeneratedUserMessageSoon({ app, runtime, chatId, beforeMessa
     if (message) {
       const chat = await runtime.persistence.getChat(chatId);
       if (!chat || !isPresenceTrackerEnabled(chat)) return { stamped: false };
-      await stampMessageWithActivePresence({ app, runtime, chat, message, overwriteExisting: true });
+      await stampMessageWithActivePresence({ app, chat, message, overwriteExisting: true });
       return { stamped: true, messageId: message.id };
     }
     await delay(EARLY_USER_STAMP_INTERVAL_MS);
@@ -289,32 +229,25 @@ function findGeneratedUserMessage(messages, beforeMessageIds, submissionId) {
   return createdUsers[createdUsers.length - 1];
 }
 
-async function patchGeneratedMessageSummaryFingerprints({ app, chat, messageIds }) {
-  const fingerprint = fingerprintChatSummary(normalizeObject(chat?.metadata).summary);
-  for (const messageId of uniqueStrings(messageIds)) {
-    await patchMessageExtra(app, chat.id, messageId, { chatSummaryFingerprint: fingerprint });
-  }
-}
-
-async function stampMessageWithActivePresence({ app, runtime, chat, message, overwriteExisting }) {
+async function stampMessageWithActivePresence({ app, chat, message, overwriteExisting }) {
   if (!message?.id) return;
   const extra = normalizeObject(message.extra);
-  if (!overwriteExisting && Array.isArray(extra.hiddenFromAICharacterIds)) return;
+  if (!overwriteExisting && hasPositivePresence(message)) return;
   const rosterIds = uniqueStrings(chat.characterIds);
-  const activeIds = resolveActiveRosterIds(chat);
-  const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
+  const presentCharacterIds = !overwriteExisting && Array.isArray(extra.hiddenFromAICharacterIds)
+    ? [...readPresenceState(message, rosterIds)]
+    : resolveActiveRosterIds(chat);
   const patch = buildPresenceExtraPatch({
     extra,
     rosterIds,
-    presentCharacterIds: activeIds,
-    alwaysPresentCharacterIds,
+    presentCharacterIds,
+    alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
   });
   await patchMessageExtra(app, chat.id, message.id, patch);
 }
 
 async function ensureAfterChatSettingsChange({ app, runtime, request, reply }) {
-  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
-  if (isPresenceInternalRequest(request)) return;
+  if (reply.statusCode < 200 || reply.statusCode >= 300 || isPresenceInternalRequest(request)) return;
   const method = String(request.method || "").toUpperCase();
   if (method !== "PATCH" && method !== "PUT") return;
   const url = String(request.url || "");
@@ -328,36 +261,15 @@ async function ensureAfterChatSettingsChange({ app, runtime, request, reply }) {
   const chatId = extractChatRootId(url) || extractChatMetadataRouteId(url);
   if (!chatId) return;
   const chat = await runtime.persistence.getChat(chatId);
-  if (!chat) return;
-  if (isPresenceTrackerEnabled(chat)) {
-    await ensurePresenceChatLifecycle({ app, runtime, chat });
-  } else {
-    await clearPresenceSummaryLorebook({ app, runtime, chat });
-  }
-}
-
-async function reconcileSummariesAfterHostChange({ app, runtime, request, reply }) {
-  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
-  if (isPresenceInternalRequest(request)) return;
-  const state = SUMMARY_REQUEST_STATE.get(request);
-  if (!state) return;
-  SUMMARY_REQUEST_STATE.delete(request);
-  const chat = await runtime.persistence.getChat(state.chatId);
-  if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  const summaryEvents = diffSummaryEntries(state.summaryEntriesBefore, readSummaryEntries(chat), state.hint);
-  if (summaryEvents.length > 0) {
-    await reconcileSummaryPresence({ runtime, chat, events: summaryEvents, hint: state.hint });
-  }
+  if (chat && isPresenceTrackerEnabled(chat)) await ensurePresenceChatLifecycle({ app, runtime, chat });
 }
 
 async function runPresenceCommand({ tokens, app, runtime, chat }) {
-  const [rawAction, characterName, ...rangeTokens] = tokens;
-  const action = String(rawAction || "").toLowerCase();
+  const action = String(tokens[0] || "").toLowerCase();
+  if (action === "resync") return resyncPresenceChat({ app, runtime, chat });
+  const [, characterName, ...rangeTokens] = tokens;
   if (action !== "set" && action !== "unset") {
-    return {
-      ok: false,
-      feedback: "Usage: /presence <set|unset> <character> <range>",
-    };
+    return { ok: false, feedback: "Usage: /presence <set|unset> <character> <range> or /presence resync" };
   }
   return setPresenceForRange({
     app,
@@ -370,34 +282,9 @@ async function runPresenceCommand({ tokens, app, runtime, chat }) {
 }
 
 async function ensurePresenceChatLifecycle({ app, runtime, chat }) {
-  if (!isPresenceTrackerEnabled(chat)) {
-    await recoverPendingSummaryRestore({ app, runtime, chat, force: true });
-    await clearPresenceSummaryLorebook({ app, runtime, chat });
-    return { skipped: true, enabled: false };
-  }
-  await recoverPendingSummaryRestore({ app, runtime, chat });
-  const afterRestore = (await runtime.persistence.getChat(chat.id)) || chat;
-  const roster = await reconcileRoster({ app, runtime, chat: afterRestore });
-  const afterRoster = (await runtime.persistence.getChat(chat.id)) || afterRestore;
-  const summaries = await ensureSummaryPresence({ runtime, chat: afterRoster });
-  return { enabled: true, roster, summaries };
-}
-
-async function clearPresenceSummaryLorebook({ app, runtime, chat }) {
-  const state = readPresenceChatState(chat);
-  if (!state.summaryLorebookId) return { disabledLorebook: false };
-  try {
-    const lorebook = await injectJson(app, "GET", `/api/lorebooks/${encodeURIComponent(state.summaryLorebookId)}`);
-    if (!lorebook?.id) return { disabledLorebook: false };
-    await replaceOwnedLorebookEntries(app, lorebook.id, []);
-    if (lorebook.enabled !== false) {
-      await injectJson(app, "PATCH", `/api/lorebooks/${encodeURIComponent(lorebook.id)}`, { enabled: false });
-    }
-    return { disabledLorebook: true, clearedEntries: true };
-  } catch (error) {
-    runtime.logger.warn(error, "[Presence] Could not disable summary lorebook for inactive tracker");
-    return { disabledLorebook: false, error: error instanceof Error ? error.message : String(error) };
-  }
+  if (!isPresenceTrackerEnabled(chat)) return { skipped: true, enabled: false };
+  const roster = await reconcileRoster({ app, runtime, chat });
+  return { enabled: true, roster };
 }
 
 async function reconcileRoster({ app, runtime, chat }) {
@@ -405,23 +292,55 @@ async function reconcileRoster({ app, runtime, chat }) {
   const state = readPresenceChatState(chat);
   const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
   const messages = await runtime.persistence.listMessages(chat.id);
+  if (state.rosterCharacterIds.length === 0) {
+    let patchedMessages = 0;
+    for (const message of Array.isArray(messages) ? messages : []) {
+      if (!message?.id || normalizeObject(message.extra).hiddenFromAI === true) continue;
+      await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+        extra: message.extra,
+        rosterIds,
+        presentCharacterIds: [...readPresenceState(message, rosterIds)],
+        alwaysPresentCharacterIds,
+      }));
+      patchedMessages += 1;
+    }
+    const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
+    await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds, alwaysPresentCharacterIds });
+    return { addedCharacterIds: [], patchedMessages, initialized: true };
+  }
   const backfill = planRosterBackfill({
     previousRosterIds: state.rosterCharacterIds,
     currentRosterIds: rosterIds,
     messages,
     alwaysPresentCharacterIds,
   });
+  let initializedMessages = 0;
+  if (backfill.addedCharacterIds.length === 0) {
+    for (const message of Array.isArray(messages) ? messages : []) {
+      if (!message?.id || hasPositivePresence(message) || normalizeObject(message.extra).hiddenFromAI === true) continue;
+      await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+        extra: message.extra,
+        rosterIds,
+        presentCharacterIds: [...readPresenceState(message, state.rosterCharacterIds)],
+        alwaysPresentCharacterIds,
+      }));
+      initializedMessages += 1;
+    }
+  }
   for (const patch of backfill.messagePatches) {
     await patchMessageExtra(app, chat.id, patch.messageId, patch.patch);
   }
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
   await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds, alwaysPresentCharacterIds });
-  return { addedCharacterIds: backfill.addedCharacterIds, patchedMessages: backfill.messagePatches.length };
+  return {
+    addedCharacterIds: backfill.addedCharacterIds,
+    patchedMessages: backfill.messagePatches.length + initializedMessages,
+    initializedMessages,
+  };
 }
 
 async function updatePresenceChatSettings({ app, runtime, chat, alwaysPresentCharacterIds }) {
-  const roster = await resolveRoster(runtime, chat);
-  const rosterIds = roster.map((character) => character.id);
+  const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
   const normalizedAlwaysPresent = uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterIds.includes(id));
   await patchChatState(runtime.persistence, chat, { alwaysPresentCharacterIds: normalizedAlwaysPresent });
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
@@ -432,13 +351,7 @@ async function updatePresenceChatSettings({ app, runtime, chat, alwaysPresentCha
     rosterIds,
     alwaysPresentCharacterIds: normalizedAlwaysPresent,
   });
-  const afterMessages = (await runtime.persistence.getChat(chat.id)) || freshChat;
-  const summaries = await ensureSummaryPresence({ runtime, chat: afterMessages });
-  return {
-    alwaysPresentCharacterIds: normalizedAlwaysPresent,
-    patchedMessages,
-    summaries,
-  };
+  return { alwaysPresentCharacterIds: normalizedAlwaysPresent, patchedMessages };
 }
 
 async function enforceAlwaysPresentOnMessages({ app, runtime, chat, rosterIds, alwaysPresentCharacterIds }) {
@@ -447,16 +360,17 @@ async function enforceAlwaysPresentOnMessages({ app, runtime, chat, rosterIds, a
   let patched = 0;
   const messages = await runtime.persistence.listMessages(chat.id);
   for (const message of Array.isArray(messages) ? messages : []) {
-    if (!message?.id) continue;
-    const extra = normalizeObject(message.extra);
-    if (extra.hiddenFromAI === true) continue;
-    const currentHidden = uniqueStrings(extra.hiddenFromAICharacterIds);
-    const nextHidden = currentHidden.filter((id) => !forced.has(id));
-    if (sameStringArray(currentHidden, nextHidden)) continue;
-    await patchMessageExtra(app, chat.id, message.id, {
-      hiddenFromAI: false,
-      hiddenFromAICharacterIds: nextHidden,
-    });
+    if (!message?.id || normalizeObject(message.extra).hiddenFromAI === true) continue;
+    const present = readPresenceState(message, rosterIds);
+    const beforeSize = present.size;
+    for (const characterId of forced) present.add(characterId);
+    if (present.size === beforeSize && hasPositivePresence(message)) continue;
+    await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+      extra: message.extra,
+      rosterIds,
+      presentCharacterIds: [...present],
+      alwaysPresentCharacterIds,
+    }));
     patched += 1;
   }
   return patched;
@@ -480,19 +394,13 @@ async function setPresenceForRange({ app, runtime, chat, hidden, characterName, 
     const present = readPresenceState(message, rosterIds);
     if (hidden && !targetIsAlwaysPresent) present.delete(target.id);
     else present.add(target.id);
-    const patch = buildPresenceExtraPatch({
+    await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
       extra: message.extra,
       rosterIds,
       presentCharacterIds: [...present],
       alwaysPresentCharacterIds,
-    });
-    await patchMessageExtra(app, chat.id, message.id, patch);
+    }));
   }
-  await updateSummaryPresenceForMessages({
-    runtime,
-    chat,
-    messageIds: selected.map((message) => message.id),
-  });
   return {
     ok: true,
     feedback: `${hidden ? "Unset" : "Set"} ${target.name} presence on ${selected.length} message${selected.length === 1 ? "" : "s"}.${hidden && targetIsAlwaysPresent ? " Always-present kept them visible." : ""}`,
@@ -500,395 +408,69 @@ async function setPresenceForRange({ app, runtime, chat, hidden, characterName, 
   };
 }
 
-async function preparePresenceGenerationRun({ app, runtime, chat, messages }) {
-  const summaries = readSummaryEntries(chat);
-  const enabledStateById = Object.fromEntries(
-    summaries.filter((summary) => summary?.id).map((summary) => [summary.id, summary.enabled !== false]),
-  );
-  const runId = createRunId();
-  const startedAt = new Date().toISOString();
-  let lorebookId = null;
-  let run = null;
-  try {
-    await ensureSummaryPresence({ runtime, chat, summaries, messages });
-    const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
-    const freshState = readPresenceChatState(freshChat);
-    const freshSummaries = readSummaryEntries(freshChat);
-    const lorebook = await ensureSummaryLorebook({ app, runtime, chat: freshChat, state: freshState });
-    lorebookId = lorebook.id;
-    run = {
-      chatId: freshChat.id,
-      runId,
-      startedAt,
-      lorebookId: lorebook.id,
-      enabledStateById,
-      disabledNativeSummaries: 0,
-      temporaryEntries: 0,
-    };
-    await patchChatState(runtime.persistence, freshChat, {
-      ...(freshState.summaryLorebookId !== lorebook.id ? { summaryLorebookId: lorebook.id } : {}),
-      pendingSummaryRestore: serializeSummaryRestoreRun(run),
-    });
-    const audienceBySummaryId = new Map(Object.entries(freshState.summaryPresenceById));
-    const entries = buildSummaryLorebookEntries({
-      chatId: freshChat.id,
-      summaries: freshSummaries,
-      audienceBySummaryId,
-    });
-    await replaceOwnedLorebookEntries(app, lorebook.id, entries);
-    const disabledNativeSummaries = await disableNativeSummaryEntries(app, freshChat.id, freshSummaries);
-    run.disabledNativeSummaries = disabledNativeSummaries;
-    run.temporaryEntries = entries.length;
-    scheduleSummaryRestoreWatchdog({ app, runtime, run });
-    return run;
-  } catch (error) {
-    runtime.logger.warn(error, "[Presence] Could not prepare summary presence for generation");
-    if (run) {
-      await finishPresenceGenerationRun({ app, runtime, run });
-    } else if (lorebookId) {
-      try {
-        await replaceOwnedLorebookEntries(app, lorebookId, []);
-      } catch (cleanupError) {
-        runtime.logger.warn(cleanupError, "[Presence] Could not clean partial summary lorebook preparation");
-      }
+async function resyncPresenceChat({ app, runtime, chat }) {
+  const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
+  const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
+  const messages = await runtime.persistence.listMessages(chat.id);
+  let updated = 0;
+  let skippedGlobal = 0;
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (!message?.id) continue;
+    if (normalizeObject(message.extra).hiddenFromAI === true) {
+      skippedGlobal += 1;
+      continue;
     }
-    return { chatId: chat.id, lorebookId, enabledStateById, disabledNativeSummaries: 0, temporaryEntries: 0 };
+    const present = readPresenceState(message, rosterIds);
+    await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+      extra: message.extra,
+      rosterIds,
+      presentCharacterIds: [...present],
+      alwaysPresentCharacterIds,
+    }));
+    updated += 1;
   }
-}
-
-async function finishPresenceGenerationRun({ app, runtime, run }) {
-  clearSummaryRestoreWatchdog(run.chatId);
-  try {
-    await restoreNativeSummaryEntries(app, run.chatId, run.enabledStateById);
-  } catch (error) {
-    runtime.logger.warn(error, "[Presence] Could not restore native summary enabled state");
-  }
-  if (run.lorebookId) {
-    try {
-      await replaceOwnedLorebookEntries(app, run.lorebookId, []);
-    } catch (error) {
-      runtime.logger.warn(error, "[Presence] Could not clear temporary summary lorebook entries");
-    }
-  }
-  await clearPendingSummaryRestore({ runtime, chatId: run.chatId, runId: run.runId });
-}
-
-async function recoverPendingSummaryRestore({ app, runtime, chat, force = false }) {
-  const pending = readPresenceChatState(chat).pendingSummaryRestore;
-  if (!pending) return { restored: false, pending: false };
-  if (!force && shouldWaitForSummaryRestore(app, pending)) {
-    scheduleSummaryRestoreWatchdog({ app, runtime, run: pending });
-    return { restored: false, pending: true };
-  }
-  await finishPresenceGenerationRun({ app, runtime, run: pending });
-  return { restored: true, pending: false };
-}
-
-function scheduleSummaryRestoreWatchdog({ app, runtime, run, delayMs = SUMMARY_RESTORE_WATCHDOG_DELAY_MS }) {
-  if (!run?.chatId || !run.runId) return;
-  clearSummaryRestoreWatchdog(run.chatId);
-  const timer = setTimeout(async () => {
-    SUMMARY_RESTORE_TIMERS.delete(run.chatId);
-    try {
-      const chat = await runtime.persistence.getChat(run.chatId);
-      if (!chat) return;
-      await recoverPendingSummaryRestore({ app, runtime, chat });
-    } catch (error) {
-      runtime.logger.warn(error, "[Presence] Summary restore watchdog failed");
-      scheduleSummaryRestoreWatchdog({ app, runtime, run, delayMs: SUMMARY_RESTORE_WATCHDOG_DELAY_MS });
-    }
-  }, delayMs);
-  timer.unref?.();
-  SUMMARY_RESTORE_TIMERS.set(run.chatId, timer);
-}
-
-function clearSummaryRestoreWatchdog(chatId) {
-  const timer = SUMMARY_RESTORE_TIMERS.get(chatId);
-  if (timer) clearTimeout(timer);
-  SUMMARY_RESTORE_TIMERS.delete(chatId);
-}
-
-function shouldWaitForSummaryRestore(app, run) {
-  const age = Date.now() - readTimestampMs(run.startedAt);
-  if (age >= SUMMARY_RESTORE_FORCE_MS) return false;
-  const active = isChatGenerationActive(app, run.chatId);
-  if (active === true) return true;
-  if (active === null && age < SUMMARY_RESTORE_FALLBACK_WAIT_MS) return true;
-  return false;
-}
-
-function isChatGenerationActive(app, chatId) {
-  const activeGenerations = app?.activeGenerations;
-  if (activeGenerations && typeof activeGenerations.has === "function") {
-    return activeGenerations.has(chatId);
-  }
-  return null;
-}
-
-async function clearPendingSummaryRestore({ runtime, chatId, runId }) {
-  const chat = await runtime.persistence.getChat(chatId);
-  if (!chat) return;
-  const pending = readPresenceChatState(chat).pendingSummaryRestore;
-  if (pending && pending.runId !== runId) return;
-  await patchChatState(runtime.persistence, chat, { pendingSummaryRestore: null });
-}
-
-function serializeSummaryRestoreRun(run) {
+  const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
+  await patchChatState(runtime.persistence, freshChat, {
+    rosterCharacterIds: rosterIds,
+    alwaysPresentCharacterIds,
+  });
   return {
-    chatId: run.chatId,
-    runId: run.runId,
-    lorebookId: run.lorebookId || null,
-    enabledStateById: normalizeBooleanRecord(run.enabledStateById),
-    startedAt: run.startedAt || new Date().toISOString(),
+    ok: true,
+    feedback: `Resynced Presence on ${updated} message${updated === 1 ? "" : "s"}.${skippedGlobal ? ` Left ${skippedGlobal} globally hidden message${skippedGlobal === 1 ? "" : "s"} unchanged.` : ""}`,
+    updated,
+    skippedGlobal,
   };
 }
 
-function normalizeBooleanRecord(value) {
-  const output = {};
-  for (const [key, enabled] of Object.entries(normalizeObject(value))) {
-    if (typeof enabled === "boolean") output[key] = enabled;
-  }
-  return output;
+function hasPositivePresence(message) {
+  return Array.isArray(normalizeObject(normalizeObject(message?.extra).marinaraPresence).presentCharacterIds);
 }
 
-async function ensureSummaryPresence({ runtime, chat, summaries = readSummaryEntries(chat), messages = null }) {
-  const roster = await resolveRoster(runtime, chat);
-  const rosterIds = roster.map((character) => character.id);
-  const messageList = messages || (await runtime.persistence.listMessages(chat.id));
-  const messagesById = new Map(messageList.map((message) => [message.id, message]));
-  const state = readPresenceChatState(chat);
-  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
-  const nextPresenceById = {};
-  let changed = false;
-
-  for (const summary of Array.isArray(summaries) ? summaries : []) {
-    if (!summary?.id) continue;
-    if (Object.prototype.hasOwnProperty.call(state.summaryPresenceById, summary.id)) {
-      nextPresenceById[summary.id] = uniqueStrings([
-        ...state.summaryPresenceById[summary.id],
-        ...alwaysPresentCharacterIds,
-      ]).filter((id) => rosterIds.includes(id));
-    } else {
-      nextPresenceById[summary.id] = buildSummaryAudience({
-        summary,
-        messagesById,
-        rosterIds,
-        alwaysPresentCharacterIds,
-      });
-    }
-    if (!sameStringArray(nextPresenceById[summary.id], state.summaryPresenceById[summary.id])) changed = true;
-  }
-
-  for (const summaryId of Object.keys(state.summaryPresenceById)) {
-    if (!Object.prototype.hasOwnProperty.call(nextPresenceById, summaryId)) changed = true;
-  }
-
-  if (changed) {
-    await patchChatState(runtime.persistence, chat, { summaryPresenceById: nextPresenceById });
-  }
-  return { summaries: Object.keys(nextPresenceById).length, updated: changed };
-}
-
-async function reconcileSummaryPresence({ runtime, chat, events, hint = {} }) {
-  const summaries = readSummaryEntries(chat);
-  const summaryById = new Map(summaries.filter((summary) => summary?.id).map((summary) => [summary.id, summary]));
-  const state = readPresenceChatState(chat);
-  const nextPresenceById = { ...state.summaryPresenceById };
-  const messages = await runtime.persistence.listMessages(chat.id);
-  const roster = await resolveRoster(runtime, chat);
-  const rosterIds = roster.map((character) => character.id);
-  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
-  const messagesById = new Map(messages.map((message) => [message.id, message]));
-  let changed = false;
-
-  const deletedEvents = (Array.isArray(events) ? events : []).filter((event) => event.type === "deleted");
-  const selectedIds = uniqueStrings(hint.summaryEntryIds || hint.selectedSummaryEntryIds);
-  const combinedSourceIds = selectedIds.length >= 2 ? selectedIds : deletedEvents.map((event) => event.summaryId);
-  const hasCombinedSources = combinedSourceIds.length >= 2;
-  const combinedAudience = uniqueStrings([
-    ...unionSummaryAudience(nextPresenceById, combinedSourceIds),
-    ...alwaysPresentCharacterIds,
-  ]);
-
-  for (const event of Array.isArray(events) ? events : []) {
-    if (!event?.summaryId) continue;
-    if (event.type === "deleted") {
-      if (Object.prototype.hasOwnProperty.call(nextPresenceById, event.summaryId)) {
-        delete nextPresenceById[event.summaryId];
-        changed = true;
-      }
-      continue;
-    }
-    if (event.type === "created" || event.type === "generated") {
-      const entry = event.entry || summaryById.get(event.summaryId);
-      const audience = hasCombinedSources
-        ? combinedAudience.filter((id) => rosterIds.includes(id))
-        : buildSummaryAudience({ summary: entry, messagesById, rosterIds, alwaysPresentCharacterIds });
-      nextPresenceById[event.summaryId] = audience;
-      changed = true;
-      continue;
-    }
-    if (event.type === "edited") {
-      const oldCoverage = summaryCoverageKey(event.previous);
-      const nextCoverage = summaryCoverageKey(event.entry || summaryById.get(event.summaryId));
-      if (oldCoverage !== nextCoverage) {
-        nextPresenceById[event.summaryId] = buildSummaryAudience({
-          summary: event.entry || summaryById.get(event.summaryId),
-          messagesById,
-          rosterIds,
-          alwaysPresentCharacterIds,
-        });
-        changed = true;
-      }
-    }
-  }
-
-  for (const summaryId of Object.keys(nextPresenceById)) {
-    if (!summaryById.has(summaryId)) {
-      delete nextPresenceById[summaryId];
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    await patchChatState(runtime.persistence, chat, { summaryPresenceById: nextPresenceById });
-  }
-  return { updated: changed, summaries: Object.keys(nextPresenceById).length };
-}
-
-async function updateSummaryPresenceForMessages({ runtime, chat, messageIds }) {
-  const changedMessageIds = new Set(uniqueStrings(messageIds));
-  if (!changedMessageIds.size) return { updated: false, summaries: 0 };
-  const summaries = readSummaryEntries(chat).filter((summary) =>
-    summaryCoverageIds(summary).some((messageId) => changedMessageIds.has(messageId)),
-  );
-  if (!summaries.length) return { updated: false, summaries: 0 };
-  const messages = await runtime.persistence.listMessages(chat.id);
-  const roster = await resolveRoster(runtime, chat);
-  const rosterIds = roster.map((character) => character.id);
-  const messagesById = new Map(messages.map((message) => [message.id, message]));
-  const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
-  const state = readPresenceChatState(freshChat);
-  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
-  const nextPresenceById = { ...state.summaryPresenceById };
-  for (const summary of summaries) {
-    nextPresenceById[summary.id] = buildSummaryAudience({
-      summary,
-      messagesById,
-      rosterIds,
-      alwaysPresentCharacterIds,
-    });
-  }
-  await patchChatState(runtime.persistence, freshChat, { summaryPresenceById: nextPresenceById });
-  return { updated: true, summaries: summaries.length };
-}
-
-async function ensureSummaryLorebook({ app, runtime, chat, state }) {
-  if (state.summaryLorebookId) {
-    try {
-      const existing = await injectJson(app, "GET", `/api/lorebooks/${encodeURIComponent(state.summaryLorebookId)}`);
-      if (existing?.id) return ensureLorebookEnabled(app, existing);
-    } catch {
-      runtime.logger.warn("[Presence] Stored summary lorebook is missing; recreating");
-    }
-  }
-  const listed = await injectJson(app, "GET", `/api/lorebooks?chatId=${encodeURIComponent(chat.id)}`);
-  const found = (Array.isArray(listed) ? listed : []).find((book) => book?.sourceAgentId === PRESENCE_PACKAGE_ID);
-  if (found?.id) return ensureLorebookEnabled(app, found);
-  return injectJson(app, "POST", "/api/lorebooks", {
-    name: buildPresenceLorebookName(chat.id),
-    description: "Character-scoped mirror of this chat's summaries for Presence.",
-    chatId: chat.id,
-    enabled: true,
-    sourceAgentId: PRESENCE_PACKAGE_ID,
-    category: "uncategorized",
-    tags: ["presence", "chat-summaries"],
-  });
-}
-
-async function ensureLorebookEnabled(app, lorebook) {
-  if (lorebook.enabled !== false) return lorebook;
-  return injectJson(app, "PATCH", `/api/lorebooks/${encodeURIComponent(lorebook.id)}`, { enabled: true });
-}
-
-async function replaceOwnedLorebookEntries(app, lorebookId, entries) {
-  const current = await injectJson(app, "GET", `/api/lorebooks/${encodeURIComponent(lorebookId)}/entries`);
-  for (const entry of Array.isArray(current) ? current : []) {
-    if (normalizeObject(entry.dynamicState).owner === "presence" || entry.tag === "presence") {
-      await injectJson(app, "DELETE", `/api/lorebooks/${encodeURIComponent(lorebookId)}/entries/${encodeURIComponent(entry.id)}`);
-    }
-  }
-  for (const entry of entries) {
-    await injectJson(app, "POST", `/api/lorebooks/${encodeURIComponent(lorebookId)}/entries`, entry);
-  }
-}
-
-async function disableNativeSummaryEntries(app, chatId, summaries) {
-  let disabled = 0;
-  for (const summary of Array.isArray(summaries) ? summaries : []) {
-    if (!summary?.id || summary.enabled === false) continue;
-    await injectJson(app, "PATCH", `/api/chats/${encodeURIComponent(chatId)}/summary-entries`, {
-      operation: "toggle",
-      entryId: summary.id,
-      enabled: false,
-    });
-    disabled += 1;
-  }
-  return disabled;
-}
-
-async function restoreNativeSummaryEntries(app, chatId, enabledStateById) {
-  let restored = 0;
-  for (const [entryId, enabled] of Object.entries(normalizeObject(enabledStateById))) {
-    await setNativeSummaryEnabled(app, chatId, entryId, enabled === true);
-    restored += 1;
-  }
-  return restored;
-}
-
-async function setNativeSummaryEnabled(app, chatId, entryId, enabled) {
-  return injectJson(app, "PATCH", `/api/chats/${encodeURIComponent(chatId)}/summary-entries`, {
-    operation: "toggle",
-    entryId,
-    enabled,
-  });
-}
-
-function unionSummaryAudience(summaryPresenceById, summaryIds) {
-  const audience = new Set();
-  for (const summaryId of uniqueStrings(summaryIds)) {
-    for (const characterId of uniqueStrings(summaryPresenceById[summaryId])) {
-      audience.add(characterId);
-    }
-  }
-  return [...audience];
-}
-
-function summaryCoverageIds(summary) {
-  return uniqueStrings([...(Array.isArray(summary?.messageIds) ? summary.messageIds : []), ...(Array.isArray(summary?.hiddenMessageIds) ? summary.hiddenMessageIds : [])]);
-}
-
-function summaryCoverageKey(summary) {
-  return summaryCoverageIds(summary).sort().join("\n");
-}
-
-function sameStringArray(left, right) {
-  const a = uniqueStrings(left).sort();
-  const b = uniqueStrings(right).sort();
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
-async function resolveRoster(runtime, chat) {
+async function resolveRoster(runtime, chat, app = null) {
   const ids = uniqueStrings(chat?.characterIds);
   const records = await runtime.resources.listCharacters(ids);
-  const nameById = new Map(records.map((record) => [record.id, readCharacterName(record.data)]));
-  return ids.map((id) => ({ id, name: nameById.get(id) || id }));
+  const recordsById = new Map(records.map((record) => [record.id, record]));
+  return Promise.all(ids.map(async (id) => {
+    const record = recordsById.get(id);
+    const display = readCharacterDisplay(record?.data);
+    let avatarUrl = display.avatarUrl;
+    if (app) {
+      try {
+        const hostCharacter = await injectJson(app, "GET", `/api/characters/${encodeURIComponent(id)}`);
+        if (typeof hostCharacter?.avatarPath === "string" && hostCharacter.avatarPath.trim()) {
+          avatarUrl = hostCharacter.avatarPath.trim();
+        }
+      } catch {
+        // Initials remain usable if this host does not expose character avatars.
+      }
+    }
+    return { id, name: display.name || id, avatarUrl };
+  }));
 }
 
 function resolveActiveRosterIds(chat) {
   const rosterIds = uniqueStrings(chat?.characterIds);
-  const metadata = normalizeObject(chat?.metadata);
-  const inactive = new Set(uniqueStrings(metadata.inactiveCharacterIds));
+  const inactive = new Set(uniqueStrings(normalizeObject(chat?.metadata).inactiveCharacterIds));
   return rosterIds.filter((id) => !inactive.has(id));
 }
 
@@ -900,16 +482,17 @@ function resolveAlwaysPresentRosterIds(chat) {
 function resolveCharacterByName(roster, name) {
   const normalized = normalizeLookup(name);
   if (!normalized) return null;
-  return (
-    roster.find((character) => normalizeLookup(character.name) === normalized || character.id === name) ??
-    roster.find((character) => normalizeLookup(character.name).includes(normalized)) ??
-    null
-  );
+  return roster.find((character) => normalizeLookup(character.name) === normalized || character.id === name)
+    ?? roster.find((character) => normalizeLookup(character.name).includes(normalized))
+    ?? null;
 }
 
-function readCharacterName(data) {
+function readCharacterDisplay(data) {
   const parsed = normalizeObject(data);
-  return typeof parsed.name === "string" && parsed.name.trim() ? parsed.name.trim() : null;
+  return {
+    name: typeof parsed.name === "string" && parsed.name.trim() ? parsed.name.trim() : null,
+    avatarUrl: typeof parsed.avatarPath === "string" && parsed.avatarPath.trim() ? parsed.avatarPath.trim() : null,
+  };
 }
 
 async function patchMessageExtra(app, chatId, messageId, patch) {
@@ -923,11 +506,7 @@ async function patchMessageExtra(app, chatId, messageId, patch) {
 
 async function patchChatState(persistence, chat, statePatch) {
   const metadata = writePresenceChatState(chat.metadata, statePatch);
-  await persistence.updateChatMetadata({
-    chatId: chat.id,
-    metadata,
-    updatedAt: new Date().toISOString(),
-  });
+  await persistence.updateChatMetadata({ chatId: chat.id, metadata, updatedAt: new Date().toISOString() });
 }
 
 async function injectJson(app, method, url, payload) {
@@ -953,18 +532,12 @@ function extractMessageCreateChatId(url) {
 
 function isPresenceTrackerEnabled(chat) {
   const metadata = normalizeObject(chat?.metadata);
-  const activeAgentIds = uniqueStrings(metadata.activeAgentIds);
-  if (!activeAgentIds.includes(PRESENCE_PACKAGE_ID)) return false;
+  if (!uniqueStrings(metadata.activeAgentIds).includes(PRESENCE_PACKAGE_ID)) return false;
   return metadata.enableAgents !== false;
 }
 
 function isStampableMessageRole(role) {
   return role === "user" || role === "assistant" || role === "narrator";
-}
-
-function extractChatRouteId(url) {
-  const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)\//u);
-  return match ? decodeURIComponent(match[1]) : "";
 }
 
 function extractChatRootId(url) {
@@ -994,26 +567,6 @@ function isPresenceInternalRequest(request) {
   return value === "1" || value === "true" || (Array.isArray(value) && value.includes("1"));
 }
 
-function createRunId() {
-  return `presence-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function readTimestampMs(value) {
-  const parsed = Date.parse(String(value || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function fingerprintChatSummary(value) {
-  if (typeof value !== "string") return null;
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (!normalized) return null;
-  let hash = 5381;
-  for (let i = 0; i < normalized.length; i += 1) {
-    hash = (hash * 33) ^ normalized.charCodeAt(i);
-  }
-  return (hash >>> 0).toString(36);
 }

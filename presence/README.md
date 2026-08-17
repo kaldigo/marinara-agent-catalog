@@ -1,72 +1,33 @@
 # Presence
 
-Package-era rewrite of **Presence** for Marinara Engine.
+Presence is a tracker-category feature agent for per-message character attendance in Marinara Engine Roleplay and Visual Novel chats. It only mutates chats where the Presence tracker is enabled.
 
-Presence tracks which active chat characters were present for each message and
-uses Marinara's native per-character **Hide From AI** field
-(`message.extra.hiddenFromAICharacterIds`) as the durable prompt-scoping layer.
+## Message State
 
-Presence is exposed as a tracker-category feature agent. It only mutates chats
-where the Presence tracker is enabled in the chat's active agent list.
+Presence stores an explicit positive attendance record in `message.extra.marinaraPresence.presentCharacterIds`. It also projects that record into Marinara's native `message.extra.hiddenFromAICharacterIds` field so prompt history is scoped by the engine itself.
 
-## Goals
+The positive record remains authoritative when the roster changes. A character added later is absent from older messages unless their ID was already recorded as present. Globally hidden messages remain globally hidden.
 
-- Store presence as character IDs, not names.
-- Preserve global Hide From AI state.
-- Backfill newly added characters so they do not inherit old scene history.
-- Let chat-level narrator/helper cards be marked always present.
-- Store positive per-summary audience state by native summary ID.
-- Copy enabled chat summaries into a temporary Presence-owned outlet lorebook during generation.
-- Use `_mari-bridge` for slash command handling and summary lifecycle detection.
+## Lifecycle
 
-## Chat Settings
+- Existing messages are initialized when Presence is first enabled, and older package-era chats adopt their native per-character visibility when positive records are missing.
+- Post-only and generation-created messages are stamped with the active roster.
+- Generated user messages are stamped as soon as their row appears, with generation completion retained as a fallback.
+- Newly added characters are hidden from historical messages using the stored positive attendance records.
+- Regenerate and continue preserve existing attendance instead of replacing it with the current active roster.
 
-When the Presence tracker is enabled for a chat, Presence adds a compact section
-to Chat Settings next to the character roster. Selecting a character there stores
-that character ID in `marinaraPresencePackage.alwaysPresentCharacterIds`.
+## Always Present
 
-Always-present characters are kept visible in native per-character Hide From AI
-state, future message stamps, roster backfill, slash command updates, and summary
-audiences. Globally hidden messages remain hidden.
+Chat Settings includes an avatar picker for characters that should always be present. This is intended for narrator and system-style cards. Selecting one updates existing non-globally-hidden messages and includes that character in future stamps even while inactive.
 
 ## Slash Commands
-
-Presence should own:
 
 ```text
 /presence set Sophie 4-46
 /presence unset Sophie last 20
+/presence resync
 /hide Sophie 4-46
 /unhide "Sophie Valentine" all
 ```
 
-Native Marinara commands such as `/hide 4-46` and `/unhide last 20` must pass
-through untouched.
-
-## Summary Strategy
-
-Native chat summary entries do not currently support per-character audience
-scoping. Presence keeps native summary entries as the source of truth and stores
-positive summary audience state in chat metadata:
-
-```json
-{
-  "marinaraPresencePackage": {
-    "summaryPresenceById": {
-      "summary-id": ["char-a", "char-b"]
-    }
-  }
-}
-```
-
-During normal generation, Presence temporarily copies enabled native summaries
-into a chat-scoped lorebook assigned to `{{outlet::presence_chat_summaries}}`:
-
-- Each summary entry uses the summary ID as the lorebook entry name.
-- Each summary entry is locked and character-filtered.
-
-Native summary enabled states are snapshotted, disabled for the generation
-window so the global summary marker stays empty, then restored when generation
-finishes. Presence also stores a pending restore record and runs a server-side
-watchdog so suspended tabs or dropped generation streams can recover the native
-summary state. The temporary lorebook entries are cleared afterward.
+`/presence resync` rebuilds native per-character Hide From AI IDs from each message's positive Presence record. For older messages without a positive record, it adopts their current native per-character visibility first. Native `/hide 4-46` and `/unhide last 20` commands pass through untouched.

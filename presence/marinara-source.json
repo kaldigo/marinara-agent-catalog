@@ -11,9 +11,9 @@
   "package": {
     "id": "presence",
     "name": "Presence",
-    "description": "Work-in-progress package-era character presence for Roleplay chats.",
+    "description": "Per-message character presence for Roleplay chats.",
     "kind": ["agent"],
-    "permissions": ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "routes", "storage", "ui"],
     "restartRequired": true
   }
 }

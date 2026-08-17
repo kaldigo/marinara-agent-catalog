@@ -224,6 +224,7 @@ function normalizeSettingsData(data) {
         .map((character) => ({
           id: character.id,
           name: typeof character.name === "string" && character.name.trim() ? character.name.trim() : character.id,
+          avatarUrl: typeof character.avatarUrl === "string" && character.avatarUrl.trim() ? character.avatarUrl.trim() : null,
         }))
     : [];
   return {
@@ -271,21 +272,19 @@ function renderPresenceSettingsSection(mount, data) {
   mount.className = "mari-presence-settings-section";
   const renderKey = JSON.stringify({
     chatId: data.chatId,
-    roster: data.roster.map((character) => [character.id, character.name]),
+    roster: data.roster.map((character) => [character.id, character.name, character.avatarUrl]),
     alwaysPresent: [...alwaysPresent].sort(),
   });
   const activeCount = alwaysPresent.size;
   const items = data.roster.map((character) => {
-    const checked = alwaysPresent.has(character.id);
+    const selected = alwaysPresent.has(character.id);
+    const avatar = character.avatarUrl
+      ? `<img src="${escapeAttribute(character.avatarUrl)}" alt="" aria-hidden="true" loading="lazy">`
+      : `<span aria-hidden="true">${escapeHtml(character.name.trim().charAt(0).toUpperCase() || "?")}</span>`;
     return `
-      <button type="button" class="mari-presence-character-toggle${checked ? " is-active" : ""}" data-presence-always-character-id="${escapeAttribute(character.id)}" role="switch" aria-checked="${checked ? "true" : "false"}">
-        <span class="mari-presence-character-copy">
-          <span class="mari-presence-character-name">${escapeHtml(character.name)}</span>
-          <span class="mari-presence-character-state">${checked ? "Always present" : "Follows active presence"}</span>
-        </span>
-        <span class="mari-presence-switch" aria-hidden="true">
-          <span class="mari-presence-switch-thumb"></span>
-        </span>
+      <button type="button" class="mari-presence-character-choice${selected ? " is-selected" : ""}" data-presence-always-character-id="${escapeAttribute(character.id)}" role="checkbox" aria-checked="${selected ? "true" : "false"}" aria-label="${selected ? "Remove" : "Add"} ${escapeAttribute(character.name)} as always present" title="${escapeAttribute(character.name)}">
+        <span class="mari-presence-character-avatar">${avatar}</span>
+        <span class="mari-presence-character-label">${escapeHtml(character.name)}</span>
       </button>
     `;
   }).join("");
@@ -293,14 +292,14 @@ function renderPresenceSettingsSection(mount, data) {
     <div class="mari-presence-settings-body">
       <section class="mari-presence-subsection">
         <div class="mari-presence-subsection-header">
-          <span class="mari-presence-subsection-title">Always present characters</span>
-          ${activeCount > 0 ? `<span class="mari-presence-count">${activeCount} enabled</span>` : ""}
+          <span class="mari-presence-subsection-title">Always present</span>
+          ${activeCount > 0 ? `<span class="mari-presence-count">${activeCount} selected</span>` : ""}
         </div>
         <p class="mari-presence-subsection-description">
-          Treat selected characters as present for every message and summary. Use this for narrator or system-style cards that should always see the whole scene.
+          Selected characters see every non-globally-hidden message, even while inactive. Use this for narrators or other cards that should always know the full scene.
         </p>
       </section>
-      <div class="mari-presence-character-list">
+      <div class="mari-presence-character-picker" role="group" aria-label="Always present characters">
         ${items || '<p class="mari-presence-settings-muted">No characters in this chat.</p>'}
       </div>
     </div>
@@ -411,81 +410,70 @@ function injectPresenceSettingsStyle() {
       line-height: 1.35;
       margin: 0;
     }
-    .mari-presence-character-list {
+    .mari-presence-character-picker {
       display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0.25rem 0.125rem 0;
     }
-    .mari-presence-character-toggle {
+    .mari-presence-character-choice {
       align-items: center;
-      background: color-mix(in srgb, var(--background) 75%, transparent);
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
+      background: transparent;
+      border: 0;
       color: var(--foreground);
       cursor: pointer;
       display: flex;
-      gap: 0.75rem;
-      justify-content: space-between;
-      min-height: 2.5rem;
-      padding: 0.625rem 0.75rem;
-      text-align: left;
-      transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 0;
+      width: 3.5rem;
+    }
+    .mari-presence-character-avatar {
+      align-items: center;
+      background: var(--marinara-chat-chrome-highlight-bg, var(--accent));
+      border: 2px solid transparent;
+      border-radius: 999px;
+      color: var(--marinara-chat-chrome-highlight-text, var(--accent-foreground));
+      display: flex;
+      font-size: 0.75rem;
+      font-weight: 700;
+      height: 2.5rem;
+      justify-content: center;
+      opacity: 0.55;
+      overflow: hidden;
+      transition: opacity 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+      width: 2.5rem;
+    }
+    .mari-presence-character-avatar img {
+      height: 100%;
+      object-fit: cover;
       width: 100%;
     }
-    .mari-presence-character-toggle:hover {
-      background: var(--accent);
+    .mari-presence-character-choice:hover .mari-presence-character-avatar {
+      opacity: 1;
+      transform: translateY(-1px);
     }
-    .mari-presence-character-toggle.is-active {
-      background: color-mix(in srgb, var(--primary) 12%, transparent);
-      border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+    .mari-presence-character-choice:focus-visible {
+      outline: none;
     }
-    .mari-presence-character-copy {
+    .mari-presence-character-choice:focus-visible .mari-presence-character-avatar {
+      box-shadow: 0 0 0 2px var(--marinara-chat-chrome-focus-ring, var(--ring));
+      opacity: 1;
+    }
+    .mari-presence-character-choice.is-selected .mari-presence-character-avatar {
+      border-color: var(--marinara-chat-chrome-button-border-active, var(--primary));
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
+      opacity: 1;
+    }
+    .mari-presence-character-label {
       display: block;
-      min-width: 0;
-    }
-    .mari-presence-character-name {
-      color: var(--foreground);
-      display: block;
-      font-size: 0.6875rem;
-      font-weight: 500;
-      line-height: 1.25;
-      min-width: 0;
+      font-size: 0.59375rem;
+      line-height: 1.2;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-    .mari-presence-character-state {
-      color: var(--muted-foreground);
-      display: block;
-      font-size: 0.59375rem;
-      line-height: 1.25;
-      margin-top: 0.125rem;
-    }
-    .mari-presence-switch {
-      background: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
-      border-radius: 999px;
-      display: inline-flex;
-      flex: 0 0 auto;
-      height: 1.25rem;
-      padding: 0.125rem;
-      transition: background-color 120ms ease;
-      width: 2.25rem;
-    }
-    .mari-presence-switch-thumb {
-      background: #fff;
-      border-radius: 999px;
-      box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-      display: block;
-      height: 1rem;
-      transform: translateX(0);
-      transition: transform 120ms ease;
-      width: 1rem;
-    }
-    .mari-presence-character-toggle.is-active .mari-presence-switch {
-      background: var(--primary);
-    }
-    .mari-presence-character-toggle.is-active .mari-presence-switch-thumb {
-      transform: translateX(1rem);
+      width: 100%;
     }
   `;
   document.head.appendChild(style);

@@ -1,81 +1,43 @@
 # Presence Package Plan
 
-## 1. Package Source
+## Scope
 
-- Keep `packages/presence-extension` as legacy reference source.
-- Build `packages/presence` as the clean package-era implementation.
-- Expose Presence as a tracker-category feature agent.
-- Run only for chats where the Presence tracker is enabled in active agents.
+- Expose Presence as a tracker feature agent.
+- Run only in chats where the Presence tracker is enabled.
+- Own message attendance and its native Hide From AI projection.
+- Leave native chat summaries entirely unchanged.
 
-## 2. Data Model
+## Data Model
 
-Use Marinara's native per-character Hide From AI field as the message presence
-state.
+Each stamped message stores positive attendance:
 
 ```json
 {
+  "marinaraPresence": {
+    "version": 1,
+    "presentCharacterIds": ["char-a"],
+    "updatedAt": "2026-08-17T00:00:00.000Z"
+  },
   "hiddenFromAICharacterIds": ["char-b"]
 }
 ```
 
-Characters listed in `hiddenFromAICharacterIds` are absent from that message.
-Characters in the current roster that are not listed are present. Presence does
-not stamp per-message shadow metadata.
+The positive record is Presence's source of truth. `hiddenFromAICharacterIds` is the native projection consumed by Marinara.
 
-Chat metadata may also store `alwaysPresentCharacterIds` for narrator/helper
-cards that should see all non-globally-hidden content regardless of the chat's
-active character toggles.
+## Behavior
 
-## 3. Message Save
+- Stamp post-only, generated user, assistant, and narrator messages with the active roster.
+- Preserve attendance on regenerate and continue.
+- Initialize older chats when Presence is enabled.
+- Backfill newly added characters as absent from historical messages.
+- Preserve global Hide From AI and non-roster hidden IDs.
+- Union always-present characters into existing and future message attendance.
+- Provide per-message and range mutation handlers.
+- Provide `/presence resync` to rebuild native hidden IDs from positive attendance.
 
-On message create/save, stamp the message with currently active chat characters.
-Do not use all roster characters when some are inactive.
+## Integration
 
-If all roster characters are active, Presence may store compact default metadata,
-but must still be able to backfill future newly added characters.
-
-Always-present character IDs are unioned into the stamped present set.
-
-## 4. Roster Backfill
-
-When a chat gains characters:
-
-- Compare current roster to the stored Presence roster snapshot.
-- For existing messages, treat unstored presence as the previous roster.
-- Add newly added character IDs to Presence-owned hidden IDs.
-- Do not touch globally hidden messages.
-- Do not remove manual per-character hidden IDs.
-- Do not hide always-present character IDs.
-- Recompute positive summary audience only for summaries affected by the roster change.
-
-## 5. Summaries
-
-- Detect summary creation, generation, edit, and delete via bridge diffing plus
-  route/generation-completion hints where available.
-- Store positive summary audience per chat by native summary entry ID.
-- On generation, copy enabled native summaries into a temporary Presence-owned
-  outlet lorebook keyed by summary entry ID.
-- Temporarily disable native summary entries during generation, then restore the
-  snapshotted enabled state and clear the temporary lorebook.
-- Update summary audience directly on summary create/delete/combine and only
-  recalculate affected summaries after presence range commands.
-- Always-present character IDs are included in summary audiences.
-
-## 6. Commands
-
-- Use `_mari-bridge` command routing.
-- Provide `/presence <set|unset> <character> <range>`.
-- Hijack `/hide <character> <range>` and `/unhide <character> <range>` only when
-  the first argument is not a native message range.
-
-## 7. Upstream Replacement Points
-
-Tracked in `packages/_mari-bridge/UPSTREAM-GAPS.md`:
-
-- Slash command contribution API.
-- Summary lifecycle events.
-- Pre-prompt generation hook.
-- Per-character summary audience.
-- Message action slot.
-- Roster change event.
-- Bulk scoped Hide From AI route.
+- Use `_mari-bridge` for slash command capture and the chat-settings contribution slot.
+- Register `/presence` as a package command.
+- Augment `/hide` and `/unhide` only when the first argument identifies a character rather than a native range.
+- Use an avatar-based multi-select in Chat Settings for always-present characters.

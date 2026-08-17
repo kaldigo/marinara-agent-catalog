@@ -33,8 +33,7 @@ function manifest() {
     id: "presence",
     name: "Presence",
     version,
-    description:
-      "Tracks per-message character presence and mirrors chat summaries into character-scoped lorebook context.",
+    description: "Tracks per-message character presence with native per-character Hide From AI state.",
     engine: { min: "2.3.3", maxExclusive: "3.0.0" },
     kind: ["agent"],
     entrypoints: {
@@ -47,7 +46,7 @@ function manifest() {
       slots: ["chat-settings"],
     },
     files: [{ path: "server.mjs", sha256: "0".repeat(64), bytes: 0 }],
-    permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+    permissions: ["agent-runtime", "chat-read", "chat-write", "routes", "storage", "ui"],
     restartRequired: true,
   };
 }
@@ -57,7 +56,7 @@ function agentDefinitions() {
     {
       id: "presence",
       name: "Presence",
-      description: "Feature runtime for per-message character presence and scoped chat summaries.",
+      description: "Feature runtime for per-message character presence.",
       category: "tracker",
       phase: "pre_generation",
       execution: "feature",
