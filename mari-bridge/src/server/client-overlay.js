@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v10";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v11";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
@@ -61,6 +61,23 @@ export function patchChatInputBridge(source) {
   return patched;
 }
 
+export function patchSlashCommandListBridge(source) {
+  if (!source.includes("Show available slash commands")) return null;
+  const identifier = "[A-Za-z_$][\\w$]*";
+  const pattern = new RegExp(
+    `function (?<fn>${identifier})\\((?<availability>${identifier})=\\{\\}\\)\\{return\\[\\.\\.\\.(?<native>${identifier}),\\.\\.\\.(?<games>${identifier})\\(\\k<availability>\\.conversationGames\\)\\]\\.filter\\((?<command>${identifier})=>(?<available>${identifier})\\(\\k<command>,\\k<availability>\\)\\)\\}`,
+    "gu",
+  );
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`Mari Bridge slash command list patch expected one registry builder, found ${matches.length}`);
+  }
+  return source.replace(pattern, (...args) => {
+    const groups = args.at(-1);
+    return `function ${groups.fn}(${groups.availability}={}){return[...${groups.native},...${groups.games}(${groups.availability}.conversationGames),...(${CLIENT_SYMBOL_EXPRESSION}?.listCommands(${groups.availability})??[])].filter(${groups.command}=>${groups.available}(${groups.command},${groups.availability}))}`;
+  });
+}
+
 function patchRoleplayCommandDraftWriter(source) {
   const marker = ".command.execute(";
   const callIndex = source.indexOf(marker);
@@ -76,7 +93,7 @@ function patchRoleplayCommandDraftWriter(source) {
     throw new Error("Mari Bridge draft writer could not identify native Roleplay draft actions");
   }
   const original = `${direct.groups.match}.command.execute(${direct.groups.match}.args,${direct.groups.context})`;
-  const replacement = `${direct.groups.match}.command.execute(${direct.groups.match}.args,{...${direct.groups.context},setDraftGenerating:Z=>${restore.store}.getState().setStreaming(Boolean(Z),${restore.chatId}),setDraft:Z=>{const J=String(Z??"");${restore.setDraft}(${restore.chatId},J);if(${restore.store}.getState().activeChatId===${restore.chatId}){const T=${direct.groups.textarea}.current??document.querySelector(".mari-chat-input textarea");if(T){const V=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;V?V.call(T,J):T.value=J,T.dispatchEvent(new Event("input",{bubbles:!0})),${direct.groups.textarea}.current&&${sync}(J)}}}})`;
+  const replacement = `${direct.groups.match}.command.execute(${direct.groups.match}.args,{...${direct.groups.context},setDraftGenerating:mariBridgeGenerating=>${restore.store}.getState().setStreaming(Boolean(mariBridgeGenerating),${restore.chatId}),setDraft:mariBridgeValue=>{const mariBridgeDraftText=String(mariBridgeValue??"");${restore.setDraft}(${restore.chatId},mariBridgeDraftText);if(${restore.store}.getState().activeChatId===${restore.chatId}){const mariBridgeTextarea=${direct.groups.textarea}.current??document.querySelector(".mari-chat-input textarea");if(mariBridgeTextarea){const mariBridgeValueSetter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")?.set;mariBridgeValueSetter?mariBridgeValueSetter.call(mariBridgeTextarea,mariBridgeDraftText):mariBridgeTextarea.value=mariBridgeDraftText,mariBridgeTextarea.dispatchEvent(new Event("input",{bubbles:!0})),${direct.groups.textarea}.current&&${sync}(mariBridgeDraftText)}}}})`;
   const exactIndex = source.indexOf(original, callIndex - direct.groups.match.length);
   if (exactIndex < 0) throw new Error("Mari Bridge draft writer could not replace the Roleplay command context");
   let result = `${source.slice(0, exactIndex)}${replacement}${source.slice(exactIndex + original.length)}`;
@@ -167,7 +184,14 @@ export function patchGenerationControllerEvents(source) {
   );
 }
 
-export async function prepareClientOverlay({ dataDir, sourceRoot }) {
+async function persistClientOverlayPointer(dataDir, root, fingerprint, engineVersion) {
+  await writeFile(
+    join(dataDir, "mari-bridge", "client-current.json"),
+    `${JSON.stringify({ schemaVersion: 1, root, fingerprint, engineVersion }, null, 2)}\n`,
+  );
+}
+
+export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion }) {
   if (!sourceRoot) throw new Error("Mari Bridge preload did not report the native client root");
   const indexPath = join(sourceRoot, "index.html");
   const index = await readFile(indexPath, "utf8");
@@ -185,6 +209,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot }) {
   const readyFile = join(target, ".mari-bridge-ready");
   try {
     await readFile(readyFile, "utf8");
+    await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
     return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-ui", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud"] };
   } catch {
     // Build below.
@@ -210,6 +235,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot }) {
     .map((entry) => entry.name);
   let chatInputPatchCount = 0;
   let chatSettingsPatchCount = 0;
+  let slashCommandListPatchCount = 0;
   let trackerPanelPatchCount = 0;
   let roleplayHudPatchCount = 0;
   for (const entry of assetEntries) {
@@ -229,6 +255,12 @@ export async function prepareClientOverlay({ dataDir, sourceRoot }) {
       chatSettingsPatchCount += 1;
       changed = true;
     }
+    const slashCommandListPatched = patchSlashCommandListBridge(assetSource);
+    if (slashCommandListPatched !== null) {
+      assetSource = slashCommandListPatched;
+      slashCommandListPatchCount += 1;
+      changed = true;
+    }
     const trackerPanelPatched = patchTrackerPanelBridge(assetSource);
     if (trackerPanelPatched !== null) {
       assetSource = trackerPanelPatched;
@@ -245,6 +277,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot }) {
   }
   if (chatInputPatchCount !== 2) throw new Error(`Mari Bridge expected two chat input assets, found ${chatInputPatchCount}`);
   if (chatSettingsPatchCount !== 1) throw new Error(`Mari Bridge expected one chat settings asset, found ${chatSettingsPatchCount}`);
+  if (slashCommandListPatchCount !== 1) throw new Error(`Mari Bridge expected one slash command list asset, found ${slashCommandListPatchCount}`);
   if (trackerPanelPatchCount !== 1) throw new Error(`Mari Bridge expected one Tracker panel asset, found ${trackerPanelPatchCount}`);
   if (roleplayHudPatchCount !== 1) throw new Error(`Mari Bridge expected one Roleplay HUD asset, found ${roleplayHudPatchCount}`);
   for (const name of assetJavaScriptNames) {
@@ -278,5 +311,6 @@ export async function prepareClientOverlay({ dataDir, sourceRoot }) {
   await writeFile(join(temporary, ".mari-bridge-ready"), `${fingerprint}\n`);
   await rm(target, { recursive: true, force: true });
   await rename(temporary, target);
+  await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
   return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-ui", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud"] };
 }

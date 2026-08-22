@@ -29,6 +29,7 @@ function createCommandRegistry() {
     register(ownerId, input = {}) {
       const id = String(input.id ?? "").trim();
       const commands = [...new Set((input.commands ?? []).map((value) => String(value).trim().toLowerCase()).filter((value) => /^\/[a-z0-9][a-z0-9_-]*$/u.test(value)))];
+      const aliases = [...new Set((input.aliases ?? []).map((value) => String(value).trim().toLowerCase()).filter((value) => /^\/[a-z0-9][a-z0-9_-]*$/u.test(value)))];
       const hijacks = [...new Set((input.hijacks ?? []).map((value) => String(value).trim().toLowerCase()).filter((value) => /^\/[a-z0-9][a-z0-9_-]*$/u.test(value)))];
       if (!id || commands.length + hijacks.length === 0 || typeof input.handler !== "function") {
         throw new TypeError("Mari Bridge command registration requires id, commands, and handler");
@@ -39,8 +40,11 @@ function createCommandRegistry() {
         ownerId,
         id,
         commands: Object.freeze(commands),
+        aliases: Object.freeze(aliases),
         hijacks: Object.freeze(hijacks),
         modes: Object.freeze([...(input.modes ?? ["roleplay", "conversation"])]),
+        description: String(input.description ?? `${ownerId} command`).trim(),
+        usage: String(input.usage ?? commands[0] ?? "").trim(),
         priority: Number.isFinite(input.priority) ? Number(input.priority) : 0,
         handler: input.handler,
         owns: typeof input.owns === "function" ? input.owns : () => true,
@@ -54,7 +58,7 @@ function createCommandRegistry() {
       if (!command) return null;
       const registration = sorted().find((item) => {
         if (!item.modes.includes(context.mode)) return false;
-        const direct = item.commands.includes(command);
+        const direct = item.commands.includes(command) || item.aliases.includes(command);
         const hijacked = item.hijacks.includes(command);
         return (direct || hijacked) && item.owns({ raw: String(raw), command, tokens: tokens.slice(1), hijacked });
       });
@@ -74,6 +78,17 @@ function createCommandRegistry() {
           },
         }),
       });
+    },
+    list(context = {}) {
+      return sorted()
+        .filter((item) => item.modes.includes(context.mode))
+        .flatMap((item) => item.commands.map((command) => Object.freeze({
+          name: command.slice(1),
+          aliases: Object.freeze(item.aliases.map((alias) => alias.slice(1))),
+          description: item.description,
+          usage: item.usage || command,
+          local: true,
+        })));
     },
     count() {
       return registrations.size;
@@ -439,7 +454,7 @@ function createClientRuntime(serverHealth) {
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.2",
+    implementationVersion: "1.0.3",
     status: "ready",
     capabilities,
     serverHealth,
@@ -549,6 +564,9 @@ function createClientRuntime(serverHealth) {
       setClientDiagnostic("data-mari-bridge-last-command-mode", String(context?.mode ?? ""));
       setClientDiagnostic("data-mari-bridge-last-command-owner", match?.command?.id ?? "none");
       return match;
+    },
+    listCommands(context) {
+      return commands.list(context);
     },
     stopDraft(chatId) {
       return drafts.abortChat(chatId);

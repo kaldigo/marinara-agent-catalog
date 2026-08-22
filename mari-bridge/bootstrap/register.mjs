@@ -1,7 +1,7 @@
 import { registerHooks } from "node:module";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 
 const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
 export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.3"]);
@@ -25,6 +25,22 @@ export function detectMarinaraEngine(entry = process.argv[1], cwd = process.cwd(
   return Object.freeze({ root: null, version: null });
 }
 
+function detectPreparedClientRoot(engineVersion) {
+  const dataDir = process.env.DATA_DIR;
+  if (!dataDir) return null;
+  const clientBase = resolve(dataDir, "mari-bridge", "client");
+  try {
+    const pointer = JSON.parse(readFileSync(resolve(dataDir, "mari-bridge", "client-current.json"), "utf8"));
+    const root = resolve(String(pointer?.root ?? ""));
+    if (pointer?.engineVersion !== engineVersion) return null;
+    if (root !== clientBase && !root.startsWith(`${clientBase}${sep}`)) return null;
+    if (readFileSync(resolve(root, ".mari-bridge-ready"), "utf8").trim() !== pointer?.fingerprint) return null;
+    return root;
+  } catch {
+    return null;
+  }
+}
+
 const detectedEngine = detectMarinaraEngine();
 const engineCompatible = SUPPORTED_ENGINE_VERSIONS.includes(detectedEngine.version);
 const kernel = globalThis[KERNEL_SYMBOL] ?? {
@@ -32,7 +48,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.2";
+kernel.version = "1.0.3";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -276,6 +292,15 @@ function patchServerModule(url, inputSource) {
       return source;
 }
 
+export function decodeModuleSource(source) {
+  if (typeof source === "string") return source;
+  if (source instanceof ArrayBuffer) return Buffer.from(source).toString("utf8");
+  if (ArrayBuffer.isView(source)) {
+    return Buffer.from(source.buffer, source.byteOffset, source.byteLength).toString("utf8");
+  }
+  return String(source ?? "");
+}
+
 const SERVER_PATCH_TARGETS = Object.freeze([
   ["capability-module-runtime.service.js", ["packages", "server", "dist", "services", "capability-packages", "capability-module-runtime.service.js"]],
   ["services/prompt/assembler.js", ["packages", "server", "dist", "services", "prompt", "assembler.js"]],
@@ -324,11 +349,12 @@ if (disabled) {
   kernel.active = true;
   kernel.patches["engine.version"] = "applied";
   kernel.nativeClientRoot = resolve(detectedEngine.root, "packages", "client", "dist");
+  kernel.clientRoot = detectPreparedClientRoot(detectedEngine.version) ?? undefined;
   registerHooks({
     load(url, context, nextLoad) {
       const result = nextLoad(url, context);
-      if (result.format !== "module" || typeof result.source !== "string") return result;
-      const inputSource = String(result.source);
+      if (result.format !== "module" || result.source == null) return result;
+      const inputSource = decodeModuleSource(result.source);
       const source = patchServerModule(url, inputSource);
       return source === inputSource ? result : { ...result, source };
     },

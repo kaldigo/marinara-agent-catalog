@@ -13,6 +13,7 @@ import {
   patchChatSettingsBridge,
   patchGenerationControllerEvents,
   patchRoleplayHudBridge,
+  patchSlashCommandListBridge,
   patchTrackerPanelBridge,
   versionAssetReferences,
 } from "../src/server/client-overlay.js";
@@ -161,10 +162,21 @@ const featureSession = globalThis[clientSymbol].registerConsumer({
 featureSession.commands.register({
   id: "probe",
   commands: ["/probe"],
+  aliases: ["/probe_alias"],
+  description: "Probe the bridge command registry",
+  usage: "/probe <value>",
   handler: ({ tokens }) => ({ feedback: tokens.join("|") }),
 });
 const bridgeCommand = globalThis[clientSymbol].matchCommand('/probe "two words"', { mode: "roleplay", chatId: "chat-1" });
 assert.equal((await bridgeCommand.command.execute(bridgeCommand.args, {})).feedback, "two words");
+assert.equal(globalThis[clientSymbol].matchCommand("/probe_alias value", { mode: "roleplay" })?.command.id, "feature-test:probe");
+assert.deepEqual(globalThis[clientSymbol].listCommands({ mode: "roleplay" }), [{
+  name: "probe",
+  aliases: ["probe_alias"],
+  description: "Probe the bridge command registry",
+  usage: "/probe <value>",
+  local: true,
+}]);
 assert.equal(globalThis[clientSymbol].resolveQuickReply("/probe {{input}} + {{input}}", "draft"), "/probe draft + draft");
 assert.equal(globalThis[clientSymbol].resolveQuickReply("unchanged", "draft"), "unchanged");
 featureSession.ui.register({ id: "settings", slot: "chat.settings", view: "settings" });
@@ -227,11 +239,16 @@ const patchedChatInput = patchChatInputBridge(chatInputFixture);
 assert.equal((patchedChatInput.match(/matchCommand/gu) ?? []).length, 2);
 assert.equal((patchedChatInput.match(/resolveQuickReply/gu) ?? []).length, 1);
 assert.equal((patchedChatInput.match(/composer\.above-input/gu) ?? []).length, 1);
-assert.equal((patchedChatInput.match(/setDraft:Z/gu) ?? []).length, 1);
-assert.equal((patchedChatInput.match(/setDraftGenerating:Z/gu) ?? []).length, 1);
+assert.equal((patchedChatInput.match(/setDraft:mariBridgeValue/gu) ?? []).length, 1);
+assert.equal((patchedChatInput.match(/setDraftGenerating:mariBridgeGenerating/gu) ?? []).length, 1);
+assert.match(patchedChatInput, /const mariBridgeDraftText=String/u);
 assert.equal((patchedChatInput.match(/stopDraft\(chat\)/gu) ?? []).length, 1);
 assert.match(patchedChatInput, /\.mari-chat-input textarea/u);
 assert.match(patchedChatInput, /dispatchEvent\(new Event\("input"/u);
+const slashCommandListFixture = 'const native=[{name:"help",description:"Show available slash commands"}];function available(item,ctx){return true}function games(value){return[]}function list(ctx={}){return[...native,...games(ctx.conversationGames)].filter(item=>available(item,ctx))}';
+const patchedSlashCommandList = patchSlashCommandListBridge(slashCommandListFixture);
+assert.match(patchedSlashCommandList, /listCommands\(ctx\)/u);
+assert.throws(() => patchSlashCommandListBridge('const marker="Show available slash commands"'), /expected one registry builder/u);
 assert.equal(
   versionAssetReferences(
     'import("./ChatRoleplaySurface-abc.js");import("./vendor.js");',
@@ -327,9 +344,10 @@ assert.match(bootstrapPatchSource, /agent\.result-apply-main/u);
 assert.match(bootstrapPatchSource, /agent\.result-apply-retry/u);
 assert.match(bootstrapPatchSource, /tracker\.context-committed/u);
 assert.match(bootstrapPatchSource, /tracker\.context-agent/u);
-const { patchCommittedTrackerActiveGuard } = await import(
+const { decodeModuleSource, patchCommittedTrackerActiveGuard } = await import(
   new URL(`../bootstrap/register.mjs?check=${Date.now()}`, import.meta.url)
 );
+assert.equal(decodeModuleSource(new TextEncoder().encode("export const value = 1;")), "export const value = 1;");
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";
 const patchedLegacyCommittedGuard = patchCommittedTrackerActiveGuard(legacyCommittedGuard);
