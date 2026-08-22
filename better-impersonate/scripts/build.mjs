@@ -69,20 +69,54 @@ function manifest() {
     },
     contributions: {
       agentDetail: { agentIds: ["better-impersonate"] },
-      slots: ["chat-settings"],
     },
-    files: [{ path: "client.js", sha256: "0".repeat(64), bytes: 0 }],
+    files: [
+      { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
+      { path: "agents.json", sha256: "0".repeat(64), bytes: 0 },
+    ],
     permissions: ["chat-read", "chat-write", "network", "storage", "ui"],
     restartRequired: false,
   };
 }
 
 function agentDefinitions() {
+  const defaultSettings = {
+    draftTemplate: [
+      "{{base_prompt}}",
+      "",
+      "Guidance for {{user}}'s next in-character response:",
+      "{{impersonate_direction}}",
+      "",
+      "Use this as a suggestion for the generated response, not as dialogue or chat history.",
+      "Do not quote or rush to fulfill the suggestion; let it guide you naturally.",
+    ].join("\n").trim(),
+    thinkingTemplate: [
+      "{{base_prompt}}",
+      "",
+      "Private inner state for {{user}}:",
+      "{{impersonate_direction}}",
+      "",
+      "Use this as quiet context for {{user}}'s current thoughts and feelings. Do not treat it as dialogue, chat history, or an instruction for what must happen next.",
+      "Let this ground the response in {{user}}'s feelings rather than force an outcome.",
+    ].join("\n").trim(),
+    continueTemplate: [
+      "{{base_prompt}}",
+      "",
+      "Continue {{user}}'s current in-character draft.",
+      "The draft so far is:",
+      "{{impersonate_direction}}",
+      "",
+      "Return only the continuation text.",
+      "Do not restart the draft.",
+      "Do not repeat any part of the draft.",
+      "Do not explain.",
+    ].join("\n").trim(),
+  };
   return [
     {
       id: "better-impersonate",
       name: "Better Impersonate",
-      description: "Feature marker for bridge-registered persona draft commands.",
+      description: "Global bridge-registered persona draft slash commands and prompt templates.",
       category: "misc",
       phase: "pre_generation",
       execution: "feature",
@@ -91,7 +125,7 @@ function agentDefinitions() {
       runtimeDisabled: true,
       modeAllowlist: ["roleplay", "visual_novel"],
       defaultTools: [],
-      defaultSettings: {},
+      defaultSettings,
       defaultPromptTemplate: "",
     },
   ];
