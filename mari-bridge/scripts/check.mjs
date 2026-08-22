@@ -1,0 +1,325 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createBridgeRuntime } from "../src/server/runtime.js";
+import { createPromptRegistry } from "../src/server/prompt-registry.js";
+import { createAgentResultRegistry } from "../src/server/result-registry.js";
+import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
+import {
+  patchActiveChatEvents,
+  patchChatInputBridge,
+  patchChatSettingsBridge,
+  patchGenerationControllerEvents,
+  patchRoleplayHudBridge,
+  patchTrackerPanelBridge,
+  versionAssetReferences,
+} from "../src/server/client-overlay.js";
+import { schedulePackageBootstrapRestart } from "../src/server/bootstrap-restart.js";
+import { installBootstrapFile } from "../src/server/bootstrap-install.js";
+import { MariBridgeUnavailableError } from "../src/shared/contracts.js";
+
+const runtime = createBridgeRuntime({ capabilities: ["runtime.health"] });
+assert.throws(
+  () => runtime.registerConsumer({ consumerId: "test-consumer", api: { major: 1, minMinor: 0 }, require: [] }),
+  (error) => error instanceof MariBridgeUnavailableError && error.reason === "starting",
+);
+runtime.markReady();
+assert.throws(
+  () => runtime.registerConsumer({ consumerId: "missing-cap", api: { major: 1, minMinor: 0 }, require: ["nope"] }),
+  (error) => error instanceof MariBridgeUnavailableError && error.reason === "capability-missing",
+);
+assert.throws(
+  () => runtime.registerConsumer({ consumerId: "future-api", api: { major: 2, minMinor: 0 }, require: [] }),
+  (error) => error instanceof MariBridgeUnavailableError && error.reason === "incompatible-api",
+);
+let cleaned = 0;
+const session = runtime.registerConsumer({
+  consumerId: "test-consumer",
+  api: { major: 1, minMinor: 0 },
+  require: ["runtime.health"],
+});
+session.addCleanup(() => { cleaned += 1; });
+await runtime.markUnhealthy("test failure");
+assert.equal(session.signal.aborted, true);
+assert.equal(cleaned, 1);
+await runtime.dispose();
+assert.equal(cleaned, 1);
+
+const hostCalls = [];
+const hostRuntime = createBridgeRuntime({
+  capabilities: ["host.request"],
+  hostRequest: async (ownerId, input) => {
+    hostCalls.push({ ownerId, input });
+    return { ok: true };
+  },
+});
+hostRuntime.markReady();
+const hostSession = hostRuntime.registerConsumer({
+  consumerId: "host-test",
+  api: { major: 1, minMinor: 0 },
+  require: ["host.request"],
+});
+assert.deepEqual(await hostSession.host.request({ method: "PATCH", path: "/api/test", body: { value: 1 } }), { ok: true });
+assert.equal(hostCalls[0].ownerId, "host-test");
+await hostSession.close();
+await hostRuntime.dispose();
+
+const resultRegistry = createAgentResultRegistry();
+const resultCalls = [];
+resultRegistry.register("result-owner", {
+  id: "notes",
+  resultType: "notes_update",
+  agentTypes: ["notes"],
+  apply: async (scope) => resultCalls.push(scope.result.data),
+});
+assert.equal(resultRegistry.hasResultType("notes_update"), true);
+assert.equal((await resultRegistry.apply({ result: { success: true, type: "notes_update", agentType: "notes", data: { value: 1 } } })).handled, true);
+assert.deepEqual(resultCalls, [{ value: 1 }]);
+assert.equal((await resultRegistry.apply({ result: { success: true, type: "notes_update", agentType: "other" } })).handled, false);
+
+const trackerRegistry = createTrackerContextRegistry();
+trackerRegistry.register("tracker-owner", {
+  id: "notes",
+  agentTypes: ["notes"],
+  formatCommitted: () => ({ label: "Notes", content: "Remember this." }),
+  formatAgentState: () => ({ notes: ["Remember this."] }),
+});
+assert.equal(trackerRegistry.hasActive(["notes"]), true);
+const trackerParts = [];
+trackerRegistry.appendCommittedSections({
+  activeAgentIds: ["notes"],
+  wrapFormat: "xml",
+  wrapContent: (content, label) => `<${label}>${content}</${label}>`,
+}, trackerParts);
+assert.deepEqual(trackerParts, ["<Notes>Remember this.</Notes>"]);
+const trackerSummary = {};
+trackerRegistry.appendAgentState({ activeAgentIds: ["notes"] }, trackerSummary);
+assert.deepEqual(trackerSummary, { notes: { notes: ["Remember this."] } });
+
+const clientSymbol = Symbol.for("marinara.mari-bridge.client.v1");
+const customElementDefinitions = new Map();
+const clientEventListeners = new Map();
+globalThis.addEventListener = (type, listener) => {
+  const listeners = clientEventListeners.get(type) ?? new Set();
+  listeners.add(listener);
+  clientEventListeners.set(type, listeners);
+};
+function dispatchClientEvent(type, detail) {
+  for (const listener of clientEventListeners.get(type) ?? []) listener({ type, detail });
+}
+globalThis.fetch = async () => ({
+  ok: true,
+  async json() {
+    return {
+      status: "ok",
+      version: "2.4.2",
+      capabilityPackages: {
+        packages: [{ id: "mari-bridge", version: "0.2.0", readiness: "ready", ready: true }],
+      },
+    };
+  },
+});
+globalThis.HTMLElement = class HTMLElement {};
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: { getItem() { return null; } },
+});
+globalThis.customElements = {
+  get(name) { return customElementDefinitions.get(name); },
+  define(name, definition) { customElementDefinitions.set(name, definition); },
+};
+globalThis.document = { documentElement: { dataset: {} } };
+const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
+const preloadedClientSource = clientSource.replace(
+  "const bridgeFirst = isBridgeFirstImport();",
+  "const bridgeFirst = true; // unit fixture simulates the preload URL",
+);
+await import(`data:text/javascript;base64,${Buffer.from(preloadedClientSource).toString("base64")}`);
+assert.equal(globalThis[clientSymbol]?.status, "ready");
+assert.equal(typeof customElements.get("marinara-capability-mari-bridge"), "function");
+assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
+const clientSession = globalThis[clientSymbol].registerConsumer({
+  consumerId: "client-test",
+  api: { major: 1, minMinor: 0 },
+  require: ["generation.lifecycle"],
+});
+const generationSnapshots = [];
+clientSession.generation.subscribe((snapshot) => generationSnapshots.push(snapshot));
+dispatchClientEvent("marinara:mari-phase", { chatId: "chat-1", phase: "thinking" });
+assert.equal(clientSession.generation.getSnapshot().mainActive, true);
+dispatchClientEvent("marinara:generation-complete", { chatId: "chat-1" });
+assert.equal(clientSession.generation.getSnapshot().mainActive, false);
+assert.equal(generationSnapshots.length, 3);
+await clientSession.close();
+const featureSession = globalThis[clientSymbol].registerConsumer({
+  consumerId: "feature-test",
+  api: { major: 1, minMinor: 0 },
+  require: ["commands", "quick-replies.input-macro", "ui.chat-settings"],
+});
+featureSession.commands.register({
+  id: "probe",
+  commands: ["/probe"],
+  handler: ({ tokens }) => ({ feedback: tokens.join("|") }),
+});
+const bridgeCommand = globalThis[clientSymbol].matchCommand('/probe "two words"', { mode: "roleplay", chatId: "chat-1" });
+assert.equal((await bridgeCommand.command.execute(bridgeCommand.args, {})).feedback, "two words");
+assert.equal(globalThis[clientSymbol].resolveQuickReply("/probe {{input}} + {{input}}", "draft"), "/probe draft + draft");
+assert.equal(globalThis[clientSymbol].resolveQuickReply("unchanged", "draft"), "unchanged");
+featureSession.ui.register({ id: "settings", slot: "chat.settings", view: "settings" });
+assert.equal(globalThis[clientSymbol].ui.list("chat.settings")[0].ownerId, "feature-test");
+await featureSession.close();
+globalThis.fetch = async (url) => {
+  assert.equal(url, "/api/generate/dryRun");
+  return new Response(
+    [
+      'data: {"type":"dryrun_started","data":{"runId":"run-1"}}\n\n',
+      'data: {"type":"token","data":"Hello"}\n\n',
+      'data: {"type":"token","data":" world"}\n\n',
+      'data: {"type":"result","data":{"content":"Hello world"}}\n\n',
+      'data: {"type":"done"}\n\n',
+    ].join(""),
+    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+  );
+};
+const draftSession = globalThis[clientSymbol].registerConsumer({
+  consumerId: "draft-test",
+  api: { major: 1, minMinor: 0 },
+  require: ["generation.draft"],
+});
+const draftUpdates = [];
+assert.equal(
+  await draftSession.drafts.generate({
+    chatId: "chat-1",
+    body: { impersonate: true },
+    onUpdate: (content) => draftUpdates.push(content),
+  }),
+  "Hello world",
+);
+assert.equal(draftUpdates.at(-1), "Hello world");
+assert.equal(draftSession.drafts.getSnapshot("chat-1").activeCount, 0);
+await draftSession.close();
+delete globalThis[clientSymbol];
+
+const compiledClientFixture = 'const Qn="marinara-active-chat-id";function setChat(t){try{t?localStorage.setItem(Qn,t):localStorage.removeItem(Qn)}catch{}}';
+const patchedClientFixture = patchActiveChatEvents(compiledClientFixture);
+assert.match(patchedClientFixture, /marinara:active-chat/u);
+assert.throws(() => patchActiveChatEvents("const nope = true"), /expected one storage key/u);
+const generationFixture = "setAbortController:(t,a)=>e(o=>{const r=new Map(o.abortControllers);return a?r.set(t,a):r.delete(t),{abortControllers:r}})";
+const patchedGenerationFixture = patchGenerationControllerEvents(generationFixture);
+assert.match(patchedGenerationFixture, /marinara:generation-controller/u);
+assert.throws(() => patchGenerationControllerEvents("const nope = true"), /expected one store action/u);
+const chatInputFixture = [
+  'const first=match(raw,{mode:"roleplay",availableCapabilityIds:ids});if(first){const ctx=build();if(!ctx)return;const submitted=field.current?.value??"",height=field.current?.style.height??"auto",attachments=list,completions=items;field.current&&(field.current.value="",field.current.style.height="auto"),sync("");clear(chat);try{const result=await first.command.execute(first.args,ctx);result.feedback&&feedback(result.feedback)}catch(error){const active=store.getState().activeChatId,current=field.current?.value??"",restore=active===chat&&current.length===0;submitted&&(restore||active!==chat)&&setDraft(chat,submitted)}}',
+  'const second=match(line,{mode:"roleplay",availableCapabilityIds:ids});',
+  'button={onClick:streaming?()=>store.getState().stopGeneration(chat??void 0):send};',
+  'handler=react.useCallback(async content=>{const field=ref.current;!field||busy||(field.value=content,resize(field),sync(content),await send())},[]);',
+  'react.jsxs("div",{className:"mari-chat-input chat-input-container px-3 pb-3",children:[nativeChild]);',
+  'description:"Send a saved custom quick reply"',
+  'const localized="clearOrSendAttachmentsBeforeUsingQuickImpersonate";',
+].join("");
+const patchedChatInput = patchChatInputBridge(chatInputFixture);
+assert.equal((patchedChatInput.match(/matchCommand/gu) ?? []).length, 2);
+assert.equal((patchedChatInput.match(/resolveQuickReply/gu) ?? []).length, 1);
+assert.equal((patchedChatInput.match(/composer\.above-input/gu) ?? []).length, 1);
+assert.equal((patchedChatInput.match(/setDraft:Z/gu) ?? []).length, 1);
+assert.equal((patchedChatInput.match(/setDraftGenerating:Z/gu) ?? []).length, 1);
+assert.equal((patchedChatInput.match(/stopDraft\(chat\)/gu) ?? []).length, 1);
+assert.match(patchedChatInput, /\.mari-chat-input textarea/u);
+assert.match(patchedChatInput, /dispatchEvent\(new Event\("input"/u);
+assert.equal(
+  versionAssetReferences(
+    'import("./ChatRoleplaySurface-abc.js");import("./vendor.js");',
+    ["ChatRoleplaySurface-abc.js", "vendor.js"],
+    "overlay123",
+  ),
+  'import("./ChatRoleplaySurface-abc.js?mariBridge=overlay123");import("./vendor.js?mariBridge=overlay123");',
+);
+const chatSettingsFixture = [
+  'function section({id:sectionId,label,children:body}){',
+  'return open&&react.jsx("div",{className:cn("px-4 pb-3",contentClass??"pt-3"),children:body})',
+  '}',
+  'const marker="data-chat-settings-section";',
+].join("");
+const patchedChatSettings = patchChatSettingsBridge(chatSettingsFixture);
+assert.match(patchedChatSettings, /sectionId==="roleplay-agents"/u);
+assert.match(patchedChatSettings, /name:"chat\.settings"/u);
+const trackerPanelFixture = 'react.jsx("section",{"data-component":"TrackerDataSidebar",className:"panel"})';
+const patchedTrackerPanel = patchTrackerPanelBridge(trackerPanelFixture);
+assert.match(patchedTrackerPanel, /mountNativeSlot\(Z,"tracker\.panel",\{target:"content"\}\)/u);
+assert.equal(
+  patchTrackerPanelBridge('const selector = \'[data-component="TrackerDataSidebarDesktop.right"]\';'),
+  null,
+);
+const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
+const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
+assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
+
+const bootstrapFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-check-"));
+const bootstrapSource = path.join(bootstrapFixtureRoot, "source.mjs");
+const bootstrapTarget = path.join(bootstrapFixtureRoot, "stable", "register.mjs");
+await fs.writeFile(bootstrapSource, "export const marker = 1;\n");
+assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
+  path: bootstrapTarget,
+  changed: true,
+});
+const firstTargetStat = await fs.stat(bootstrapTarget);
+assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
+  path: bootstrapTarget,
+  changed: false,
+});
+assert.equal((await fs.stat(bootstrapTarget)).mtimeMs, firstTargetStat.mtimeMs);
+const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
+globalThis[kernelSymbol] = { active: true };
+const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
+assert.deepEqual(bootstrapResult, { scheduled: false, reason: "preload-active" });
+const bootstrapAttempt = JSON.parse(
+  await fs.readFile(path.join(bootstrapFixtureRoot, "mari-bridge", "bootstrap-attempt.json"), "utf8"),
+);
+assert.equal(bootstrapAttempt.attempts, 0);
+assert.equal(bootstrapAttempt.status, "preload-active");
+delete globalThis[kernelSymbol];
+await fs.rm(bootstrapFixtureRoot, { recursive: true, force: true });
+
+const prompts = createPromptRegistry();
+prompts.registerSuppression("test-consumer", { id: "hide-tracker", identifiers: ["tracker_context"] });
+prompts.registerTransform("test-consumer", {
+  id: "strip-gfx",
+  stage: "history",
+  transform: (messages) => messages.map((message) => ({ ...message, content: message.content.replace(/<gfx>.*?<\/gfx>/gu, "") })),
+});
+prompts.registerInjection("test-consumer", {
+  id: "state",
+  position: "before-history",
+  role: "system",
+  content: "Package state",
+});
+const prepared = await prompts.prepareAssemblerInput({
+  chatId: "chat-1",
+  characterIds: ["char-1"],
+  sections: [
+    { id: "one", identifier: "tracker_context", name: "Tracker", enabled: "true" },
+    { id: "two", identifier: "system", name: "System", enabled: "true" },
+  ],
+  chatMessages: [{ role: "assistant", content: "Hello <gfx>old</gfx>", contextKind: "history" }],
+});
+assert.equal(prepared.sections[0].enabled, "false");
+assert.equal(prepared.sections[1].enabled, "true");
+assert.equal(prepared.chatMessages[0].content, "Hello ");
+const finalized = await prompts.finalizeAssemblerMessages(prepared, prepared.chatMessages);
+assert.equal(finalized[0].content, "Package state");
+assert.equal(finalized[1].contextKind, "history");
+const bootstrapPatchSource = await fs.readFile(new URL("../bootstrap/register.mjs", import.meta.url), "utf8");
+assert.match(bootstrapPatchSource, /prompt\.generate-fallback/u);
+assert.match(bootstrapPatchSource, /prompt\.active-agents\.assembler/u);
+assert.match(bootstrapPatchSource, /prompt\.active-agents\.context/u);
+assert.match(bootstrapPatchSource, /prompt\.active-agents\.macro/u);
+assert.match(bootstrapPatchSource, /active-agents/u);
+assert.match(bootstrapPatchSource, /presetOwnsAgentPlacement/u);
+assert.match(bootstrapPatchSource, /bridgedMessagesForGen/u);
+assert.match(bootstrapPatchSource, /agent\.result-types/u);
+assert.match(bootstrapPatchSource, /agent\.result-apply-main/u);
+assert.match(bootstrapPatchSource, /agent\.result-apply-retry/u);
+assert.match(bootstrapPatchSource, /tracker\.context-committed/u);
+assert.match(bootstrapPatchSource, /tracker\.context-agent/u);
+console.log("Mari Bridge runtime checks passed.");

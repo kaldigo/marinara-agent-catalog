@@ -1,0 +1,10 @@
+{
+  "name": "marinara-mari-bridge-smoke-package",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs && npm run build"
+  }
+}

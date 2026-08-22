@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": false,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package",
+    "sharedRoots": ["_mari-bridge"]
+  },
+  "package": {
+    "id": "mari-bridge-smoke",
+    "name": "Mari Bridge Smoke Test",
+    "description": "Test-only consumer that proves Mari Bridge SDK gating and cleanup.",
+    "kind": ["agent"],
+    "permissions": ["prompt-context", "routes", "ui"],
+    "restartRequired": true
+  }
+}

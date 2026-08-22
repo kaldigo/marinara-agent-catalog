@@ -1,0 +1,11 @@
+{
+  "name": "marinara-mari-bridge-package",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Installable Mari Bridge runtime for Marinara Engine capability packages.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs && npm run build && node scripts/validate-dist.mjs"
+  }
+}
