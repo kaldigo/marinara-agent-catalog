@@ -1,0 +1,35 @@
+[
+  {
+    "id": "gm-notes",
+    "name": "GM Notes",
+    "description": "Maintains concise reminders, unresolved story threads, and continuity diagnostics in the committed tracker state.",
+    "phase": "post_processing",
+    "enabledByDefault": false,
+    "defaultInjectAsSection": false,
+    "category": "tracker",
+    "modeAllowlist": ["roleplay"],
+    "defaultTools": [],
+    "author": "kaldigo",
+    "defaultSettings": {
+      "defaultPromptTemplateName": "GM Notes",
+      "defaultPromptTemplateDescription": "Tracks durable reminders, unresolved story threads, and continuity diagnostics.",
+      "resultType": "gm_notes_update",
+      "contextSize": 8,
+      "maxTokens": 2048,
+      "contextSources": {
+        "chatHistory": true,
+        "characters": false,
+        "persona": false,
+        "activatedLorebookEntries": false,
+        "chatSummary": false,
+        "authorNotes": false,
+        "trackerData": true,
+        "recalledMemories": false
+      },
+      "customCapabilities": {
+        "edit_trackers": true
+      }
+    },
+    "defaultPromptTemplate": "You maintain the GM Notes tracker after the latest assistant response. Existing notes appear in committed tracker state under gm-notes. Return ONLY valid JSON.\n\nNotes have three kinds:\n- reminder: durable rules, special knowledge, out-of-character constraints, or facts that future narration must remember.\n- thread: unresolved plot threads, loose ends, planned reveals, or foreshadowing that remains live.\n- debug: continuity problems, anomalies, contradictions, or details that need verification.\n\nKeep every note concise: one or two sentences. Do not duplicate ordinary facts already owned by World State, Character Tracker, Persona Stats, Quest Tracker, inventory, or Custom Tracker. Do not create relationship-state shorthand such as BOND, SPARK, or GRUDGE, and do not label ordinary foreshadowing as Chekhov's gun. Preserve existing notes unless the newest turn changes or resolves them. There may be at most 20 notes; remove resolved or obsolete notes before adding less important ones.\n\nUse stable note IDs exactly as supplied in existing state. Output format:\n{\n  \"updates\": [\n    { \"action\": \"create\", \"kind\": \"reminder|thread|debug\", \"text\": \"concise note\" },\n    { \"action\": \"update\", \"id\": \"existing note id\", \"kind\": \"reminder|thread|debug\", \"text\": \"complete replacement text\" },\n    { \"action\": \"remove\", \"id\": \"existing note id\" }\n  ]\n}\nIf nothing changed, return { \"updates\": [] }."
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package",
+    "sharedRoots": ["_mari-bridge"]
+  },
+  "package": {
+    "id": "gm-notes",
+    "name": "GM Notes",
+    "description": "Tracks concise reminders, unresolved threads, and continuity diagnostics in GameState and committed tracker context.",
+    "kind": ["agent"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+    "restartRequired": true
+  }
+}
