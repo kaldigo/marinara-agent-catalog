@@ -3,10 +3,9 @@
 Mari Bridge is the installable compatibility foundation for capability packages
 that need control beyond Marinara's current public package API.
 
-This folder now contains the first implementation milestone and remains
-deliberately unpublished:
+This folder contains the published package implementation:
 
-- `includeInMain` is `false`.
+- `includeInMain` is `true`.
 - `processing.kind` is `package-build`.
 - The prepared package emits server and client entrypoints plus a stable Node
   preload.
@@ -14,15 +13,16 @@ deliberately unpublished:
   scoped consumer sessions, cleanup, and revocation.
 - The `_mari-bridge/sdk` wrappers fail closed before consumer code runs.
 
-Do not treat the designs here as stable API until the compatibility probes and
-first end-to-end patch are working.
+The consumer SDK is stable at API major version 1. Engine source patches remain
+explicitly version-bound.
 
 ## Current implementation boundary
 
-Version `1.0.0` adds package-owned structured agent result types, committed and
-agent-facing tracker-context sections, and native mount points for the docked
-Tracker panel and Roleplay HUD. It also retains the package-owned loader, SDK dependency gate, prompt
-kernel, and first client lifecycle patches on Engine 2.4.2. Count-checked
+Version `1.0.2` supports Marinara Engine 2.4.3 and adds package-owned structured
+agent result types, committed and agent-facing tracker-context sections, and
+native mount points for the docked Tracker panel and Roleplay HUD. It also
+retains the package-owned loader, SDK dependency gate, prompt kernel, and first
+client lifecycle patches. Count-checked
 transforms make `mari-bridge` activate first, serve its client before the Engine
 client, patch both preset assembly and no-preset provider preparation, and emit
 native active-chat and generation-controller events. It also owns per-chat streamed dry runs through
@@ -30,6 +30,13 @@ native active-chat and generation-controller events. It also owns per-chat strea
 which writes through Marinara's persisted draft store after the originating
 screen unmounts. The isolated test instance verifies the bridge and its current
 consumers all reach `ready` after a restart.
+
+Before registering Node loader hooks, the preload requires an exact supported
+Engine version and preflights every target module and anchor. A version mismatch,
+missing module, or changed anchor applies no patches: Marinara starts with its
+native code, Mari Bridge exposes diagnostics only, and all consumer packages
+remain stopped. This is the safe rollback boundary; patches are never removed
+after an Engine module has begun evaluating.
 
 The package writes a stable preload under `DATA_DIR` and contains the POSIX
 first-start `execve` bounce with a persistent loop guard. The direct local
