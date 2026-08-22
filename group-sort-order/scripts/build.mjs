@@ -49,7 +49,11 @@ function manifest() {
       agentDetail: { agentIds: ["group-sort-order"] },
       slots: ["chat-runtime", "chat-settings"]
     },
-    files: [{ path: "server.mjs", sha256: "0".repeat(64), bytes: 0 }],
+    files: [
+      { path: "server.mjs", sha256: "0".repeat(64), bytes: 0 },
+      { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
+      { path: "agents.json", sha256: "0".repeat(64), bytes: 0 }
+    ],
     permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
     restartRequired: true
   };

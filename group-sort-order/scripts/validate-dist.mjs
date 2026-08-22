@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "group-sort-order", "manifest id is group-sort-order");
-assert(manifest.version === "1.2.2", "manifest version is 1.2.2");
+assert(manifest.version === "1.2.3", "manifest version is 1.2.3");
 assert(manifest.engine?.min === "2.4.0", "manifest requires the capability request resolver introduced in Engine 2.4");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
@@ -42,6 +42,10 @@ assert(!clientSource.includes("querySelector(\"[data-chat-id]\")"), "client does
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);
+}
+const manifestFiles = new Set((manifest.files ?? []).map((file) => file.path));
+for (const relativePath of Object.values(manifest.entrypoints)) {
+  assert(manifestFiles.has(relativePath), `manifest files include entrypoint: ${relativePath}`);
 }
 
 for (const file of listFiles(packageRoot)) {

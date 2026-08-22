@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "presence", "manifest id is presence");
-assert(manifest.version === "1.4.2", "manifest version is 1.4.2");
+assert(manifest.version === "1.4.3", "manifest version is 1.4.3");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps Presence before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
@@ -35,6 +35,10 @@ assert(!bundledClient.includes("watchActiveChatId"), "client does not poll or sc
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);
+}
+const manifestFiles = new Set((manifest.files ?? []).map((file) => file.path));
+for (const relativePath of Object.values(manifest.entrypoints)) {
+  assert(manifestFiles.has(relativePath), `manifest files include entrypoint: ${relativePath}`);
 }
 
 const emittedFiles = listFiles(packageRoot);

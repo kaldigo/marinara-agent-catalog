@@ -537,7 +537,7 @@ function extractMessageCreateChatId(url) {
 function isPresenceTrackerEnabled(chat) {
   const metadata = normalizeObject(chat?.metadata);
   if (!uniqueStrings(metadata.activeAgentIds).includes(PRESENCE_PACKAGE_ID)) return false;
-  return metadata.enableAgents !== false;
+  return metadata.enableAgents === true;
 }
 
 function isStampableMessageRole(role) {
