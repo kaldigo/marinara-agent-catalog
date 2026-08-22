@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "mari-bridge",
+  "name": "Mari Bridge",
+  "version": "1.0.0",
+  "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
+  "engine": {
+    "min": "2.4.2",
+    "maxExclusive": "3.0.0"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "server": "server.mjs",
+    "client": "client.js"
+  },
+  "contributions": {
+    "slots": [
+      "chat-runtime"
+    ]
+  },
+  "files": [
+    {
+      "path": "bootstrap/register.mjs",
+      "sha256": "fb20310a30cd00e52fa591abe4acbb6af49868438d00e794af4b63d36bf2ffc3",
+      "bytes": 10957
+    },
+    {
+      "path": "client.js",
+      "sha256": "705e1ce5f80e708898ea0dd53f865dfe9bd98ee1bef6c8401477d6e27ebfa3e6",
+      "bytes": 23404
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+      "bytes": 61
+    },
+    {
+      "path": "src/client/runtime.js",
+      "sha256": "705e1ce5f80e708898ea0dd53f865dfe9bd98ee1bef6c8401477d6e27ebfa3e6",
+      "bytes": 23404
+    },
+    {
+      "path": "src/server/bootstrap-install.js",
+      "sha256": "4b5e00ddcb7a7b4b4b24fe6e8d19b7561261336e7fb578cd3149b5e2d68e001d",
+      "bytes": 679
+    },
+    {
+      "path": "src/server/bootstrap-restart.js",
+      "sha256": "84251ce5603c8cdc04f9e978c07f8b73c58b1fb5b956191a24f20af2b6787bb3",
+      "bytes": 2424
+    },
+    {
+      "path": "src/server/client-overlay.js",
+      "sha256": "b1bb96b74f2c749b5dbb3cbff47068db8298862a8d67065671d653998c18a924",
+      "bytes": 16399
+    },
+    {
+      "path": "src/server/index.js",
+      "sha256": "524631e695e24ee5cca224c8f33526e61bd7e35207a5f89ca03e88ad4391a848",
+      "bytes": 8489
+    },
+    {
+      "path": "src/server/prompt-registry.js",
+      "sha256": "9d49772ccd295dd807dd88842f6f948da6db485a1f33b9f297429eb958ac093e",
+      "bytes": 8379
+    },
+    {
+      "path": "src/server/result-registry.js",
+      "sha256": "fe13aa0b2d591ced7ba2fa6b9da56f2c2e5d7e15b0dfcb1ddd29fe1bffb6b208",
+      "bytes": 2995
+    },
+    {
+      "path": "src/server/routes.js",
+      "sha256": "f363986ebde5706cf23eaa3a3f0544d4537f66d687eeaf3e1a011282c18ebb20",
+      "bytes": 265
+    },
+    {
+      "path": "src/server/runtime.js",
+      "sha256": "8d9f316ea0ad5d4bcb82be11329ee8af5a9da537256ab9363d0f67f3a0c03c15",
+      "bytes": 9763
+    },
+    {
+      "path": "src/server/tracker-context-registry.js",
+      "sha256": "0cc7b5af651cac6a20b8f1e03bf201bee59516b439b361054a5d73032324fec0",
+      "bytes": 3659
+    },
+    {
+      "path": "src/shared/contracts.js",
+      "sha256": "14741c1da824adc5a1652b93dd681da154bd75767f83e1cf661be9687443de0d",
+      "bytes": 1840
+    }
+  ],
+  "permissions": [
+    "agent-runtime",
+    "prompt-context",
+    "routes",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": true
+}

@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "world-map-background",
   "name": "World Map Background",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
   "engine": {
-    "min": "2.3.5",
-    "maxExclusive": "4.0.0"
+    "min": "2.4.2",
+    "maxExclusive": "3.0.0"
   },
   "kind": [
     "agent"
@@ -17,7 +17,8 @@
   },
   "contributions": {
     "slots": [
-      "chat-runtime"
+      "chat-runtime",
+      "chat-settings"
     ]
   },
   "files": [
@@ -27,99 +28,14 @@
       "bytes": 465
     },
     {
-      "path": "bridge/capability-slots.js",
-      "sha256": "5347256833e03c270b1588f674008c4b9daf9daf9b32d400b598f6f7637094ef",
-      "bytes": 32608
-    },
-    {
-      "path": "bridge/chat-settings.js",
-      "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
-      "bytes": 633
-    },
-    {
-      "path": "bridge/commands.js",
-      "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
-      "bytes": 9153
-    },
-    {
-      "path": "bridge/composer-actions.js",
-      "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
-      "bytes": 3635
-    },
-    {
-      "path": "bridge/composer-dom.js",
-      "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
-      "bytes": 6719
-    },
-    {
-      "path": "bridge/fetch-intercept.js",
-      "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
-      "bytes": 5720
-    },
-    {
-      "path": "bridge/generation-lifecycle.js",
-      "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
-      "bytes": 15046
-    },
-    {
-      "path": "bridge/generation-stream.js",
-      "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
-      "bytes": 2807
-    },
-    {
-      "path": "bridge/host-routes.js",
-      "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
-      "bytes": 1847
-    },
-    {
-      "path": "bridge/index.js",
-      "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
-      "bytes": 580
-    },
-    {
-      "path": "bridge/message-actions.js",
-      "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
-      "bytes": 481
-    },
-    {
-      "path": "bridge/prompt-contribution.js",
-      "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
-      "bytes": 6771
-    },
-    {
-      "path": "bridge/ranges.js",
-      "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
-      "bytes": 2012
-    },
-    {
-      "path": "bridge/runtime.js",
-      "sha256": "e94a7a51698854572a773c63d3adf914acc48378da4d9d692de1605ae45b7d00",
-      "bytes": 5418
-    },
-    {
-      "path": "bridge/summary-tracking.js",
-      "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
-      "bytes": 2620
-    },
-    {
-      "path": "bridge/topbar-panels.js",
-      "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
-      "bytes": 463
-    },
-    {
-      "path": "bridge/ui-slots.js",
-      "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
-      "bytes": 15676
-    },
-    {
       "path": "client.js",
-      "sha256": "e60538c94efbce7806eeccdd45be2a609072562064f56bea056f747c1bc851a3",
-      "bytes": 26395
+      "sha256": "81b512a7921072bb6f8ce8fb6ba201799d6d73592434d4c02e32a4a02ea7ce2f",
+      "bytes": 27871
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "8fe0f7af8ed3460bd2085ab2f1bd2bf7806bfd75de909994f1d3112d4efb2b1b",
-      "bytes": 13006
+      "sha256": "a7b195305172314c63f5eeac70ec84ab19d263cc19d5b98cd5050ef6e42644bb",
+      "bytes": 20021
     }
   ],
   "permissions": [

@@ -1,16 +1,27 @@
 import { createPresenceRoutes, registerPresenceMessageCreateHook } from "./routes.js";
+import { activateWithMariBridge } from "../../bridge-sdk/server.js";
 
 export { createPresenceRoutes, registerPresenceMessageCreateHook } from "./routes.js";
 
 export async function activate(context) {
-  registerPresenceMessageCreateHook({ app: context.app, runtime: context.api.runtime });
-  await context.app.register(
-    async (app) => {
-      createPresenceRoutes({ app, hostApp: context.app, runtime: context.api.runtime });
+  return activateWithMariBridge(
+    context,
+    {
+      consumerId: "presence",
+      api: { major: 1, minMinor: 0 },
+      require: ["consumer.sessions", "host.request", "runtime.health"],
     },
-    { prefix: "/api/presence" },
+    async (bridgeSession) => {
+      registerPresenceMessageCreateHook({ app: context.app, runtime: context.api.runtime, bridgeSession });
+      await context.app.register(
+        async (app) => {
+          createPresenceRoutes({ app, runtime: context.api.runtime, bridgeSession });
+        },
+        { prefix: "/api/presence" },
+      );
+      context?.api?.runtime?.logger?.info?.("Presence source package activated through Mari Bridge.");
+    },
   );
-  context?.api?.runtime?.logger?.info?.("Presence source package activated.");
 }
 
 export async function selfCheck(context) {

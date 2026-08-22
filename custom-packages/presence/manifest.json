@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
     "min": "2.3.3",
@@ -29,98 +29,43 @@
   "files": [
     {
       "path": "agents.json",
-      "sha256": "430f8bfad1760a693485a35e390749c2fcea19a567c4db298715f434d6c93d9a",
-      "bytes": 401
+      "sha256": "b0a65fe5095f2e552fc6c5b22dc61c08ccc89d0e784d32f4e4bf9a201ae53149",
+      "bytes": 430
     },
     {
-      "path": "bridge/capability-slots.js",
-      "sha256": "5347256833e03c270b1588f674008c4b9daf9daf9b32d400b598f6f7637094ef",
-      "bytes": 32608
+      "path": "bridge-sdk/client.js",
+      "sha256": "0042f723d83a1f19a29961a62ee39688311f228f0b4960b2c8afd7bf37dd0b19",
+      "bytes": 1234
     },
     {
-      "path": "bridge/chat-settings.js",
-      "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
-      "bytes": 633
+      "path": "bridge-sdk/contracts.js",
+      "sha256": "a13155182bb2a3400911b8fc1bb91d4bf535e3c6cc8745408784179cd33f6b86",
+      "bytes": 1748
     },
     {
-      "path": "bridge/commands.js",
-      "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
-      "bytes": 9153
+      "path": "bridge-sdk/index.js",
+      "sha256": "d15eefdb57f7a7f5812dfa5dc2834c471c607d47f4a522c0d96cbd670fae4dd6",
+      "bytes": 150
     },
     {
-      "path": "bridge/composer-actions.js",
-      "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
-      "bytes": 3635
+      "path": "bridge-sdk/ranges.js",
+      "sha256": "7030e2af96817bc82d256367e920ec37d90d729b5ef9575a003673ac468eb155",
+      "bytes": 2128
     },
     {
-      "path": "bridge/composer-dom.js",
-      "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
-      "bytes": 6719
+      "path": "bridge-sdk/server.js",
+      "sha256": "ac9472aef2ba8c57d773b5a397375c078e1008c4c0bc0a1c3b4b4910e8dbcb3a",
+      "bytes": 1180
     },
     {
-      "path": "bridge/fetch-intercept.js",
-      "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
-      "bytes": 5720
-    },
-    {
-      "path": "bridge/generation-lifecycle.js",
-      "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
-      "bytes": 15046
-    },
-    {
-      "path": "bridge/generation-stream.js",
-      "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
-      "bytes": 2807
-    },
-    {
-      "path": "bridge/host-routes.js",
-      "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
-      "bytes": 1847
-    },
-    {
-      "path": "bridge/index.js",
-      "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
-      "bytes": 580
-    },
-    {
-      "path": "bridge/message-actions.js",
-      "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
-      "bytes": 481
-    },
-    {
-      "path": "bridge/prompt-contribution.js",
-      "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
-      "bytes": 6771
-    },
-    {
-      "path": "bridge/ranges.js",
-      "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
-      "bytes": 2012
-    },
-    {
-      "path": "bridge/runtime.js",
-      "sha256": "e94a7a51698854572a773c63d3adf914acc48378da4d9d692de1605ae45b7d00",
-      "bytes": 5418
-    },
-    {
-      "path": "bridge/summary-tracking.js",
-      "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
-      "bytes": 2620
-    },
-    {
-      "path": "bridge/topbar-panels.js",
-      "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
-      "bytes": 463
-    },
-    {
-      "path": "bridge/ui-slots.js",
-      "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
-      "bytes": 15676
+      "path": "bridge-sdk/settings.js",
+      "sha256": "edf0f4973baa1de999cff140346f816a7fb36e7f364fab80c1387ad3c045d120",
+      "bytes": 4963
     },
     {
       "path": "client.js",
-      "sha256": "e98af8b87f7e4d87473c6d6b15fa2056450a6e0af3538a0b368228c2d9cb7dc2",
-      "bytes": 78775
+      "sha256": "783e0dda499d88ac1d00dba00fb539d8ef65ae52a4429daacb564e776330231f",
+      "bytes": 30691
     },
     {
       "path": "server.mjs",
@@ -129,23 +74,23 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "0b2a427005d8cbff119045a1e20d42d6b8824c4ef5f4d438c8e5b8844c4396e6",
-      "bytes": 19762
+      "sha256": "151fe82dd08430c3742d497a99b2c4f8e889258703260aa5d27ef5d8b4133fe9",
+      "bytes": 19777
     },
     {
       "path": "src/server/command-router.js",
-      "sha256": "35f8e5ee5bdfff0d739a5cbc5a3ab2e7fdfaa42d022b8dba31e97c1b282c8039",
-      "bytes": 737
+      "sha256": "107b7aaecf2b25092f03ebff9354f4873ae2e19c1fb601323ccf8efe0d5aaf6a",
+      "bytes": 954
     },
     {
       "path": "src/server/index.js",
-      "sha256": "d0b4ff5f1be56a1ed855b4013de9f51d28a220eba4a2d3ebaaa9e2115c0e1eb1",
-      "bytes": 911
+      "sha256": "a04a6dda802636273b20b375da55963330c7ea139adcbdbff86d519cdf857656",
+      "bytes": 1282
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "7a30226a3dde7189d422e6cac8782118cbe069f59e4a125b9aa283b173dc949c",
-      "bytes": 24908
+      "sha256": "fd75e22460bde5900de415ac42a74e593e7b7cb54c9a0ff43d16f6978768128a",
+      "bytes": 25409
     },
     {
       "path": "src/shared/chat-state.js",

@@ -2,8 +2,7 @@ import { readPresenceChatState, writePresenceChatState } from "../shared/chat-st
 import { PRESENCE_PACKAGE_ID } from "../shared/constants.js";
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
-import { injectHostJson } from "../../bridge/host-routes.js";
-import { parseMessageRange } from "../../bridge/ranges.js";
+import { parseMessageRange } from "../../bridge-sdk/ranges.js";
 import { createPresenceCommandRouter } from "./command-router.js";
 
 const MESSAGE_CREATE_HOOK_KEY = Symbol.for("marinara.presence.messageCreateHook");
@@ -11,16 +10,16 @@ const GENERATE_REQUEST_STATE = new WeakMap();
 const EARLY_USER_STAMP_TIMEOUT_MS = 5_000;
 const EARLY_USER_STAMP_INTERVAL_MS = 50;
 
-export function registerPresenceMessageCreateHook({ app, runtime }) {
+export function registerPresenceMessageCreateHook({ app, runtime, bridgeSession }) {
   if (app[MESSAGE_CREATE_HOOK_KEY]) return;
   app[MESSAGE_CREATE_HOOK_KEY] = true;
   app.addHook("preHandler", async (request) => {
-    await captureGenerationRequestState({ app, runtime, request });
+    await captureGenerationRequestState({ app, runtime, bridgeSession, request });
   });
   app.addHook("onSend", async (request, reply, payload) => {
     try {
-      await stampCreatedMessage({ app, runtime, request, reply, payload });
-      await ensureAfterChatSettingsChange({ app, runtime, request, reply });
+      await stampCreatedMessage({ app, runtime, bridgeSession, request, reply, payload });
+      await ensureAfterChatSettingsChange({ app, runtime, bridgeSession, request, reply });
     } catch (error) {
       runtime.logger.warn(error, "[Presence] Could not process response hook");
     }
@@ -28,14 +27,14 @@ export function registerPresenceMessageCreateHook({ app, runtime }) {
   });
   app.addHook("onResponse", async (request, reply) => {
     try {
-      await finishGenerationLifecycle({ app, runtime, request, reply });
+      await finishGenerationLifecycle({ app, runtime, bridgeSession, request, reply });
     } catch (error) {
       runtime.logger.warn(error, "[Presence] Could not finish generation lifecycle");
     }
   });
 }
 
-export function createPresenceRoutes({ app, hostApp = app, runtime }) {
+export function createPresenceRoutes({ app, runtime, bridgeSession }) {
   const persistence = runtime.persistence;
   const logger = runtime.logger;
 
@@ -43,7 +42,7 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
     const messages = await persistence.listMessages(req.params.chatId);
-    const roster = await resolveRoster(runtime, chat, hostApp);
+    const roster = await resolveRoster(runtime, chat, bridgeSession);
     return {
       chatId: chat.id,
       enabled: isPresenceTrackerEnabled(chat),
@@ -76,7 +75,7 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
       presentCharacterIds: uniqueStrings(body.presentCharacterIds),
       alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
     });
-    await patchMessageExtra(hostApp, req.params.chatId, req.params.messageId, patch);
+    await patchMessageExtra(bridgeSession, req.params.chatId, req.params.messageId, patch);
     return { ok: true, patch };
   });
 
@@ -88,7 +87,7 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
     }
     const body = normalizeObject(req.body);
     const result = await updatePresenceChatSettings({
-      app: hostApp,
+      bridgeSession,
       runtime,
       chat,
       alwaysPresentCharacterIds: uniqueStrings(body.alwaysPresentCharacterIds),
@@ -105,8 +104,8 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
     }
     const raw = String(normalizeObject(req.body).text || "");
     const router = createPresenceCommandRouter({
-      runPresenceCommand: (args) => runPresenceCommand({ ...args, app: hostApp, runtime, chat }),
-      runScopedHideCommand: (args) => runScopedHideCommand({ ...args, app: hostApp, runtime, chat }),
+      runPresenceCommand: (args) => runPresenceCommand({ ...args, bridgeSession, runtime, chat }),
+      runScopedHideCommand: (args) => runScopedHideCommand({ ...args, bridgeSession, runtime, chat }),
     });
     try {
       const result = await router.run(raw, { chatId: chat.id });
@@ -121,12 +120,12 @@ export function createPresenceRoutes({ app, hostApp = app, runtime }) {
   app.post("/chat/:chatId/ensure", async (req, reply) => {
     const chat = await persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
-    const result = await ensurePresenceChatLifecycle({ app: hostApp, runtime, chat });
+    const result = await ensurePresenceChatLifecycle({ bridgeSession, runtime, chat });
     return { ok: true, ...result };
   });
 }
 
-async function captureGenerationRequestState({ app, runtime, request }) {
+async function captureGenerationRequestState({ bridgeSession, runtime, request }) {
   if (isPresenceInternalRequest(request)) return;
   if (String(request.method || "").toUpperCase() !== "POST" || !isNormalGenerateUrl(request.url)) return;
   const body = normalizeObject(request.body);
@@ -145,7 +144,7 @@ async function captureGenerationRequestState({ app, runtime, request }) {
   };
   if (shouldWatchGeneratedUserMessage(body)) {
     state.earlyUserStampPromise = stampGeneratedUserMessageSoon({
-      app,
+      bridgeSession,
       runtime,
       chatId,
       beforeMessageIds,
@@ -158,7 +157,7 @@ async function captureGenerationRequestState({ app, runtime, request }) {
   GENERATE_REQUEST_STATE.set(request, state);
 }
 
-async function stampCreatedMessage({ app, runtime, request, reply, payload }) {
+async function stampCreatedMessage({ bridgeSession, runtime, request, reply, payload }) {
   if (request.method !== "POST" || reply.statusCode < 200 || reply.statusCode >= 300) return;
   const url = String(request.url || "");
   if (!/^\/api\/chats\/[^/]+\/messages(?:[?#].*)?$/u.test(url)) return;
@@ -168,20 +167,20 @@ async function stampCreatedMessage({ app, runtime, request, reply, payload }) {
   if (!chatId) return;
   const chat = await runtime.persistence.getChat(chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  await stampMessageWithActivePresence({ app, chat, message: created, overwriteExisting: true });
+  await stampMessageWithActivePresence({ bridgeSession, chat, message: created, overwriteExisting: true });
 }
 
-async function finishGenerationLifecycle({ app, runtime, request, reply }) {
+async function finishGenerationLifecycle({ bridgeSession, runtime, request, reply }) {
   const state = GENERATE_REQUEST_STATE.get(request);
   if (!state) return;
   GENERATE_REQUEST_STATE.delete(request);
   if (reply.statusCode < 200 || reply.statusCode >= 300) return;
   const chat = await runtime.persistence.getChat(state.chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  await stampGeneratedMessages({ app, runtime, chat, state });
+  await stampGeneratedMessages({ bridgeSession, runtime, chat, state });
 }
 
-async function stampGeneratedMessages({ app, runtime, chat, state }) {
+async function stampGeneratedMessages({ bridgeSession, runtime, chat, state }) {
   const messages = await runtime.persistence.listMessages(state.chatId);
   const createdMessages = messages.filter((message) => !state.beforeMessageIds.has(message.id));
   const createdMessageIds = new Set(createdMessages.map((message) => message.id).filter(Boolean));
@@ -193,7 +192,7 @@ async function stampGeneratedMessages({ app, runtime, chat, state }) {
   for (const message of messages) {
     if (!targetIds.has(message.id)) continue;
     await stampMessageWithActivePresence({
-      app,
+      bridgeSession,
       chat,
       message,
       overwriteExisting: createdMessageIds.has(message.id),
@@ -202,7 +201,7 @@ async function stampGeneratedMessages({ app, runtime, chat, state }) {
   return [...targetIds];
 }
 
-async function stampGeneratedUserMessageSoon({ app, runtime, chatId, beforeMessageIds, submissionId }) {
+async function stampGeneratedUserMessageSoon({ bridgeSession, runtime, chatId, beforeMessageIds, submissionId }) {
   const deadline = Date.now() + EARLY_USER_STAMP_TIMEOUT_MS;
   do {
     const messages = await runtime.persistence.listMessages(chatId);
@@ -210,7 +209,7 @@ async function stampGeneratedUserMessageSoon({ app, runtime, chatId, beforeMessa
     if (message) {
       const chat = await runtime.persistence.getChat(chatId);
       if (!chat || !isPresenceTrackerEnabled(chat)) return { stamped: false };
-      await stampMessageWithActivePresence({ app, chat, message, overwriteExisting: true });
+      await stampMessageWithActivePresence({ bridgeSession, chat, message, overwriteExisting: true });
       return { stamped: true, messageId: message.id };
     }
     await delay(EARLY_USER_STAMP_INTERVAL_MS);
@@ -229,7 +228,7 @@ function findGeneratedUserMessage(messages, beforeMessageIds, submissionId) {
   return createdUsers[createdUsers.length - 1];
 }
 
-async function stampMessageWithActivePresence({ app, chat, message, overwriteExisting }) {
+async function stampMessageWithActivePresence({ bridgeSession, chat, message, overwriteExisting }) {
   if (!message?.id) return;
   const extra = normalizeObject(message.extra);
   if (!overwriteExisting && hasPositivePresence(message)) return;
@@ -243,10 +242,10 @@ async function stampMessageWithActivePresence({ app, chat, message, overwriteExi
     presentCharacterIds,
     alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
   });
-  await patchMessageExtra(app, chat.id, message.id, patch);
+  await patchMessageExtra(bridgeSession, chat.id, message.id, patch);
 }
 
-async function ensureAfterChatSettingsChange({ app, runtime, request, reply }) {
+async function ensureAfterChatSettingsChange({ bridgeSession, runtime, request, reply }) {
   if (reply.statusCode < 200 || reply.statusCode >= 300 || isPresenceInternalRequest(request)) return;
   const method = String(request.method || "").toUpperCase();
   if (method !== "PATCH" && method !== "PUT") return;
@@ -261,18 +260,18 @@ async function ensureAfterChatSettingsChange({ app, runtime, request, reply }) {
   const chatId = extractChatRootId(url) || extractChatMetadataRouteId(url);
   if (!chatId) return;
   const chat = await runtime.persistence.getChat(chatId);
-  if (chat && isPresenceTrackerEnabled(chat)) await ensurePresenceChatLifecycle({ app, runtime, chat });
+  if (chat && isPresenceTrackerEnabled(chat)) await ensurePresenceChatLifecycle({ bridgeSession, runtime, chat });
 }
 
-async function runPresenceCommand({ tokens, app, runtime, chat }) {
+async function runPresenceCommand({ tokens, bridgeSession, runtime, chat }) {
   const action = String(tokens[0] || "").toLowerCase();
-  if (action === "resync") return resyncPresenceChat({ app, runtime, chat });
+  if (action === "resync") return resyncPresenceChat({ bridgeSession, runtime, chat });
   const [, characterName, ...rangeTokens] = tokens;
   if (action !== "set" && action !== "unset") {
     return { ok: false, feedback: "Usage: /presence <set|unset> <character> <range> or /presence resync" };
   }
   return setPresenceForRange({
-    app,
+    bridgeSession,
     runtime,
     chat,
     hidden: action === "unset",
@@ -281,13 +280,13 @@ async function runPresenceCommand({ tokens, app, runtime, chat }) {
   });
 }
 
-async function ensurePresenceChatLifecycle({ app, runtime, chat }) {
+async function ensurePresenceChatLifecycle({ bridgeSession, runtime, chat }) {
   if (!isPresenceTrackerEnabled(chat)) return { skipped: true, enabled: false };
-  const roster = await reconcileRoster({ app, runtime, chat });
+  const roster = await reconcileRoster({ bridgeSession, runtime, chat });
   return { enabled: true, roster };
 }
 
-async function reconcileRoster({ app, runtime, chat }) {
+async function reconcileRoster({ bridgeSession, runtime, chat }) {
   const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
   const state = readPresenceChatState(chat);
   const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
@@ -296,7 +295,7 @@ async function reconcileRoster({ app, runtime, chat }) {
     let patchedMessages = 0;
     for (const message of Array.isArray(messages) ? messages : []) {
       if (!message?.id || normalizeObject(message.extra).hiddenFromAI === true) continue;
-      await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+      await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
         extra: message.extra,
         rosterIds,
         presentCharacterIds: [...readPresenceState(message, rosterIds)],
@@ -318,7 +317,7 @@ async function reconcileRoster({ app, runtime, chat }) {
   if (backfill.addedCharacterIds.length === 0) {
     for (const message of Array.isArray(messages) ? messages : []) {
       if (!message?.id || hasPositivePresence(message) || normalizeObject(message.extra).hiddenFromAI === true) continue;
-      await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+      await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
         extra: message.extra,
         rosterIds,
         presentCharacterIds: [...readPresenceState(message, state.rosterCharacterIds)],
@@ -328,7 +327,7 @@ async function reconcileRoster({ app, runtime, chat }) {
     }
   }
   for (const patch of backfill.messagePatches) {
-    await patchMessageExtra(app, chat.id, patch.messageId, patch.patch);
+    await patchMessageExtra(bridgeSession, chat.id, patch.messageId, patch.patch);
   }
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
   await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds, alwaysPresentCharacterIds });
@@ -339,13 +338,13 @@ async function reconcileRoster({ app, runtime, chat }) {
   };
 }
 
-async function updatePresenceChatSettings({ app, runtime, chat, alwaysPresentCharacterIds }) {
+async function updatePresenceChatSettings({ bridgeSession, runtime, chat, alwaysPresentCharacterIds }) {
   const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
   const normalizedAlwaysPresent = uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterIds.includes(id));
   await patchChatState(runtime.persistence, chat, { alwaysPresentCharacterIds: normalizedAlwaysPresent });
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
   const patchedMessages = await enforceAlwaysPresentOnMessages({
-    app,
+    bridgeSession,
     runtime,
     chat: freshChat,
     rosterIds,
@@ -354,7 +353,7 @@ async function updatePresenceChatSettings({ app, runtime, chat, alwaysPresentCha
   return { alwaysPresentCharacterIds: normalizedAlwaysPresent, patchedMessages };
 }
 
-async function enforceAlwaysPresentOnMessages({ app, runtime, chat, rosterIds, alwaysPresentCharacterIds }) {
+async function enforceAlwaysPresentOnMessages({ bridgeSession, runtime, chat, rosterIds, alwaysPresentCharacterIds }) {
   const forced = new Set(uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterIds.includes(id)));
   if (!forced.size) return 0;
   let patched = 0;
@@ -365,7 +364,7 @@ async function enforceAlwaysPresentOnMessages({ app, runtime, chat, rosterIds, a
     const beforeSize = present.size;
     for (const characterId of forced) present.add(characterId);
     if (present.size === beforeSize && hasPositivePresence(message)) continue;
-    await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+    await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
       extra: message.extra,
       rosterIds,
       presentCharacterIds: [...present],
@@ -376,12 +375,12 @@ async function enforceAlwaysPresentOnMessages({ app, runtime, chat, rosterIds, a
   return patched;
 }
 
-async function runScopedHideCommand({ hidden, tokens, app, runtime, chat }) {
+async function runScopedHideCommand({ hidden, tokens, bridgeSession, runtime, chat }) {
   const [characterName, ...rangeTokens] = tokens;
-  return setPresenceForRange({ app, runtime, chat, hidden, characterName, rangeTokens });
+  return setPresenceForRange({ bridgeSession, runtime, chat, hidden, characterName, rangeTokens });
 }
 
-async function setPresenceForRange({ app, runtime, chat, hidden, characterName, rangeTokens }) {
+async function setPresenceForRange({ bridgeSession, runtime, chat, hidden, characterName, rangeTokens }) {
   const roster = await resolveRoster(runtime, chat);
   const target = resolveCharacterByName(roster, characterName);
   if (!target) throw new Error(`Character not found: ${characterName || "(missing)"}`);
@@ -394,7 +393,7 @@ async function setPresenceForRange({ app, runtime, chat, hidden, characterName, 
     const present = readPresenceState(message, rosterIds);
     if (hidden && !targetIsAlwaysPresent) present.delete(target.id);
     else present.add(target.id);
-    await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+    await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
       extra: message.extra,
       rosterIds,
       presentCharacterIds: [...present],
@@ -408,7 +407,7 @@ async function setPresenceForRange({ app, runtime, chat, hidden, characterName, 
   };
 }
 
-async function resyncPresenceChat({ app, runtime, chat }) {
+async function resyncPresenceChat({ bridgeSession, runtime, chat }) {
   const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
   const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
   const messages = await runtime.persistence.listMessages(chat.id);
@@ -421,7 +420,7 @@ async function resyncPresenceChat({ app, runtime, chat }) {
       continue;
     }
     const present = readPresenceState(message, rosterIds);
-    await patchMessageExtra(app, chat.id, message.id, buildPresenceExtraPatch({
+    await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
       extra: message.extra,
       rosterIds,
       presentCharacterIds: [...present],
@@ -446,7 +445,7 @@ function hasPositivePresence(message) {
   return Array.isArray(normalizeObject(normalizeObject(message?.extra).marinaraPresence).presentCharacterIds);
 }
 
-async function resolveRoster(runtime, chat, app = null) {
+async function resolveRoster(runtime, chat, bridgeSession = null) {
   const ids = uniqueStrings(chat?.characterIds);
   const records = await runtime.resources.listCharacters(ids);
   const recordsById = new Map(records.map((record) => [record.id, record]));
@@ -454,9 +453,9 @@ async function resolveRoster(runtime, chat, app = null) {
     const record = recordsById.get(id);
     const display = readCharacterDisplay(record?.data);
     let avatarUrl = display.avatarUrl;
-    if (app) {
+    if (bridgeSession) {
       try {
-        const hostCharacter = await injectJson(app, "GET", `/api/characters/${encodeURIComponent(id)}`);
+        const hostCharacter = await injectJson(bridgeSession, "GET", `/api/characters/${encodeURIComponent(id)}`);
         if (typeof hostCharacter?.avatarPath === "string" && hostCharacter.avatarPath.trim()) {
           avatarUrl = hostCharacter.avatarPath.trim();
         }
@@ -495,9 +494,9 @@ function readCharacterDisplay(data) {
   };
 }
 
-async function patchMessageExtra(app, chatId, messageId, patch) {
+async function patchMessageExtra(bridgeSession, chatId, messageId, patch) {
   return injectJson(
-    app,
+    bridgeSession,
     "PATCH",
     `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/extra`,
     patch,
@@ -509,8 +508,13 @@ async function patchChatState(persistence, chat, statePatch) {
   await persistence.updateChatMetadata({ chatId: chat.id, metadata, updatedAt: new Date().toISOString() });
 }
 
-async function injectJson(app, method, url, payload) {
-  return injectHostJson(app, method, url, payload, { internalHeader: "x-presence-internal" });
+async function injectJson(bridgeSession, method, url, payload) {
+  return bridgeSession.host.request({
+    method,
+    path: url,
+    ...(payload === undefined ? {} : { body: payload }),
+    headers: { "x-presence-internal": "1" },
+  });
 }
 
 function normalizeLookup(value) {

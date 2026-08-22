@@ -1,6 +1,23 @@
 export const GROUP_SORT_ORDER_PACKAGE_ID = "group-sort-order";
 export const GROUP_SORT_ORDER_AGENT_TYPE = "group-sort-order";
 export const GROUP_SORT_ORDER_STATE_KEY = "groupSortOrder";
+export const DEFAULT_NEXT_SPEAKER_MARKER_TEMPLATE = "<next_speaker>{{speaker_id}}</next_speaker>";
+export const DEFAULT_GROUP_SORT_PROMPT_TEMPLATE = [
+  "At the very end of your response, choose which candidate should speak next in this roleplay group chat, based on the latest user message, recent scene context, relevance, personality, and who has spoken recently.",
+  "Use only one candidate ID from this list:",
+  "{{candidates}}",
+  "Do not always choose the first candidate. Never choose the participant who just posted or is currently responding.",
+  "Append exactly one terminal marker after the response text:",
+  "{{marker}}",
+  "Use the selected ID only inside the marker. Do not use names, JSON, prose, or markdown inside the marker.",
+].join("\n");
+export const DEFAULT_GROUP_SORT_SELECTOR_PROMPT = [
+  "You are a hidden response orchestrator for a roleplay group chat.",
+  "Choose which character or characters should respond next, based on the latest user message, recent scene context, relevance, personality, and who has spoken recently.",
+  "Usually choose exactly one character. Choose multiple only when multiple characters have a strong immediate reason to answer.",
+  "Do not always choose the first character. Never choose the participant who just posted.",
+  'Return ONLY a valid JSON array of character IDs, such as ["character-id"]. No prose, no object wrapper, no markdown.',
+].join("\n");
 const XML_LT = "(?:<|&lt;?)";
 const XML_GT = "(?:>|&gt;?)";
 const NEXT_SPEAKER_OPEN = `${XML_LT}\\s*;?\\s*next_speaker\\s*;?\\s*${XML_GT}`;
@@ -45,6 +62,10 @@ export function normalizeGroupSortState(raw) {
   return {
     includePersonaCandidate: state.includePersonaCandidate === true,
     personaCandidate: normalizeCandidate(state.personaCandidate, "persona"),
+    markerTemplate: normalizeMarkerTemplate(state.markerTemplate),
+    promptTemplate: normalizePromptSetting(state.promptTemplate, DEFAULT_GROUP_SORT_PROMPT_TEMPLATE),
+    selectorPrompt: normalizePromptSetting(state.selectorPrompt, DEFAULT_GROUP_SORT_SELECTOR_PROMPT),
+    selectorConnectionId: readNonEmptyString(state.selectorConnectionId),
     candidateHash: typeof state.candidateHash === "string" ? state.candidateHash : "",
     byAnchor: normalizeAnchorMap(state.byAnchor),
   };
@@ -89,20 +110,22 @@ export function buildInstructionText(candidates, options = {}) {
   const excludedCandidateId = readNonEmptyString(options.excludedCandidateId);
   const selectableCandidates = filterNextSpeakerCandidates(candidates, excludedCandidateId);
   if (selectableCandidates.length === 0) return "";
-  const lines = selectableCandidates.flatMap((candidate) => [`- id: ${candidate.id}`, `  name: ${candidate.name}`]);
-  return [
-    "At the very end of your response, choose which candidate should speak next in this roleplay group chat, based on the latest user message, recent scene context, relevance, personality, and who has spoken recently.",
-    "Use only one candidate ID from this list:",
-    ...lines,
-    "Do not always choose the first candidate. Never choose the participant who just posted or is currently responding.",
-    "Append exactly one terminal marker after the response text:",
-    "<next_speaker>candidate-id</next_speaker>",
-    "Use the selected ID only inside the marker. Do not use names, JSON, prose, or markdown inside the marker.",
-  ].join("\n");
+  const candidatesText = selectableCandidates.flatMap((candidate) => [`- id: ${candidate.id}`, `  name: ${candidate.name}`]).join("\n");
+  const markerTemplate = normalizeMarkerTemplate(options.markerTemplate).replace("{{speaker_id}}", "candidate-id");
+  const promptTemplate = normalizePromptSetting(options.promptTemplate, DEFAULT_GROUP_SORT_PROMPT_TEMPLATE);
+  return promptTemplate
+    .replaceAll("{{candidates}}", candidatesText)
+    .replaceAll("{{marker}}", markerTemplate)
+    .replaceAll("{{excluded_candidate_id}}", excludedCandidateId);
 }
 
-export function parseTerminalNextSpeakerMarker(content) {
-  const match = String(content || "").match(NEXT_SPEAKER_MARKER_RE);
+export function normalizeMarkerTemplate(value) {
+  const marker = typeof value === "string" ? value.trim() : "";
+  return marker && marker.split("{{speaker_id}}").length === 2 ? marker : DEFAULT_NEXT_SPEAKER_MARKER_TEMPLATE;
+}
+
+export function parseTerminalNextSpeakerMarker(content, markerTemplate = DEFAULT_NEXT_SPEAKER_MARKER_TEMPLATE) {
+  const match = String(content || "").match(markerRegex(markerTemplate));
   if (!match) return null;
   const speakerId = match[1].trim().replace(/^;+|;+$/gu, "");
   return speakerId ? { speakerId } : null;
@@ -155,8 +178,8 @@ export function parseSmartGroupSelectionIds(raw, candidates) {
   return selected;
 }
 
-export function stripTerminalNextSpeakerMarker(content) {
-  return String(content || "").replace(NEXT_SPEAKER_MARKER_RE, "").trimEnd();
+export function stripTerminalNextSpeakerMarker(content, markerTemplate = DEFAULT_NEXT_SPEAKER_MARKER_TEMPLATE) {
+  return String(content || "").replace(markerRegex(markerTemplate), "").trimEnd();
 }
 
 export function deriveNextSpeaker({ state, messages, candidates, candidateHash }) {
@@ -271,6 +294,21 @@ function normalizeTextForMatch(value) {
 
 function readNonEmptyString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function normalizePromptSetting(value, fallback) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function markerRegex(markerTemplate) {
+  const normalized = normalizeMarkerTemplate(markerTemplate);
+  if (normalized === DEFAULT_NEXT_SPEAKER_MARKER_TEMPLATE) return NEXT_SPEAKER_MARKER_RE;
+  const [prefix, suffix] = normalized.split("{{speaker_id}}");
+  return new RegExp(`(?:\\r?\\n\\s*)?${escapeRegex(prefix)}\\s*([^\\s]+?)\\s*${escapeRegex(suffix)}\\s*$`, "u");
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isAnchorableMessage(message) {

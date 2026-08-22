@@ -1,0 +1,20 @@
+[
+  {
+    "id": "better-impersonate",
+    "name": "Better Impersonate",
+    "description": "Feature marker for bridge-registered persona draft commands.",
+    "category": "misc",
+    "phase": "pre_generation",
+    "execution": "feature",
+    "enabledByDefault": false,
+    "libraryHidden": true,
+    "runtimeDisabled": true,
+    "modeAllowlist": [
+      "roleplay",
+      "visual_novel"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": ""
+  }
+]

@@ -1,749 +1,636 @@
-(() => {
-  "use strict";
-  // bridge/runtime.js
-  // Shared runtime coordinator for bridge copies bundled by different packages.
+// bridge-sdk/contracts.js
+const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 1 });
+const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
+const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 
-  const MARI_BRIDGE_VERSION = "1.0.13";
+class MariBridgeUnavailableError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = "MariBridgeUnavailableError";
+    this.code = "MARI_BRIDGE_UNAVAILABLE";
+    this.reason = details.reason ?? "unhealthy";
+    this.consumerId = details.consumerId ?? null;
+    this.missingCapabilities = Object.freeze([...(details.missingCapabilities ?? [])]);
+    this.failedPatches = Object.freeze([...(details.failedPatches ?? [])]);
+  }
+}
 
-  const MARI_BRIDGE_RUNTIME_KEY = "__mariBridgeRuntime";
-  const DEFAULT_CAPABILITIES = [
-    "runtime:newest-wins",
-    "commands:register",
-    "fetch:interceptors",
-    "generation:lifecycle-events",
-    "ui-slots:composer-above-input",
-    "ui-slots:quick-actions-menu",
-    "ui-slots:message-actions",
-    "ui-slots:topbar-panel",
-    "ui-slots:chat-settings",
-    "capability-slots:register",
-  ];
+function normalizeBridgeRequirements(input = {}) {
+  const consumerId = String(input.consumerId ?? "").trim();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(consumerId)) {
+    throw new TypeError("Mari Bridge consumerId must be a lowercase package ID");
+  }
+  const major = Number(input.api?.major);
+  const minMinor = Number(input.api?.minMinor ?? 0);
+  if (!Number.isInteger(major) || major < 1 || !Number.isInteger(minMinor) || minMinor < 0) {
+    throw new TypeError("Mari Bridge API requirement must contain a positive major and non-negative minMinor");
+  }
+  return Object.freeze({
+    consumerId,
+    api: Object.freeze({ major, minMinor }),
+    require: Object.freeze([...new Set((input.require ?? []).map(String).map((value) => value.trim()).filter(Boolean))].sort()),
+  });
+}
 
-  // Returns the page-global Mari bridge runtime shared by every bundled bridge copy.
-  function getMariBridgeRuntime() {
-    const root = globalThis;
-    const runtime = root[MARI_BRIDGE_RUNTIME_KEY] || {
-      version: "0.0.0",
-      capabilities: new Set(),
-      subsystems: new Map(),
-      warnings: [],
-      warningKeys: new Map(),
+function missingBridgeError(consumerId, surface) {
+  return new MariBridgeUnavailableError(
+    `Mari Bridge ${surface} runtime is not installed or did not start before ${consumerId}`,
+    { reason: "missing", consumerId },
+  );
+}
+
+// bridge-sdk/settings.js
+const MARI_BRIDGE_SETTINGS_STYLE_ID = "mari-bridge-sdk-settings-style";
+
+function ensureMariBridgeSettingsStyles() {
+  if (!globalThis.document || document.getElementById(MARI_BRIDGE_SETTINGS_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = MARI_BRIDGE_SETTINGS_STYLE_ID;
+  style.textContent = `
+    .mari-sdk-settings { display:flex; flex-direction:column; gap:.75rem; color:var(--foreground); }
+    .mari-sdk-settings[aria-busy="true"] { opacity:.72; }
+    .mari-sdk-settings-group { display:flex; flex-direction:column; gap:.55rem; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); padding-top:.7rem; }
+    .mari-sdk-settings-group:first-child { border-top:0; padding-top:0; }
+    .mari-sdk-settings-heading { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+    .mari-sdk-settings-title { margin:0; font-size:.75rem; font-weight:600; line-height:1.35; }
+    .mari-sdk-settings-description,.mari-sdk-settings-help,.mari-sdk-settings-status { margin:0; color:var(--muted-foreground); font-size:.6875rem; line-height:1.4; }
+    .mari-sdk-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; }
+    .mari-sdk-settings-field { display:flex; min-width:0; flex-direction:column; gap:.3rem; }
+    .mari-sdk-settings-label { font-size:.6875rem; font-weight:600; line-height:1.35; }
+    .mari-sdk-settings-input,.mari-sdk-settings-select,.mari-sdk-settings-textarea { width:100%; box-sizing:border-box; border:0; border-radius:.5rem; background:color-mix(in srgb,var(--secondary) 70%,transparent); color:var(--foreground); font:inherit; font-size:.75rem; outline:none; padding:.45rem .6rem; box-shadow:0 0 0 1px var(--border); }
+    .mari-sdk-settings-textarea { min-height:5rem; resize:vertical; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; line-height:1.45; }
+    .mari-sdk-settings-input:focus,.mari-sdk-settings-select:focus,.mari-sdk-settings-textarea:focus { box-shadow:0 0 0 2px color-mix(in srgb,var(--ring) 70%,transparent); }
+    .mari-sdk-settings-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.4rem; }
+    .mari-sdk-settings-button { border:0; border-radius:.45rem; background:var(--secondary); color:var(--foreground); cursor:pointer; font-size:.6875rem; font-weight:600; padding:.4rem .65rem; box-shadow:0 0 0 1px var(--border); }
+    .mari-sdk-settings-button[data-variant="primary"] { background:var(--primary); color:var(--primary-foreground); box-shadow:none; }
+    .mari-sdk-settings-button:disabled { cursor:default; opacity:.55; }
+    .mari-sdk-settings-switch { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem; border-radius:.45rem; padding:.35rem .15rem; }
+    .mari-sdk-settings-switch-copy { display:flex; min-width:0; flex-direction:column; gap:.1rem; }
+    .mari-sdk-settings-switch input { width:1rem; height:1rem; margin:.1rem 0 0; accent-color:var(--primary); }
+    .mari-sdk-settings-chip-list { display:flex; flex-wrap:wrap; gap:.5rem; }
+    .mari-sdk-settings-chip { display:flex; flex-direction:column; align-items:center; gap:.25rem; width:3.75rem; border:0; background:transparent; color:var(--foreground); cursor:pointer; padding:0; }
+    .mari-sdk-settings-chip-avatar { display:grid; place-items:center; width:2.25rem; height:2.25rem; overflow:hidden; border-radius:999px; background:var(--secondary); box-shadow:0 0 0 1px var(--border); }
+    .mari-sdk-settings-chip-avatar img { width:100%; height:100%; object-fit:cover; }
+    .mari-sdk-settings-chip[aria-checked="true"] .mari-sdk-settings-chip-avatar { box-shadow:0 0 0 2px var(--primary); }
+    .mari-sdk-settings-chip-label { width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.625rem; }
+    .mari-sdk-settings-detail { min-height:0; overflow:auto; padding:1rem; }
+    @media (max-width:640px) { .mari-sdk-settings-grid { grid-template-columns:1fr; } }
+  `;
+  document.head.appendChild(style);
+}
+
+function prepareMariBridgeSettingsRoot(root, options = {}) {
+  if (!(root instanceof Element)) throw new TypeError("Mari Bridge settings root must be an Element");
+  ensureMariBridgeSettingsStyles();
+  root.classList.add("mari-sdk-settings");
+  root.classList.toggle("mari-sdk-settings-detail", options.surface === "detail");
+  return root;
+}
+
+function setMariBridgeSettingsHtml(root, renderKey, html) {
+  prepareMariBridgeSettingsRoot(root);
+  const key = String(renderKey ?? "");
+  if (root.dataset.mariBridgeSettingsRenderKey === key) return false;
+  root.dataset.mariBridgeSettingsRenderKey = key;
+  root.innerHTML = String(html ?? "");
+  return true;
+}
+
+function escapeMariBridgeSettingsHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+// bridge-sdk/client.js
+async function activateClientWithMariBridge(input, activateConsumer) {
+  if (typeof activateConsumer !== "function") throw new TypeError("Mari Bridge consumer activation must be a function");
+  const requirements = normalizeBridgeRequirements(input);
+  const runtime = globalThis[MARI_BRIDGE_CLIENT_SYMBOL];
+  if (!runtime || runtime.status !== "ready" || typeof runtime.registerConsumer !== "function") {
+    throw missingBridgeError(requirements.consumerId, "client");
+  }
+  const session = runtime.registerConsumer(requirements);
+  try {
+    const cleanup = await activateConsumer(session);
+    if (typeof cleanup === "function") session.addCleanup(cleanup);
+    const marker = `data-mari-bridge-consumer-${requirements.consumerId}`;
+    globalThis.document?.documentElement?.setAttribute(marker, "ready");
+    return async () => {
+      globalThis.document?.documentElement?.removeAttribute(marker);
+      await session.close(`${requirements.consumerId} client deactivated`);
     };
-    if (!(runtime.capabilities instanceof Set)) runtime.capabilities = new Set(runtime.capabilities || []);
-    if (!(runtime.subsystems instanceof Map)) runtime.subsystems = new Map();
-    if (!Array.isArray(runtime.warnings)) runtime.warnings = [];
-    if (!(runtime.warningKeys instanceof Map)) runtime.warningKeys = new Map();
-    if (compareBridgeVersions(MARI_BRIDGE_VERSION, runtime.version) > 0) runtime.version = MARI_BRIDGE_VERSION;
-    for (const capability of DEFAULT_CAPABILITIES) runtime.capabilities.add(capability);
-    root[MARI_BRIDGE_RUNTIME_KEY] = runtime;
-    return runtime;
+  } catch (error) {
+    await session.close(`${requirements.consumerId} client activation failed`);
+    throw error;
+  }
+}
+
+// src/client/runtime.js
+const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
+  {
+    consumerId: "world-map-background",
+    api: { major: 1, minMinor: 0 },
+    require: ["chat.active", "client.bridge-first", "consumer.sessions", "runtime.health", "ui.chat-settings"],
+  },
+  async (bridgeSession) => {
+  const PACKAGE_ID = "world-map-background";
+  const WORLD_MAPS_AGENT_ID = "hierarchical-maps";
+  const TAG_NAME = "marinara-capability-world-map-background";
+  const STYLE_ID = "marinara-world-map-background-style";
+  const RUNTIME_KEY = "__marinaraWorldMapBackgroundRuntime";
+  const OWNER_STORAGE_KEY = "marinara-world-map-background-owner";
+  const RUNTIME_VERSION = "1.1.0";
+  const CAPABILITY_SERVER_EVENT = "marinara-capability-server-event";
+  const GLOBAL_GALLERY_PREFIX = "global-gallery:";
+  const SYNC_INTERVAL_MS = 2500;
+  const API_TIMEOUT_MS = 10000;
+
+  const previousState = window[RUNTIME_KEY];
+  if (previousState && previousState.version !== RUNTIME_VERSION) {
+    previousState.disposed = true;
+    previousState.cleanups?.forEach?.((cleanup) => cleanup());
+    previousState.settingsCleanup?.();
+    window.clearTimeout(previousState.syncTimer);
+    removeLiveBackground();
+    window[RUNTIME_KEY] = null;
   }
 
-  // Claims a singleton bridge subsystem; newer bridge versions replace older owners.
-  function claimBridgeSubsystem(name, definition = {}) {
-    const runtime = getMariBridgeRuntime();
-    const subsystem = String(name || "").trim();
-    if (!subsystem) throw new Error("Bridge subsystem claim requires a name.");
+  const state = window[RUNTIME_KEY] || {
+    version: RUNTIME_VERSION,
+    initialized: false,
+    disposed: false,
+    activeChatId: "",
+    syncing: false,
+    syncRequested: false,
+    syncTimer: 0,
+    syncDueAt: 0,
+    lastSyncKey: "",
+    lastAppliedUrl: "",
+    cleanups: [],
+    settingsCleanup: null,
+  };
+  state.version = RUNTIME_VERSION;
+  state.disposed = false;
+  window[RUNTIME_KEY] = state;
 
-    const version = String(definition.version || MARI_BRIDGE_VERSION);
-    const ownerId = String(definition.ownerId || `${subsystem}@${version}`);
-    const current = runtime.subsystems.get(subsystem) || null;
-    const comparison = current ? compareBridgeVersions(version, current.version) : 1;
+  injectStyle(STYLE_ID, styleText());
+  defineCapabilityElement();
+  document.documentElement.dataset.mariBridgeConsumerWorldMap = "ready";
 
-    if (current && comparison < 0) {
-      warnBridgeRuntime(`Ignoring older ${subsystem} bridge ${version}; ${current.version} is already active.`);
-      return { active: false, current, runtime, token: null };
-    }
+  if (!state.initialized) {
+    state.initialized = true;
+    startRuntime();
+  }
 
-    if (current && comparison === 0 && (current.installed || current.installing)) {
-      return { active: false, current, runtime, token: current.token || null };
-    }
+  function defineCapabilityElement() {
+    if (customElements.get(TAG_NAME)) return;
 
-    if (current?.cleanup) {
-      try {
-        current.cleanup();
-      } catch (error) {
-        warnBridgeRuntime(`Bridge subsystem ${subsystem} cleanup failed: ${errorMessage(error)}`);
+    class WorldMapBackgroundCapabilityElement extends HTMLElement {
+      connectedCallback() {
+        this.addEventListener("marinara-capability-props", this);
+        this.render();
+      }
+      disconnectedCallback() {
+        this.removeEventListener("marinara-capability-props", this);
+      }
+      handleEvent() {
+        this.render();
+      }
+      render() {
+        if (this.getAttribute("view") !== "settings") {
+          this.setAttribute("aria-hidden", "true");
+          this.style.display = "contents";
+          this.replaceChildren();
+          return;
+        }
+        this.removeAttribute("aria-hidden");
+        this.style.display = "block";
+        void renderWorldMapBackgroundSettings(this);
       }
     }
 
-    const token = Symbol(`mari-bridge:${subsystem}:${version}`);
-    const next = {
-      name: subsystem,
-      version,
-      ownerId,
-      token,
-      installed: false,
-      installing: true,
-      installedAt: Date.now(),
-      cleanup: null,
-    };
-    runtime.subsystems.set(subsystem, next);
-
-    try {
-      if (typeof definition.install === "function") {
-        const cleanup = definition.install({ runtime, previous: current, token });
-        if (typeof cleanup === "function") next.cleanup = cleanup;
-      }
-      next.installed = true;
-      return { active: true, current: next, runtime, token };
-    } catch (error) {
-      if (current) runtime.subsystems.set(subsystem, current);
-      else runtime.subsystems.delete(subsystem);
-      throw error;
-    } finally {
-      next.installing = false;
-    }
+    customElements.define(TAG_NAME, WorldMapBackgroundCapabilityElement);
   }
 
-  // Checks whether a callback still belongs to the active owner of a subsystem.
-  function isBridgeSubsystemOwner(name, token) {
-    if (!token) return false;
-    return getMariBridgeRuntime().subsystems.get(name)?.token === token;
+  function startRuntime() {
+    state.settingsCleanup = bridgeSession.ui.register({ id: "settings", slot: "chat.settings", view: "settings", priority: 20 });
+    state.cleanups.push(bridgeSession.chat.active.subscribe(({ chatId }) => {
+      bindActiveChat(chatId || "");
+      scheduleSync(0);
+    }));
+    on(document, "visibilitychange", () => {
+      if (!document.hidden) scheduleSync(100);
+    });
+    on(window, "focus", () => scheduleSync(100));
+    on(window, CAPABILITY_SERVER_EVENT, handleCapabilityServerEvent);
+    on(window, "marinara:generation-complete", handleGenerationSettled);
+    on(window, "marinara:generation-error", handleGenerationSettled);
+    scheduleSync(0);
   }
 
-  // Registers package-neutral bridge capabilities for feature detection.
-  function registerBridgeCapabilities(capabilities) {
-    const runtime = getMariBridgeRuntime();
-    for (const capability of Array.isArray(capabilities) ? capabilities : [capabilities]) {
-      const normalized = String(capability || "").trim();
-      if (normalized) runtime.capabilities.add(normalized);
-    }
-    return runtime;
+  function handleCapabilityServerEvent(event) {
+    const detail = normalizeObject(event?.detail);
+    if (detail.packageId !== WORLD_MAPS_AGENT_ID) return;
+    if (detail.chatId && detail.chatId !== state.activeChatId) return;
+    if (detail.type !== "spatial_transition_committed" && detail.type !== "spatial_context_refresh") return;
+    scheduleSync(0);
   }
 
-  function hasBridgeCapability(capability) {
-    return getMariBridgeRuntime().capabilities.has(String(capability || "").trim());
+  function handleGenerationSettled(event) {
+    const detail = normalizeObject(event?.detail);
+    if (detail.chatId && detail.chatId !== state.activeChatId) return;
+    scheduleSync(250);
   }
 
-  function compareBridgeVersions(left, right) {
-    const a = parseVersion(left);
-    const b = parseVersion(right);
-    for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
-      const delta = (a[index] || 0) - (b[index] || 0);
-      if (delta !== 0) return delta > 0 ? 1 : -1;
-    }
-    return 0;
+  function on(target, type, handler, options) {
+    target.addEventListener(type, handler, options);
+    state.cleanups.push(() => target.removeEventListener(type, handler, options));
   }
 
-  function warnBridgeRuntime(message) {
-    const runtime = getMariBridgeRuntime();
-    const now = Date.now();
-    const normalized = String(message || "");
-    const previous = runtime.warningKeys.get(normalized) || 0;
-    if (now - previous < 60_000) return;
-    runtime.warningKeys.set(normalized, now);
-    runtime.warnings.push({ message: normalized, at: now });
-    if (runtime.warnings.length > 25) runtime.warnings.splice(0, runtime.warnings.length - 25);
-    if (runtime.warningKeys.size > 50) {
-      for (const [key, at] of runtime.warningKeys) {
-        if (now - at > 300_000) runtime.warningKeys.delete(key);
-      }
-    }
-    globalThis.console?.warn?.(`[mari-bridge] ${normalized}`);
-  }
-
-  function parseVersion(value) {
-    return String(value || "0")
-      .split(/[.-]/u)
-      .map((part) => Number.parseInt(part, 10))
-      .map((part) => (Number.isFinite(part) ? part : 0));
-  }
-
-  function errorMessage(error) {
-    return error instanceof Error ? error.message : String(error);
-  }
-
-  // bridge/composer-dom.js
-  // Upstream gap MB-010: packages do not yet have stable client DOM lifecycle,
-  // style injection, or text-control helpers for package-owned UI surfaces.
-
-  function createDomScope() {
-    const cleanups = [];
-    const timers = new Set();
-
-    function cleanup(fn) {
-      if (typeof fn === "function") cleanups.push(fn);
-      return fn;
-    }
-
-    function on(target, type, handler, options) {
-      if (!target || typeof target.addEventListener !== "function") return () => {};
-      target.addEventListener(type, handler, options);
-      return cleanup(() => target.removeEventListener(type, handler, options));
-    }
-
-    function observe(target, handler, options) {
-      if (!target || typeof MutationObserver !== "function") return null;
-      const observer = new MutationObserver(handler);
-      observer.observe(target, options);
-      cleanup(() => observer.disconnect());
-      return observer;
-    }
-
-    function timeout(handler, ms) {
-      const id = window.setTimeout(() => {
-        timers.delete(id);
-        handler();
-      }, ms);
-      timers.add(id);
-      return id;
-    }
-
-    function clearTimer(id) {
-      if (!id) return;
-      timers.delete(id);
-      window.clearTimeout(id);
-    }
-
-    function destroy() {
-      for (const id of timers) window.clearTimeout(id);
-      timers.clear();
-      while (cleanups.length) {
-        try {
-          cleanups.pop()?.();
-        } catch {}
-      }
-    }
-
-    return { cleanup, on, observe, timeout, clearTimer, destroy };
-  }
-
-  // Injects or updates package-owned CSS with a stable style element ID.
   function injectStyle(id, cssText) {
-    const existing = document.getElementById(id);
-    if (existing) {
-      existing.textContent = cssText;
-      return existing;
+    let style = document.getElementById(id);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = id;
+      document.head.appendChild(style);
     }
-    const style = document.createElement("style");
-    style.id = id;
     style.textContent = cssText;
-    document.head.appendChild(style);
     return style;
   }
 
-  // Checks whether a DOM element is currently visible in layout.
-  function isVisibleElement(el) {
-    if (!el || typeof el.getBoundingClientRect !== "function") return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+  function bindActiveChat(chatId) {
+    const nextChatId = typeof chatId === "string" ? chatId.trim() : "";
+    if (nextChatId === state.activeChatId) return;
+    state.activeChatId = nextChatId;
+    state.lastSyncKey = "";
+    state.lastAppliedUrl = "";
+    removeLiveBackground();
   }
 
-  // Updates a text input/textarea through native setters so React-like listeners fire.
-  function setTextControlValue(control, value) {
-    if (!control) return;
-    const proto = control instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-    if (setter) setter.call(control, value);
-    else control.value = value;
-    control.dispatchEvent(new Event("input", { bubbles: true }));
-    control.dispatchEvent(new Event("change", { bubbles: true }));
+  function scheduleSync(delayMs = SYNC_INTERVAL_MS) {
+    if (state.disposed) return;
+    if (state.syncing) {
+      state.syncRequested = true;
+      return;
+    }
+
+    const normalizedDelay = Math.max(0, Number(delayMs) || 0);
+    const dueAt = Date.now() + normalizedDelay;
+    if (state.syncTimer && state.syncDueAt && state.syncDueAt <= dueAt) return;
+    if (state.syncTimer) window.clearTimeout(state.syncTimer);
+    state.syncDueAt = dueAt;
+    state.syncTimer = window.setTimeout(runSync, normalizedDelay);
   }
 
-  // Resolves Marinara's active chat ID from URL, DOM markers, local storage, or known stores.
-  function getActiveChatIdFromClient() {
-    const fromUrl = readChatIdFromLocation();
-    if (fromUrl) return fromUrl;
-    const fromStoreApi = readChatIdFromKnownStores();
-    if (fromStoreApi) return fromStoreApi;
-    const fromLocalStorage = readStoredActiveChatId();
-    if (fromLocalStorage) return fromLocalStorage;
-    const selected = document.querySelector('[data-chat-id][class*="sidebar-accent"], [data-chat-id][aria-current="true"]');
-    if (selected) return selected.getAttribute("data-chat-id") || "";
-    const firstDataChat = document.querySelector("[data-chat-id]");
-    if (firstDataChat) return firstDataChat.getAttribute("data-chat-id") || "";
-    return "";
-  }
-
-  function readStoredActiveChatId() {
+  async function runSync() {
+    state.syncTimer = 0;
+    state.syncDueAt = 0;
+    if (state.disposed) return;
+    if (state.syncing) {
+      state.syncRequested = true;
+      return;
+    }
+    state.syncing = true;
     try {
-      return localStorage.getItem("marinara-active-chat-id") || "";
-    } catch {
-      return "";
-    }
-  }
+      const chatId = state.activeChatId;
+      if (!chatId) {
+        removeLiveBackground();
+        return;
+      }
+      const chat = await api(`/chats/${encodeURIComponent(chatId)}`).catch(() => null);
+      if (!chat || chatId !== state.activeChatId) return;
 
-  function readChatIdFromKnownStores() {
-    const stores = [
-      window.useChatStore?.getState?.(),
-      window.__MARINARA_CHAT_STORE__?.getState?.(),
-      window.__marinara?.chatStore?.getState?.(),
-    ];
-    for (const store of stores) {
-      const id = store?.activeChatId || store?.currentChatId || store?.chatId;
-      if (typeof id === "string" && id.trim()) return id.trim();
-    }
-    return "";
-  }
+      const metadata = normalizeObject(chat.metadata);
+      if (!isAgentActive(chat, metadata)) {
+        await clearOwnedBackground(chatId, metadata);
+        removeLiveBackground();
+        return;
+      }
 
-  // Watches active chat changes caused by routing, focus/visibility, DOM, or store updates.
-  function watchActiveChatId(callback, options = {}) {
-    if (typeof callback !== "function") throw new Error("watchActiveChatId requires a callback.");
-    const scope = createDomScope();
-    const intervalMs = Number.isFinite(Number(options.intervalMs)) ? Number(options.intervalMs) : 2_000;
-    const debounceMs = Number.isFinite(Number(options.debounceMs)) ? Number(options.debounceMs) : 150;
-    let activeChatId = "";
-    let timer = 0;
-
-    function emitIfChanged() {
-      timer = 0;
-      const chatId = getActiveChatIdFromClient();
-      if (chatId === activeChatId) return;
-      activeChatId = chatId;
-      callback(chatId);
-    }
-
-    function schedule(delayMs = debounceMs) {
-      if (timer) scope.clearTimer(timer);
-      timer = scope.timeout(emitIfChanged, delayMs);
-    }
-
-    scope.cleanup(subscribeHistoryForChatWatcher("pushState", schedule));
-    scope.cleanup(subscribeHistoryForChatWatcher("replaceState", schedule));
-    scope.on(window, "popstate", () => schedule(0));
-    scope.on(window, "focus", () => schedule());
-    scope.on(document, "visibilitychange", () => {
-      if (!document.hidden) schedule();
-    });
-    if (document.body) {
-      scope.observe(document.body, () => schedule(), {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["data-chat-id", "aria-current", "class"],
+      const image = await resolveCurrentLocationImage(chatId).catch((error) => {
+        warn("location image lookup failed", error);
+        return null;
       });
+      if (!image || chatId !== state.activeChatId) {
+        await clearOwnedBackground(chatId, metadata);
+        removeLiveBackground();
+        return;
+      }
+
+      const displaySettings = normalizeWorldMapBackgroundSettings(metadata.worldMapBackground);
+      const syncKey = `${chatId}:${image.referenceImageId}:${image.url}:${JSON.stringify(displaySettings)}`;
+      if (!applyLiveBackground(image.url, displaySettings)) return;
+      if (state.lastSyncKey === syncKey && metadata.background === image.url) return;
+      state.lastSyncKey = syncKey;
+      await persistOwnedBackground(chatId, metadata, image);
+    } catch (error) {
+      warn("background synchronization failed", error);
+    } finally {
+      state.syncing = false;
+      const nextDelay = state.syncRequested ? 0 : SYNC_INTERVAL_MS;
+      state.syncRequested = false;
+      scheduleSync(nextDelay);
     }
-    if (intervalMs > 0) {
-      const intervalId = window.setInterval(() => schedule(), intervalMs);
-      scope.cleanup(() => window.clearInterval(intervalId));
-    }
-    if (options.emitInitial !== false) schedule(0);
-    return () => scope.destroy();
   }
 
-  function readChatIdFromLocation() {
-    try {
-      const url = new URL(window.location.href);
-      return url.searchParams.get("chatId") || url.pathname.match(/\/chats?\/([^/?#]+)/)?.[1] || "";
-    } catch {
-      return "";
-    }
+  function isAgentActive(chat, metadata) {
+    if (chat?.mode && chat.mode !== "roleplay") return false;
+    if (metadata.enableAgents !== true) return false;
+    const activeAgentIds = Array.isArray(metadata.activeAgentIds) ? metadata.activeAgentIds : [];
+    return activeAgentIds.includes(PACKAGE_ID) && activeAgentIds.includes(WORLD_MAPS_AGENT_ID);
   }
 
-  function subscribeHistoryForChatWatcher(method, schedule) {
-    const state = getChatWatcherHistoryState();
-    state.watchers[method].add(schedule);
-    const original = history[method];
-    if (original && !state.patched[method]) {
-      state.original[method] = original;
-      history[method] = function patchedHistoryMethod(...args) {
-        const result = state.original[method].apply(this, args);
-        for (const watcher of [...state.watchers[method]]) watcher();
-        return result;
-      };
-      state.patched[method] = true;
-    }
-    return () => state.watchers[method].delete(schedule);
-  }
+  async function resolveCurrentLocationImage(chatId) {
+    const spatial = await api(`/chats/${encodeURIComponent(chatId)}/spatial-context`);
+    const definition = normalizeObject(spatial?.definition);
+    if (definition.enabled === false) return null;
 
-  function getChatWatcherHistoryState() {
-    const key = "__mariBridgeChatWatcherHistoryState";
-    if (!window[key]) {
-      window[key] = {
-        original: {},
-        patched: {},
-        watchers: {
-          pushState: new Set(),
-          replaceState: new Set(),
-        },
-      };
-    }
-    return window[key];
-  }
+    const currentLocationId = typeof spatial?.currentLocationId === "string" ? spatial.currentLocationId.trim() : "";
+    const locations = Array.isArray(definition.locations) ? definition.locations : [];
+    const current = locations.find((location) => location?.id === currentLocationId && location?.status !== "archived");
+    if (!current || current.useReferenceImage !== true) return null;
 
-  // src/client/runtime.js
-  (function () {
-    const PACKAGE_ID = "world-map-background";
-    const WORLD_MAPS_AGENT_ID = "hierarchical-maps";
-    const TAG_NAME = "marinara-capability-world-map-background";
-    const STYLE_ID = "marinara-world-map-background-style";
-    const RUNTIME_KEY = "__marinaraWorldMapBackgroundRuntime";
-    const OWNER_STORAGE_KEY = "marinara-world-map-background-owner";
-    const RUNTIME_VERSION = "1.0.3";
-    const CAPABILITY_SERVER_EVENT = "marinara-capability-server-event";
-    const GLOBAL_GALLERY_PREFIX = "global-gallery:";
-    const SYNC_INTERVAL_MS = 2500;
-    const API_TIMEOUT_MS = 10000;
+    const referenceImageId = typeof current.referenceImageId === "string" ? current.referenceImageId.trim() : "";
+    if (!referenceImageId) return null;
 
-    const previousState = window[RUNTIME_KEY];
-    if (previousState && previousState.version !== RUNTIME_VERSION) {
-      previousState.disposed = true;
-      previousState.cleanups?.forEach?.((cleanup) => cleanup());
-      window.clearTimeout(previousState.syncTimer);
-      removeLiveBackground();
-      window[RUNTIME_KEY] = null;
-    }
+    const [chatImages, globalImages] = await Promise.all([
+      api(`/gallery/${encodeURIComponent(chatId)}`).catch(() => []),
+      api("/global-gallery").catch(() => []),
+    ]);
+    const image = resolveGalleryImage(referenceImageId, chatImages, globalImages);
+    if (!image?.url) return null;
 
-    const state = window[RUNTIME_KEY] || {
-      version: RUNTIME_VERSION,
-      initialized: false,
-      disposed: false,
-      activeChatId: "",
-      syncing: false,
-      syncRequested: false,
-      syncTimer: 0,
-      syncDueAt: 0,
-      lastSyncKey: "",
-      lastAppliedUrl: "",
-      cleanups: [],
+    return {
+      referenceImageId,
+      url: image.url,
     };
-    state.version = RUNTIME_VERSION;
-    state.disposed = false;
-    window[RUNTIME_KEY] = state;
+  }
 
-    injectStyle(STYLE_ID, styleText());
-    defineCapabilityElement();
+  function resolveGalleryImage(referenceImageId, chatImages, globalImages) {
+    const normalized = referenceImageId.trim();
+    const chatMatch = asArray(chatImages).find((image) => image?.id === normalized);
+    if (chatMatch) return chatMatch;
 
-    if (!state.initialized) {
-      state.initialized = true;
-      startRuntime();
+    const globalId = normalized.startsWith(GLOBAL_GALLERY_PREFIX)
+      ? normalized.slice(GLOBAL_GALLERY_PREFIX.length).trim()
+      : normalized;
+    return asArray(globalImages).find((image) => {
+      const id = typeof image?.id === "string" ? image.id.trim() : "";
+      return id && (id === globalId || normalized === `${GLOBAL_GALLERY_PREFIX}${id}`);
+    });
+  }
+
+  async function persistOwnedBackground(chatId, metadata, image) {
+    const owners = readOwnerState();
+    const currentOwner = owners[chatId] || {};
+    const currentBackground = typeof metadata.background === "string" ? metadata.background : null;
+    const previousBackground =
+      currentBackground && currentBackground !== currentOwner.currentUrl ? currentBackground : currentOwner.previousBackground ?? null;
+
+    if (currentBackground !== image.url) {
+      await patchChatMetadata(chatId, { background: image.url });
     }
 
-    function defineCapabilityElement() {
-      if (customElements.get(TAG_NAME)) return;
+    owners[chatId] = {
+      referenceImageId: image.referenceImageId,
+      currentUrl: image.url,
+      previousBackground,
+      updatedAt: Date.now(),
+    };
+    writeOwnerState(owners);
+    state.lastAppliedUrl = image.url;
+  }
 
-      class WorldMapBackgroundCapabilityElement extends HTMLElement {
-        connectedCallback() {
-          this.setAttribute("aria-hidden", "true");
-          this.style.display = "contents";
-        }
-      }
+  async function clearOwnedBackground(chatId, metadata) {
+    const owners = readOwnerState();
+    const owner = owners[chatId];
+    if (!owner) return;
 
-      customElements.define(TAG_NAME, WorldMapBackgroundCapabilityElement);
-    }
-
-    function startRuntime() {
-      state.cleanups.push(
-        watchActiveChatId(
-          (chatId) => {
-            bindActiveChat(chatId || "");
-            scheduleSync(0);
-          },
-          { debounceMs: 100, intervalMs: 1000 },
-        ),
+    const currentBackground = typeof metadata.background === "string" ? metadata.background : null;
+    if (currentBackground === owner.currentUrl) {
+      await patchChatMetadata(chatId, { background: owner.previousBackground ?? null }).catch((error) =>
+        warn("background restore failed", error),
       );
-      on(document, "visibilitychange", () => {
-        if (!document.hidden) scheduleSync(100);
+    }
+    delete owners[chatId];
+    writeOwnerState(owners);
+    state.lastAppliedUrl = "";
+  }
+
+  function applyLiveBackground(url, displaySettings = normalizeWorldMapBackgroundSettings()) {
+    const root = findRoleplayRoot();
+    if (!root) return false;
+
+    let image = root.querySelector(":scope > .wmb-live-background");
+    if (!image) {
+      image = document.createElement("img");
+      image.className = "wmb-live-background";
+      image.alt = "";
+      image.draggable = false;
+      const overlay = root.querySelector(":scope > .rpg-overlay");
+      root.insertBefore(image, overlay || root.firstChild);
+      image.addEventListener("load", () => {
+        image.dataset.loadState = "loaded";
+        scheduleSync(0);
       });
-      on(window, "focus", () => scheduleSync(100));
-      on(window, CAPABILITY_SERVER_EVENT, handleCapabilityServerEvent);
-      on(window, "marinara:generation-complete", handleGenerationSettled);
-      on(window, "marinara:generation-error", handleGenerationSettled);
-      scheduleSync(0);
-    }
-
-    function handleCapabilityServerEvent(event) {
-      const detail = normalizeObject(event?.detail);
-      if (detail.packageId !== WORLD_MAPS_AGENT_ID) return;
-      if (detail.chatId && detail.chatId !== state.activeChatId) return;
-      if (detail.type !== "spatial_transition_committed" && detail.type !== "spatial_context_refresh") return;
-      scheduleSync(0);
-    }
-
-    function handleGenerationSettled(event) {
-      const detail = normalizeObject(event?.detail);
-      if (detail.chatId && detail.chatId !== state.activeChatId) return;
-      scheduleSync(250);
-    }
-
-    function on(target, type, handler, options) {
-      target.addEventListener(type, handler, options);
-      state.cleanups.push(() => target.removeEventListener(type, handler, options));
-    }
-
-    function bindActiveChat(chatId) {
-      const nextChatId = typeof chatId === "string" ? chatId.trim() : "";
-      if (nextChatId === state.activeChatId) return;
-      state.activeChatId = nextChatId;
-      state.lastSyncKey = "";
-      state.lastAppliedUrl = "";
-      removeLiveBackground();
-    }
-
-    function scheduleSync(delayMs = SYNC_INTERVAL_MS) {
-      if (state.disposed) return;
-      if (state.syncing) {
-        state.syncRequested = true;
-        return;
-      }
-
-      const normalizedDelay = Math.max(0, Number(delayMs) || 0);
-      const dueAt = Date.now() + normalizedDelay;
-      if (state.syncTimer && state.syncDueAt && state.syncDueAt <= dueAt) return;
-      if (state.syncTimer) window.clearTimeout(state.syncTimer);
-      state.syncDueAt = dueAt;
-      state.syncTimer = window.setTimeout(runSync, normalizedDelay);
-    }
-
-    async function runSync() {
-      state.syncTimer = 0;
-      state.syncDueAt = 0;
-      if (state.disposed) return;
-      if (state.syncing) {
-        state.syncRequested = true;
-        return;
-      }
-      state.syncing = true;
-      try {
-        const chatId = state.activeChatId;
-        if (!chatId) {
-          removeLiveBackground();
-          return;
-        }
-        const chat = await api(`/chats/${encodeURIComponent(chatId)}`).catch(() => null);
-        if (!chat || chatId !== state.activeChatId) return;
-
-        const metadata = normalizeObject(chat.metadata);
-        if (!isAgentActive(chat, metadata)) {
-          await clearOwnedBackground(chatId, metadata);
-          removeLiveBackground();
-          return;
-        }
-
-        const image = await resolveCurrentLocationImage(chatId).catch((error) => {
-          warn("location image lookup failed", error);
-          return null;
-        });
-        if (!image || chatId !== state.activeChatId) {
-          await clearOwnedBackground(chatId, metadata);
-          removeLiveBackground();
-          return;
-        }
-
-        const syncKey = `${chatId}:${image.referenceImageId}:${image.url}`;
-        if (!applyLiveBackground(image.url)) return;
-        if (state.lastSyncKey === syncKey && metadata.background === image.url) return;
-        state.lastSyncKey = syncKey;
-        await persistOwnedBackground(chatId, metadata, image);
-      } catch (error) {
-        warn("background synchronization failed", error);
-      } finally {
-        state.syncing = false;
-        const nextDelay = state.syncRequested ? 0 : SYNC_INTERVAL_MS;
-        state.syncRequested = false;
-        scheduleSync(nextDelay);
-      }
-    }
-
-    function isAgentActive(chat, metadata) {
-      if (chat?.mode && chat.mode !== "roleplay") return false;
-      if (metadata.enableAgents !== true) return false;
-      const activeAgentIds = Array.isArray(metadata.activeAgentIds) ? metadata.activeAgentIds : [];
-      return activeAgentIds.includes(PACKAGE_ID) && activeAgentIds.includes(WORLD_MAPS_AGENT_ID);
-    }
-
-    async function resolveCurrentLocationImage(chatId) {
-      const spatial = await api(`/chats/${encodeURIComponent(chatId)}/spatial-context`);
-      const definition = normalizeObject(spatial?.definition);
-      if (definition.enabled === false) return null;
-
-      const currentLocationId = typeof spatial?.currentLocationId === "string" ? spatial.currentLocationId.trim() : "";
-      const locations = Array.isArray(definition.locations) ? definition.locations : [];
-      const current = locations.find((location) => location?.id === currentLocationId && location?.status !== "archived");
-      if (!current || current.useReferenceImage !== true) return null;
-
-      const referenceImageId = typeof current.referenceImageId === "string" ? current.referenceImageId.trim() : "";
-      if (!referenceImageId) return null;
-
-      const [chatImages, globalImages] = await Promise.all([
-        api(`/gallery/${encodeURIComponent(chatId)}`).catch(() => []),
-        api("/global-gallery").catch(() => []),
-      ]);
-      const image = resolveGalleryImage(referenceImageId, chatImages, globalImages);
-      if (!image?.url) return null;
-
-      return {
-        referenceImageId,
-        url: image.url,
-      };
-    }
-
-    function resolveGalleryImage(referenceImageId, chatImages, globalImages) {
-      const normalized = referenceImageId.trim();
-      const chatMatch = asArray(chatImages).find((image) => image?.id === normalized);
-      if (chatMatch) return chatMatch;
-
-      const globalId = normalized.startsWith(GLOBAL_GALLERY_PREFIX)
-        ? normalized.slice(GLOBAL_GALLERY_PREFIX.length).trim()
-        : normalized;
-      return asArray(globalImages).find((image) => {
-        const id = typeof image?.id === "string" ? image.id.trim() : "";
-        return id && (id === globalId || normalized === `${GLOBAL_GALLERY_PREFIX}${id}`);
+      image.addEventListener("error", () => {
+        warn("background image failed to load; retrying", new Error(image.currentSrc || image.src || url));
+        image.remove();
+        scheduleSync(1000);
       });
     }
-
-    async function persistOwnedBackground(chatId, metadata, image) {
-      const owners = readOwnerState();
-      const currentOwner = owners[chatId] || {};
-      const currentBackground = typeof metadata.background === "string" ? metadata.background : null;
-      const previousBackground =
-        currentBackground && currentBackground !== currentOwner.currentUrl ? currentBackground : currentOwner.previousBackground ?? null;
-
-      if (currentBackground !== image.url) {
-        await patchChatMetadata(chatId, { background: image.url });
-      }
-
-      owners[chatId] = {
-        referenceImageId: image.referenceImageId,
-        currentUrl: image.url,
-        previousBackground,
-        updatedAt: Date.now(),
-      };
-      writeOwnerState(owners);
-      state.lastAppliedUrl = image.url;
+    if (image.getAttribute("src") !== url) {
+      image.dataset.loadState = "loading";
+      image.setAttribute("src", url);
     }
+    image.setAttribute("data-reference-owned-by", PACKAGE_ID);
+    image.style.objectFit = displaySettings.fit;
+    image.style.objectPosition = displaySettings.position;
+    image.style.opacity = String(displaySettings.opacity);
+    image.style.filter = displaySettings.blur > 0 ? `blur(${displaySettings.blur}px)` : "none";
+    image.style.transform = displaySettings.blur > 0 ? "scale(1.02)" : "none";
+    if (image.complete && image.naturalWidth > 0) image.dataset.loadState = "loaded";
+    return image.dataset.loadState === "loaded";
+  }
 
-    async function clearOwnedBackground(chatId, metadata) {
-      const owners = readOwnerState();
-      const owner = owners[chatId];
-      if (!owner) return;
+  function findRoleplayRoot() {
+    const exact = document.querySelector(
+      '[data-component="ChatArea.Roleplay"] .rpg-chat-area[data-chat-mode="roleplay"]',
+    );
+    if (exact) return exact;
+    return document.querySelector('.rpg-chat-area[data-chat-mode="roleplay"]');
+  }
 
-      const currentBackground = typeof metadata.background === "string" ? metadata.background : null;
-      if (currentBackground === owner.currentUrl) {
-        await patchChatMetadata(chatId, { background: owner.previousBackground ?? null }).catch((error) =>
-          warn("background restore failed", error),
-        );
-      }
-      delete owners[chatId];
-      writeOwnerState(owners);
-      state.lastAppliedUrl = "";
+  function removeLiveBackground() {
+    document.querySelectorAll(".wmb-live-background").forEach((node) => node.remove());
+  }
+
+  async function patchChatMetadata(chatId, metadata) {
+    return api(`/chats/${encodeURIComponent(chatId)}/metadata`, {
+      method: "PATCH",
+      headers: { "x-marinara-csrf": "1" },
+      body: JSON.stringify(metadata),
+    });
+  }
+
+  async function api(path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (options.body !== undefined && !headers["content-type"] && !headers["Content-Type"]) {
+      headers["content-type"] = "application/json";
     }
-
-    function applyLiveBackground(url) {
-      const root = findRoleplayRoot();
-      if (!root) return false;
-
-      let image = root.querySelector(":scope > .wmb-live-background");
-      if (!image) {
-        image = document.createElement("img");
-        image.className = "wmb-live-background";
-        image.alt = "";
-        image.draggable = false;
-        const overlay = root.querySelector(":scope > .rpg-overlay");
-        root.insertBefore(image, overlay || root.firstChild);
-        image.addEventListener("load", () => {
-          image.dataset.loadState = "loaded";
-          scheduleSync(0);
-        });
-        image.addEventListener("error", () => {
-          warn("background image failed to load; retrying", new Error(image.currentSrc || image.src || url));
-          image.remove();
-          scheduleSync(1000);
-        });
-      }
-      if (image.getAttribute("src") !== url) {
-        image.dataset.loadState = "loading";
-        image.setAttribute("src", url);
-      }
-      image.setAttribute("data-reference-owned-by", PACKAGE_ID);
-      if (image.complete && image.naturalWidth > 0) image.dataset.loadState = "loaded";
-      return image.dataset.loadState === "loaded";
-    }
-
-    function findRoleplayRoot() {
-      const exact = document.querySelector(
-        '[data-component="ChatArea.Roleplay"] .rpg-chat-area[data-chat-mode="roleplay"]',
-      );
-      if (exact) return exact;
-      return document.querySelector('.rpg-chat-area[data-chat-mode="roleplay"]');
-    }
-
-    function removeLiveBackground() {
-      document.querySelectorAll(".wmb-live-background").forEach((node) => node.remove());
-    }
-
-    async function patchChatMetadata(chatId, metadata) {
-      return api(`/chats/${encodeURIComponent(chatId)}/metadata`, {
-        method: "PATCH",
-        headers: { "x-marinara-csrf": "1" },
-        body: JSON.stringify(metadata),
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    try {
+      const response = await fetch(`/api${path}`, {
+        ...options,
+        headers,
+        signal: options.signal || controller.signal,
       });
+      if (!response.ok) throw new Error(await response.text());
+      if (response.status === 204) return {};
+      return response.json();
+    } finally {
+      window.clearTimeout(timeout);
     }
+  }
 
-    async function api(path, options = {}) {
-      const headers = { ...(options.headers || {}) };
-      if (options.body !== undefined && !headers["content-type"] && !headers["Content-Type"]) {
-        headers["content-type"] = "application/json";
-      }
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  function normalizeObject(value) {
+    if (!value) return {};
+    if (typeof value === "string") {
       try {
-        const response = await fetch(`/api${path}`, {
-          ...options,
-          headers,
-          signal: options.signal || controller.signal,
-        });
-        if (!response.ok) throw new Error(await response.text());
-        if (response.status === 204) return {};
-        return response.json();
-      } finally {
-        window.clearTimeout(timeout);
-      }
-    }
-
-    function normalizeObject(value) {
-      if (!value) return {};
-      if (typeof value === "string") {
-        try {
-          const parsed = JSON.parse(value);
-          return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-        } catch {
-          return {};
-        }
-      }
-      return typeof value === "object" && !Array.isArray(value) ? value : {};
-    }
-
-    function asArray(value) {
-      return Array.isArray(value) ? value : [];
-    }
-
-    function readOwnerState() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(OWNER_STORAGE_KEY) || "{}");
+        const parsed = JSON.parse(value);
         return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
       } catch {
         return {};
       }
     }
+    return typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
 
-    function writeOwnerState(value) {
-      try {
-        localStorage.setItem(OWNER_STORAGE_KEY, JSON.stringify(value));
-      } catch {}
+  function normalizeWorldMapBackgroundSettings(value = {}) {
+    const input = normalizeObject(value);
+    const fit = input.fit === "contain" ? "contain" : "cover";
+    const allowedPositions = new Set(["center", "top", "bottom", "left", "right"]);
+    const position = allowedPositions.has(input.position) ? input.position : "center";
+    const opacityValue = Number(input.opacity);
+    const blurValue = Number(input.blur);
+    return {
+      fit,
+      position,
+      opacity: Number.isFinite(opacityValue) ? Math.min(1, Math.max(0.1, opacityValue)) : 1,
+      blur: Number.isFinite(blurValue) ? Math.min(20, Math.max(0, blurValue)) : 0,
+    };
+  }
+
+  async function renderWorldMapBackgroundSettings(root) {
+    prepareMariBridgeSettingsRoot(root);
+    const chatId = root.capabilityProps?.chatId || state.activeChatId;
+    if (!chatId) {
+      setMariBridgeSettingsHtml(root, "no-chat", '<p class="mari-sdk-settings-status">Open a chat to configure World Map Background.</p>');
+      return;
     }
-
-    function warn(message, error) {
-      console.warn(`[${PACKAGE_ID}] ${message}`, error);
+    root.setAttribute("aria-busy", "true");
+    try {
+      const chat = await api(`/chats/${encodeURIComponent(chatId)}`);
+      const metadata = normalizeObject(chat?.metadata);
+      const settings = normalizeWorldMapBackgroundSettings(metadata.worldMapBackground);
+      setMariBridgeSettingsHtml(root, `${chatId}:${JSON.stringify(settings)}`, `
+        <section class="mari-sdk-settings-group">
+          <div class="mari-sdk-settings-heading"><h3 class="mari-sdk-settings-title">World Map Background</h3></div>
+          <p class="mari-sdk-settings-description">Controls how the current World Maps location image is displayed in this chat.</p>
+          <div class="mari-sdk-settings-grid">
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Image fit</span><select class="mari-sdk-settings-select" data-wmb-setting="fit"><option value="cover"${settings.fit === "cover" ? " selected" : ""}>Cover</option><option value="contain"${settings.fit === "contain" ? " selected" : ""}>Contain</option></select></label>
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Position</span><select class="mari-sdk-settings-select" data-wmb-setting="position">${["center","top","bottom","left","right"].map((value) => `<option value="${value}"${settings.position === value ? " selected" : ""}>${value[0].toUpperCase() + value.slice(1)}</option>`).join("")}</select></label>
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Opacity</span><input class="mari-sdk-settings-input" type="number" min="10" max="100" step="5" data-wmb-setting="opacity" value="${Math.round(settings.opacity * 100)}"><span class="mari-sdk-settings-help">10–100 percent.</span></label>
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Blur</span><input class="mari-sdk-settings-input" type="number" min="0" max="20" step="1" data-wmb-setting="blur" value="${settings.blur}"><span class="mari-sdk-settings-help">0–20 pixels.</span></label>
+          </div>
+          <p class="mari-sdk-settings-status" data-wmb-status></p>
+          <div class="mari-sdk-settings-actions"><button type="button" class="mari-sdk-settings-button" data-wmb-reset>Reset defaults</button><button type="button" class="mari-sdk-settings-button" data-variant="primary" data-wmb-save>Save</button></div>
+        </section>
+      `);
+      root.querySelector("[data-wmb-save]")?.addEventListener("click", () => saveWorldMapBackgroundSettings(root, chatId, false));
+      root.querySelector("[data-wmb-reset]")?.addEventListener("click", () => saveWorldMapBackgroundSettings(root, chatId, true));
+    } catch (error) {
+      setMariBridgeSettingsHtml(root, `error:${chatId}:${error.message}`, `<p class="mari-sdk-settings-status">World Map Background settings could not load: ${escapeMariBridgeSettingsHtml(error.message)}</p>`);
+    } finally {
+      root.removeAttribute("aria-busy");
     }
+  }
 
-    function styleText() {
-      return `
-        .wmb-live-background {
-          pointer-events: none;
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          object-position: center;
-          user-select: none;
-          opacity: 1;
-          transition: opacity 700ms ease-in-out;
-        }
-      `;
+  async function saveWorldMapBackgroundSettings(root, chatId, reset) {
+    const status = root.querySelector("[data-wmb-status]");
+    if (status) status.textContent = "Saving…";
+    const read = (name) => root.querySelector(`[data-wmb-setting="${name}"]`);
+    const value = reset ? {} : normalizeWorldMapBackgroundSettings({
+      fit: read("fit")?.value,
+      position: read("position")?.value,
+      opacity: Number(read("opacity")?.value) / 100,
+      blur: Number(read("blur")?.value),
+    });
+    try {
+      await patchChatMetadata(chatId, { worldMapBackground: value });
+      state.lastSyncKey = "";
+      scheduleSync(0);
+      root.dataset.mariBridgeSettingsRenderKey = "";
+      await renderWorldMapBackgroundSettings(root);
+    } catch (error) {
+      if (status) status.textContent = `Save failed: ${error.message}`;
     }
-  })();
+  }
 
-})();
+  function asArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function readOwnerState() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(OWNER_STORAGE_KEY) || "{}");
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeOwnerState(value) {
+    try {
+      localStorage.setItem(OWNER_STORAGE_KEY, JSON.stringify(value));
+    } catch {}
+  }
+
+  function warn(message, error) {
+    console.warn(`[${PACKAGE_ID}] ${message}`, error);
+  }
+
+  function styleText() {
+    return `
+      .wmb-live-background {
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+        user-select: none;
+        opacity: 1;
+        transition: opacity 700ms ease-in-out;
+      }
+    `;
+  }
+  return () => {
+    state.disposed = true;
+    state.cleanups.splice(0).reverse().forEach((cleanup) => cleanup());
+    state.settingsCleanup?.();
+    window.clearTimeout(state.syncTimer);
+    document.getElementById(STYLE_ID)?.remove();
+    delete document.documentElement.dataset.mariBridgeConsumerWorldMap;
+    removeLiveBackground();
+    if (window[RUNTIME_KEY] === state) delete window[RUNTIME_KEY];
+  };
+  },
+);
+

@@ -6,4 +6,6 @@ Add the agent to a Roleplay chat alongside World Maps. When the current World Ma
 
 If the agent is removed or the current location has no usable reference image, the package removes its live overlay and restores the background value that was present before the package took ownership.
 
+Chat Settings exposes per-chat image fit, position, opacity, and blur controls. These affect the live World Map background without duplicating Marinara's native agent enable/disable control, and can be reset to the package defaults.
+
 The client reconciles immediately after World Maps commits or refreshes spatial state, again when generation settles, and periodically while the chat is open. It verifies that the resolved image actually loads before persisting it, and removes failed image elements so transient media errors are retried instead of leaving a permanently black background.

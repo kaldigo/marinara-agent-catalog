@@ -4,7 +4,9 @@ Group Sort Order is a package-era replacement for the legacy Group Smart Order e
 
 It injects an inspectable prompt marker instruction through Marinara's generation-time agent injection override path, asks the main response model to append a terminal `<next_speaker>id</next_speaker>` tag, records the parsed next speaker per message/swipe, then strips the tag from saved message content.
 
-The package only directs `/api/generate` when a valid next speaker is already known. It does not call a selector model automatically; the Refresh button resolves Marinara's default Agent connection (falling back to the chat connection), then uses `/api/generate/raw` without parameter overrides so the connection's saved generation settings apply. If the selector returns no valid speaker, the preview becomes Unknown.
+The package only directs `/api/generate` when a valid next speaker is already known. It does not call a selector model automatically; the Refresh button uses the per-chat selector connection selected in Chat Settings, or Marinara's default Agent connection with the chat connection as fallback. It calls `/api/generate/raw` without parameter overrides so the selected connection's saved generation settings apply. If the selector returns no valid speaker, the preview becomes Unknown.
+
+Chat Settings exposes the selector connection/model, terminal marker, main-response instruction, selector prompt, and persona-candidate toggle. The marker must contain exactly one `{{speaker_id}}`. Main-response instructions can use `{{candidates}}`, `{{marker}}`, and `{{excluded_candidate_id}}`. Every field can be reset to the packaged default.
 
 Marinara's package runtime does not yet expose Agent-category fallback execution. The raw generation route therefore retains its native Main fallback behavior if the selected Agent connection fails.
 

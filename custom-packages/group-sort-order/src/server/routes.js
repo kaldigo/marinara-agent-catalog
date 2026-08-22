@@ -1,14 +1,8 @@
 import {
-  clearPromptContribution,
-  getPromptContribution,
-  listPromptContributions,
-  registerPromptContributionBridge,
-  registerPromptContributor,
-  setPromptContribution,
-} from "../../bridge/prompt-contribution.js";
-import { injectHostJson } from "../../bridge/host-routes.js";
-import {
   GROUP_SORT_ORDER_AGENT_TYPE,
+  DEFAULT_GROUP_SORT_PROMPT_TEMPLATE,
+  DEFAULT_GROUP_SORT_SELECTOR_PROMPT,
+  DEFAULT_NEXT_SPEAKER_MARKER_TEMPLATE,
   buildCandidateHash,
   buildInstructionText,
   deriveNextSpeaker,
@@ -28,44 +22,77 @@ import {
 } from "../shared/state.js";
 
 const REQUEST_STATE = new WeakMap();
+const PROMPT_CONTRIBUTIONS = new Map();
 const INTERNAL_HEADER = "x-group-sort-order-internal";
 const MARKER_CLEANUP_DONE_TIMEOUT_MS = 1500;
 
-export function registerGroupSortHooks({ app, runtime }) {
-  const cleanupBridge = registerPromptContributionBridge({ app, runtime, internalHeader: INTERNAL_HEADER });
-  const cleanupContributor = registerPromptContributor({
-    agentType: GROUP_SORT_ORDER_AGENT_TYPE,
-    agentName: "Group Sort Order",
-    resolve: async ({ body, chatId }) => {
-      if (body.impersonate === true || body.turnGameBots === true) return null;
+export function registerGroupSortHooks({ app, runtime, bridgeSession }) {
+  const cleanupPrompt = bridgeSession.prompts.inject({
+    id: "next-speaker",
+    position: "end",
+    role: "system",
+    order: 40,
+    build: async ({ chatId, impersonate }) => {
+      if (!chatId || impersonate) return "";
       const chat = await runtime.persistence.getChat(chatId);
-      if (!chat || !isGroupSortEnabled(chat)) return null;
+      if (!chat || !isGroupSortEnabled(chat)) return "";
       const state = readGroupSortState(chat.metadata);
       const candidates = await resolveCandidates(runtime, chat, state);
-      if (candidates.length <= 2) return null;
+      if (candidates.length <= 2) return "";
       const messages = await runtime.persistence.listMessages(chatId);
-      const candidateHash = buildCandidateHash(candidates, { includePersonaCandidate: state.includePersonaCandidate });
-      const excludedCandidate = resolvePromptExcludedCandidate({ body, messages, candidates, state, candidateHash });
-      return buildInstructionText(candidates, { excludedCandidateId: excludedCandidate?.id });
+      const excludedCandidate = resolveLatestParticipantCandidate(messages, candidates);
+      const text = buildInstructionText(candidates, {
+        excludedCandidateId: excludedCandidate?.id,
+        markerTemplate: state.markerTemplate,
+        promptTemplate: state.promptTemplate,
+      });
+      setPromptContribution(chatId, { agentType: GROUP_SORT_ORDER_AGENT_TYPE, agentName: "Group Sort Order", text });
+      return text;
     },
   });
   app.addHook("preHandler", async (request, reply) => {
-    await prepareGeneration({ app, runtime, request, reply });
+    await prepareGeneration({ bridgeSession, runtime, request, reply });
   });
   app.addHook("onResponse", async (request, reply) => {
     try {
-      await finishGeneration({ app, runtime, request, reply });
+      await finishGeneration({ bridgeSession, runtime, request, reply });
     } catch (error) {
       runtime.logger.warn(error, "[Group Sort Order] generation hook failed");
     }
   });
   return () => {
-    cleanupContributor();
-    cleanupBridge();
+    cleanupPrompt();
   };
 }
 
-export function createGroupSortRoutes({ app, runtime }) {
+function promptKey(chatId, agentType) {
+  return `${String(chatId ?? "")}:${String(agentType ?? "")}`;
+}
+
+function setPromptContribution(chatId, input) {
+  const contribution = Object.freeze({
+    agentType: String(input.agentType),
+    agentName: String(input.agentName ?? input.agentType),
+    text: typeof input.text === "string" ? input.text : "",
+  });
+  PROMPT_CONTRIBUTIONS.set(promptKey(chatId, contribution.agentType), contribution);
+  return contribution;
+}
+
+function getPromptContribution(chatId, agentType) {
+  return PROMPT_CONTRIBUTIONS.get(promptKey(chatId, agentType)) ?? null;
+}
+
+function listPromptContributions(chatId) {
+  const prefix = `${String(chatId ?? "")}:`;
+  return [...PROMPT_CONTRIBUTIONS.entries()].filter(([key]) => key.startsWith(prefix)).map(([, value]) => value);
+}
+
+function clearPromptContribution(chatId, agentType) {
+  return PROMPT_CONTRIBUTIONS.delete(promptKey(chatId, agentType));
+}
+
+export function createGroupSortRoutes({ app, runtime, bridgeSession }) {
   app.get("/chat/:chatId/state", async (req, reply) => {
     const chat = await runtime.persistence.getChat(req.params.chatId);
     if (!chat) return reply.status(404).send({ error: "Chat not found" });
@@ -105,7 +132,22 @@ export function createGroupSortRoutes({ app, runtime }) {
     const includePersonaCandidate =
       typeof body.includePersonaCandidate === "boolean" ? body.includePersonaCandidate : current.includePersonaCandidate;
     const personaCandidate = normalizePersonaCandidate(body.personaCandidate) ?? current.personaCandidate;
-    await patchChatState(runtime, chat, { includePersonaCandidate, personaCandidate });
+    if (body.markerTemplate !== undefined && !isValidMarkerTemplate(body.markerTemplate)) {
+      return reply.status(400).send({ error: "Marker template must contain exactly one {{speaker_id}} macro." });
+    }
+    await patchChatState(runtime, chat, {
+      includePersonaCandidate,
+      personaCandidate,
+      markerTemplate: readSettingString(body.markerTemplate, current.markerTemplate, DEFAULT_NEXT_SPEAKER_MARKER_TEMPLATE),
+      promptTemplate: readSettingString(body.promptTemplate, current.promptTemplate, DEFAULT_GROUP_SORT_PROMPT_TEMPLATE),
+      selectorPrompt: readSettingString(body.selectorPrompt, current.selectorPrompt, DEFAULT_GROUP_SORT_SELECTOR_PROMPT),
+      selectorConnectionId:
+        body.selectorConnectionId === null
+          ? ""
+          : typeof body.selectorConnectionId === "string"
+            ? body.selectorConnectionId.trim()
+            : current.selectorConnectionId,
+    });
     const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
     const view = await buildView(runtime, freshChat);
     await reconcileGroupSortPromptContribution(runtime, freshChat, view.candidates);
@@ -118,7 +160,7 @@ export function createGroupSortRoutes({ app, runtime }) {
     const view = await buildView(runtime, chat);
     if (!view.enabled || view.candidates.length <= 2) return { ok: true, refreshed: false, ...view };
     const selected = await refreshSmartSelection({
-      app,
+      bridgeSession,
       runtime,
       chat,
       candidates: view.candidates,
@@ -168,7 +210,7 @@ export function createGroupSortRoutes({ app, runtime }) {
   });
 }
 
-async function prepareGeneration({ app, runtime, request, reply }) {
+async function prepareGeneration({ bridgeSession, runtime, request, reply }) {
   if (isInternalRequest(request)) return;
   if (String(request.method || "").toUpperCase() !== "POST") return;
   if (!/^\/api\/generate(?:[?#].*)?$/u.test(String(request.url || ""))) return;
@@ -185,17 +227,19 @@ async function prepareGeneration({ app, runtime, request, reply }) {
     markerCleanupTasks: new Set(),
     targetMessageId: readString(body.regenerateMessageId) || readString(body.continueMessageId),
   };
-  requestState.scheduleMarkerCleanup = (marker) => applyEarlyMarkerCleanup({ app, runtime, requestState, marker });
+  requestState.scheduleMarkerCleanup = (marker) => applyEarlyMarkerCleanup({ bridgeSession, runtime, requestState, marker });
   requestState.logger = runtime.logger;
   REQUEST_STATE.set(request, requestState);
   installOutgoingMarkerFilter(reply, requestState);
   const chat = await runtime.persistence.getChat(chatId);
   if (!chat) return;
+  const groupSortState = readGroupSortState(chat.metadata);
+  requestState.markerTemplate = groupSortState.markerTemplate;
   const groupSortEnabled = isGroupSortEnabled(chat);
   if (!groupSortEnabled) return;
   const messages = await runtime.persistence.listMessages(chatId);
-  const candidates = await resolveCandidates(runtime, chat, readGroupSortState(chat.metadata));
-  const candidateHash = buildCandidateHash(candidates, { includePersonaCandidate: readGroupSortState(chat.metadata).includePersonaCandidate });
+  const candidates = await resolveCandidates(runtime, chat, groupSortState);
+  const candidateHash = buildCandidateHash(candidates, { includePersonaCandidate: groupSortState.includePersonaCandidate });
   requestState.beforeMessageIds = new Set(messages.map((message) => message.id));
   requestState.candidateHash = candidateHash;
   requestState.candidateIds = candidates.map((c) => c.id);
@@ -204,14 +248,14 @@ async function prepareGeneration({ app, runtime, request, reply }) {
   const hasIncomingUserTurn = hasVisibleIncomingUserTurn(body);
   const next = hasIncomingUserTurn
     ? null
-    : deriveNextSpeaker({ state: readGroupSortState(chat.metadata), messages, candidates, candidateHash });
+    : deriveNextSpeaker({ state: groupSortState, messages, candidates, candidateHash });
   if (next && next.kind !== "persona" && !body.forCharacterId) {
     body.forCharacterId = next.id;
   }
   request.body = body;
 }
 
-async function finishGeneration({ app, runtime, request, reply }) {
+async function finishGeneration({ bridgeSession, runtime, request, reply }) {
   if (reply.statusCode < 200 || reply.statusCode >= 300) return;
   if (isInternalRequest(request)) return;
   if (String(request.method || "").toUpperCase() !== "POST") return;
@@ -235,12 +279,13 @@ async function finishGeneration({ app, runtime, request, reply }) {
     targetMessageId,
   });
   if (!target) return;
-  const parsed = parseTerminalNextSpeakerMarker(target.content) || resolveOutgoingMarkerForTarget(storedRequestState, target);
+  const markerTemplate = currentState.markerTemplate;
+  const parsed = parseTerminalNextSpeakerMarker(target.content, markerTemplate) || resolveOutgoingMarkerForTarget(storedRequestState, target);
   if (!parsed) return;
-  const cleaned = stripTerminalNextSpeakerMarker(target.content);
+  const cleaned = stripTerminalNextSpeakerMarker(target.content, markerTemplate);
   if (cleaned !== target.content) {
     await injectJson(
-      app,
+      bridgeSession,
       "PATCH",
       `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(target.id)}`,
       { content: cleaned },
@@ -332,9 +377,9 @@ export function sanitizeOutgoingSsePayload(rawPayload, requestState) {
       };
     }
     if (typeof data.content !== "string") return null;
-    const parsed = parseTerminalNextSpeakerMarker(data.content);
+    const parsed = parseTerminalNextSpeakerMarker(data.content, requestState.markerTemplate);
     if (!parsed) return null;
-    const cleaned = stripTerminalNextSpeakerMarker(data.content);
+    const cleaned = stripTerminalNextSpeakerMarker(data.content, requestState.markerTemplate);
     requestState.outgoingMarker = {
       messageId: readString(data.id),
       swipeIndex: Number.isInteger(data.activeSwipeIndex) ? data.activeSwipeIndex : 0,
@@ -347,9 +392,9 @@ export function sanitizeOutgoingSsePayload(rawPayload, requestState) {
     return cleaned !== data.content ? [{ type: "content_replace", data: cleaned }, cleanedMessage] : cleanedMessage;
   }
   if (obj.type === "content_replace" && typeof obj.data === "string") {
-    const parsed = parseTerminalNextSpeakerMarker(obj.data);
+    const parsed = parseTerminalNextSpeakerMarker(obj.data, requestState.markerTemplate);
     if (!parsed) return null;
-    const cleaned = stripTerminalNextSpeakerMarker(obj.data);
+    const cleaned = stripTerminalNextSpeakerMarker(obj.data, requestState.markerTemplate);
     requestState.outgoingMarker = {
       ...(normalizeObject(requestState.outgoingMarker) || {}),
       nextSpeakerId: parsed.speakerId,
@@ -361,9 +406,9 @@ export function sanitizeOutgoingSsePayload(rawPayload, requestState) {
   if (obj.type === "text_rewrite") {
     const data = normalizeObject(obj.data);
     if (typeof data.editedText !== "string") return null;
-    const parsed = parseTerminalNextSpeakerMarker(data.editedText);
+    const parsed = parseTerminalNextSpeakerMarker(data.editedText, requestState.markerTemplate);
     if (!parsed) return null;
-    const cleaned = stripTerminalNextSpeakerMarker(data.editedText);
+    const cleaned = stripTerminalNextSpeakerMarker(data.editedText, requestState.markerTemplate);
     requestState.outgoingMarker = {
       ...(normalizeObject(requestState.lastSavedAssistantMessage) || {}),
       ...(normalizeObject(requestState.outgoingMarker) || {}),
@@ -385,14 +430,14 @@ export async function waitForPendingMarkerCleanup(requestState, timeoutMs = MARK
   ]);
 }
 
-async function applyEarlyMarkerCleanup({ app, runtime, requestState, marker }) {
+async function applyEarlyMarkerCleanup({ bridgeSession, runtime, requestState, marker }) {
   const chatId = readString(requestState?.chatId);
   const messageId = readString(marker?.messageId);
   const nextSpeakerId = readString(marker?.nextSpeakerId);
   if (!chatId || !nextSpeakerId) return;
   if (messageId && typeof marker.cleanedContent === "string") {
     await injectJson(
-      app,
+      bridgeSession,
       "PATCH",
       `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
       { content: marker.cleanedContent },
@@ -494,6 +539,12 @@ async function buildView(runtime, chat) {
     chatId: chat.id,
     enabled: isGroupSortEnabled(chat),
     includePersonaCandidate: state.includePersonaCandidate,
+    settings: {
+      markerTemplate: state.markerTemplate,
+      promptTemplate: state.promptTemplate,
+      selectorPrompt: state.selectorPrompt,
+      selectorConnectionId: state.selectorConnectionId,
+    },
     candidates,
     candidateHash,
     nextSpeaker: next,
@@ -523,7 +574,7 @@ async function resolveCandidates(runtime, chat, state) {
   return candidates;
 }
 
-async function refreshSmartSelection({ app, runtime, chat, candidates, candidateHash, personaName }) {
+async function refreshSmartSelection({ bridgeSession, runtime, chat, candidates, candidateHash, personaName }) {
   const messages = await runtime.persistence.listMessages(chat.id);
   const anchorMessage = latestAnchorMessage(messages);
   if (!anchorMessage) return null;
@@ -534,7 +585,7 @@ async function refreshSmartSelection({ app, runtime, chat, candidates, candidate
     return null;
   }
   const selectedId = await selectSmartSpeakerViaRaw({
-    app,
+    bridgeSession,
     runtime,
     chat,
     messages,
@@ -542,6 +593,7 @@ async function refreshSmartSelection({ app, runtime, chat, candidates, candidate
     transcriptCandidates: candidates,
     personaName,
     excludedCandidate,
+    settings: readGroupSortState(chat.metadata),
   });
   const selected = selectableCandidates.find((candidate) => candidate.id === selectedId) || null;
   if (!selected) {
@@ -560,19 +612,22 @@ async function refreshSmartSelection({ app, runtime, chat, candidates, candidate
   return selected;
 }
 
-export async function resolveSmartSelectorConnectionId(runtime, chat) {
+export async function resolveSmartSelectorConnectionId(runtime, chat, requestedConnectionId = "") {
   const chatConnectionId = typeof chat?.connectionId === "string" && chat.connectionId.trim() ? chat.connectionId : null;
-  const resolved = await runtime.languageModels.resolveForRequest({ chatConnectionId });
+  const resolved = await runtime.languageModels.resolveForRequest({
+    connectionId: readString(requestedConnectionId) || null,
+    chatConnectionId,
+  });
   return typeof resolved?.connectionId === "string" ? resolved.connectionId.trim() : "";
 }
 
-async function selectSmartSpeakerViaRaw({ app, runtime, chat, messages, candidates, transcriptCandidates, personaName, excludedCandidate }) {
+async function selectSmartSpeakerViaRaw({ bridgeSession, runtime, chat, messages, candidates, transcriptCandidates, personaName, excludedCandidate, settings }) {
   try {
-    const connectionId = await resolveSmartSelectorConnectionId(runtime, chat);
+    const connectionId = await resolveSmartSelectorConnectionId(runtime, chat, settings?.selectorConnectionId);
     if (!connectionId) return "";
-    const response = await injectJson(app, "POST", "/api/generate/raw", {
+    const response = await injectJson(bridgeSession, "POST", "/api/generate/raw", {
       connectionId,
-      messages: buildSmartSelectionPrompt({ messages, candidates, transcriptCandidates, personaName, excludedCandidate }),
+      messages: buildSmartSelectionPrompt({ messages, candidates, transcriptCandidates, personaName, excludedCandidate, settings }),
       streaming: false,
     });
     return parseSmartGroupSelectionIds(response.content, candidates)[0] || "";
@@ -582,17 +637,11 @@ async function selectSmartSpeakerViaRaw({ app, runtime, chat, messages, candidat
   }
 }
 
-function buildSmartSelectionPrompt({ messages, candidates, transcriptCandidates, personaName, excludedCandidate }) {
+function buildSmartSelectionPrompt({ messages, candidates, transcriptCandidates, personaName, excludedCandidate, settings }) {
   return [
     {
       role: "system",
-      content: [
-        "You are a hidden response orchestrator for a roleplay group chat.",
-        "Choose which character or characters should respond next, based on the latest user message, recent scene context, relevance, personality, and who has spoken recently.",
-        "Usually choose exactly one character. Choose multiple only when multiple characters have a strong immediate reason to answer.",
-        "Do not always choose the first character. Never choose the participant who just posted.",
-        'Return ONLY a valid JSON array of character IDs, such as ["character-id"]. No prose, no object wrapper, no markdown.',
-      ].join("\n"),
+      content: settings?.selectorPrompt || DEFAULT_GROUP_SORT_SELECTOR_PROMPT,
     },
     {
       role: "user",
@@ -724,12 +773,27 @@ async function reconcileGroupSortPromptContribution(runtime, chat, candidates) {
   return setPromptContribution(chatId, {
     agentType: GROUP_SORT_ORDER_AGENT_TYPE,
     agentName: "Group Sort Order",
-    text: buildInstructionText(candidates, { excludedCandidateId: excludedCandidate?.id }),
+    text: buildInstructionText(candidates, {
+      excludedCandidateId: excludedCandidate?.id,
+      markerTemplate: readGroupSortState(chat.metadata).markerTemplate,
+      promptTemplate: readGroupSortState(chat.metadata).promptTemplate,
+    }),
   });
 }
 
 function clearGroupSortPromptContribution(chatId) {
   return clearPromptContribution(chatId, GROUP_SORT_ORDER_AGENT_TYPE);
+}
+
+function isValidMarkerTemplate(value) {
+  if (value === null || value === "") return true;
+  if (typeof value !== "string") return false;
+  return value.split("{{speaker_id}}").length === 2;
+}
+
+function readSettingString(value, current, fallback) {
+  if (value === null || value === "") return fallback;
+  return typeof value === "string" ? value.trim() || fallback : current;
 }
 
 async function patchChatState(runtime, chat, statePatch) {
@@ -763,8 +827,13 @@ function writeOriginalSseChunk(originalWrite, chunk, encoding, callback) {
   return originalWrite(chunk, encoding, callback);
 }
 
-async function injectJson(app, method, url, payload) {
-  return injectHostJson(app, method, url, payload, { internalHeader: INTERNAL_HEADER });
+async function injectJson(bridgeSession, method, url, payload) {
+  return bridgeSession.host.request({
+    method,
+    path: url,
+    ...(payload === undefined ? {} : { body: payload }),
+    headers: { [INTERNAL_HEADER]: "1" },
+  });
 }
 
 function isInternalRequest(request) {

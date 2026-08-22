@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-22T11:39:51.737Z",
+  "generatedAt": "2026-08-22T11:43:52.856Z",
   "packages": [
     {
       "manifest": {
@@ -1842,12 +1842,64 @@
     {
       "manifest": {
         "schemaVersion": 1,
-        "id": "group-sort-order",
-        "name": "Group Sort Order",
-        "version": "1.0.27",
-        "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
+        "id": "better-impersonate",
+        "name": "Better Impersonate",
+        "version": "2.3.0",
+        "description": "Adds bridge-registered persona draft commands for use from system Quick Replies.",
         "engine": {
-          "min": "2.4.0",
+          "min": "2.3.3",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "client": "client.js",
+          "agents": "agents.json"
+        },
+        "contributions": {
+          "slots": [
+            "chat-settings"
+          ]
+        },
+        "files": [
+          {
+            "path": "agents.json",
+            "sha256": "3976bdd73856f87ef9913c3000333aabbf7c63f7662d4ae741cda5e32c4f06c9",
+            "bytes": 483
+          },
+          {
+            "path": "client.js",
+            "sha256": "6c098213681c7e995097ca076180f1ea95a2c5df0cf8267f3f5091a9adbc0f2b",
+            "bytes": 21919
+          }
+        ],
+        "permissions": [
+          "chat-read",
+          "chat-write",
+          "network",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": false
+      },
+      "category": "misc",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-2.3.0.zip",
+        "sha256": "470c35e6847f571f9ba02ac45c5e5055f44b54c1e71c7c53d6b09ec36bd27ce3",
+        "bytes": 7092
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "gm-notes",
+        "name": "GM Notes",
+        "version": "1.0.0",
+        "description": "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
+        "engine": {
+          "min": "2.4.2",
           "maxExclusive": "3.0.0"
         },
         "kind": [
@@ -1866,98 +1918,149 @@
         "files": [
           {
             "path": "agents.json",
+            "sha256": "350c2481b4d9cbbb4c910fd878adeaf461bd674620c84b44de51b3d0a00613bb",
+            "bytes": 2538
+          },
+          {
+            "path": "bridge-sdk/client.js",
+            "sha256": "0042f723d83a1f19a29961a62ee39688311f228f0b4960b2c8afd7bf37dd0b19",
+            "bytes": 1234
+          },
+          {
+            "path": "bridge-sdk/contracts.js",
+            "sha256": "a13155182bb2a3400911b8fc1bb91d4bf535e3c6cc8745408784179cd33f6b86",
+            "bytes": 1748
+          },
+          {
+            "path": "bridge-sdk/index.js",
+            "sha256": "d15eefdb57f7a7f5812dfa5dc2834c471c607d47f4a522c0d96cbd670fae4dd6",
+            "bytes": 150
+          },
+          {
+            "path": "bridge-sdk/ranges.js",
+            "sha256": "7030e2af96817bc82d256367e920ec37d90d729b5ef9575a003673ac468eb155",
+            "bytes": 2128
+          },
+          {
+            "path": "bridge-sdk/server.js",
+            "sha256": "ac9472aef2ba8c57d773b5a397375c078e1008c4c0bc0a1c3b4b4910e8dbcb3a",
+            "bytes": 1180
+          },
+          {
+            "path": "bridge-sdk/settings.js",
+            "sha256": "edf0f4973baa1de999cff140346f816a7fb36e7f364fab80c1387ad3c045d120",
+            "bytes": 4963
+          },
+          {
+            "path": "client.js",
+            "sha256": "7195bca3c1f6f34c3e52b2efcb1c067e401665022d00ebdc6884acadc1e21018",
+            "bytes": 24264
+          },
+          {
+            "path": "server.mjs",
+            "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+            "bytes": 61
+          },
+          {
+            "path": "src/server/index.js",
+            "sha256": "1223fe46922c7ec227e0ee6b7971c7abe46be12bd1b65bacd42cd62818685ae1",
+            "bytes": 2510
+          },
+          {
+            "path": "src/server/routes.js",
+            "sha256": "69514c1309287e75ceceda45447f716cbd967a617f0ec7574a30b41d48bbd55d",
+            "bytes": 2679
+          },
+          {
+            "path": "src/shared/state.js",
+            "sha256": "6b4e8d6d0df077a49392eee0344c5ad52635e5713a352af948505bf9f86412bf",
+            "bytes": 5982
+          }
+        ],
+        "permissions": [
+          "agent-runtime",
+          "chat-read",
+          "chat-write",
+          "prompt-context",
+          "routes",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": true
+      },
+      "category": "tracker",
+      "artifact": {
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/gm-notes-1.0.0.zip",
+        "sha256": "ef570f31ebb1c12ef78ed82dce358ea90f3b988544fdc2c8165183e212628ab8",
+        "bytes": 18277
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#gm-notes"
+    },
+    {
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "group-sort-order",
+        "name": "Group Sort Order",
+        "version": "1.2.0",
+        "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
+        "engine": {
+          "min": "2.4.0",
+          "maxExclusive": "3.0.0"
+        },
+        "kind": [
+          "agent"
+        ],
+        "entrypoints": {
+          "server": "server.mjs",
+          "client": "client.js",
+          "agents": "agents.json"
+        },
+        "contributions": {
+          "slots": [
+            "chat-runtime",
+            "chat-settings"
+          ]
+        },
+        "files": [
+          {
+            "path": "agents.json",
             "sha256": "7aa0b5867faf662374433b504715f78f710a5e80331985af9a1ff5778e2b05cc",
             "bytes": 471
           },
           {
-            "path": "bridge/capability-slots.js",
-            "sha256": "5347256833e03c270b1588f674008c4b9daf9daf9b32d400b598f6f7637094ef",
-            "bytes": 32608
+            "path": "bridge-sdk/client.js",
+            "sha256": "0042f723d83a1f19a29961a62ee39688311f228f0b4960b2c8afd7bf37dd0b19",
+            "bytes": 1234
           },
           {
-            "path": "bridge/chat-settings.js",
-            "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
-            "bytes": 633
+            "path": "bridge-sdk/contracts.js",
+            "sha256": "a13155182bb2a3400911b8fc1bb91d4bf535e3c6cc8745408784179cd33f6b86",
+            "bytes": 1748
           },
           {
-            "path": "bridge/commands.js",
-            "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
-            "bytes": 9153
+            "path": "bridge-sdk/index.js",
+            "sha256": "d15eefdb57f7a7f5812dfa5dc2834c471c607d47f4a522c0d96cbd670fae4dd6",
+            "bytes": 150
           },
           {
-            "path": "bridge/composer-actions.js",
-            "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
-            "bytes": 3635
+            "path": "bridge-sdk/ranges.js",
+            "sha256": "7030e2af96817bc82d256367e920ec37d90d729b5ef9575a003673ac468eb155",
+            "bytes": 2128
           },
           {
-            "path": "bridge/composer-dom.js",
-            "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
-            "bytes": 6719
+            "path": "bridge-sdk/server.js",
+            "sha256": "ac9472aef2ba8c57d773b5a397375c078e1008c4c0bc0a1c3b4b4910e8dbcb3a",
+            "bytes": 1180
           },
           {
-            "path": "bridge/fetch-intercept.js",
-            "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
-            "bytes": 5720
-          },
-          {
-            "path": "bridge/generation-lifecycle.js",
-            "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
-            "bytes": 15046
-          },
-          {
-            "path": "bridge/generation-stream.js",
-            "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
-            "bytes": 2807
-          },
-          {
-            "path": "bridge/host-routes.js",
-            "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
-            "bytes": 1847
-          },
-          {
-            "path": "bridge/index.js",
-            "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
-            "bytes": 580
-          },
-          {
-            "path": "bridge/message-actions.js",
-            "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
-            "bytes": 481
-          },
-          {
-            "path": "bridge/prompt-contribution.js",
-            "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
-            "bytes": 6771
-          },
-          {
-            "path": "bridge/ranges.js",
-            "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
-            "bytes": 2012
-          },
-          {
-            "path": "bridge/runtime.js",
-            "sha256": "e94a7a51698854572a773c63d3adf914acc48378da4d9d692de1605ae45b7d00",
-            "bytes": 5418
-          },
-          {
-            "path": "bridge/summary-tracking.js",
-            "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
-            "bytes": 2620
-          },
-          {
-            "path": "bridge/topbar-panels.js",
-            "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
-            "bytes": 463
-          },
-          {
-            "path": "bridge/ui-slots.js",
-            "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
-            "bytes": 15676
+            "path": "bridge-sdk/settings.js",
+            "sha256": "edf0f4973baa1de999cff140346f816a7fb36e7f364fab80c1387ad3c045d120",
+            "bytes": 4963
           },
           {
             "path": "client.js",
-            "sha256": "8d82096236a3836abe3d94faad2af7dedec4b1d0b9a7f774d6b530af83f53153",
-            "bytes": 42621
+            "sha256": "ad8543f1985280a837d62649766ae3633f6908f5ce77c685c01a6a1e3c7dfadf",
+            "bytes": 29668
           },
           {
             "path": "server.mjs",
@@ -1966,23 +2069,23 @@
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "d010eb4584b9289e0c3dcf12afd9116893d1e2bf3e9a7c608b463333bc086144",
-            "bytes": 13266
+            "sha256": "b6821e4941b6d4c74612b4c29f80f1891aedd02ec6726269c254a047d67ba580",
+            "bytes": 20921
           },
           {
             "path": "src/server/index.js",
-            "sha256": "cf4d8563d94e8ba257e225db953656672bdc77596eeebaf6eb9190786d835d79",
-            "bytes": 597
+            "sha256": "8f461ddef3ad7053f89eb27ad9abc892eeaf204e45aabe7ec6f42eca33b41e9b",
+            "bytes": 1011
           },
           {
             "path": "src/server/routes.js",
-            "sha256": "f2052c88364d45f59737877208d3dd208c80b6cd60af5b48733e45aa77410e72",
-            "bytes": 33395
+            "sha256": "4d91dcf2d811dac7e5446667247343792e0097f265764bc6e892dbe92d79167d",
+            "bytes": 35907
           },
           {
             "path": "src/shared/state.js",
-            "sha256": "786066502c760c99f26ccc65984ee33dfe22eb41daf8608856f01b24fea7d409",
-            "bytes": 10844
+            "sha256": "f1e34507853ada6c6d1c89079c53fef7a3ac704fdbe4e558f5e46ee197644fe5",
+            "bytes": 13323
           }
         ],
         "permissions": [
@@ -1998,66 +2101,19 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.0.27.zip",
-        "sha256": "9ed131061b9eb3bdc7b012ac7fcdf3a2ef0ec0a1dbee54e0554eceabeb5c5ae6",
-        "bytes": 60389
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.2.0.zip",
+        "sha256": "3b387220f82a4cc12680a2b097c3f5e732b934835287e782068fd7f51f841982",
+        "bytes": 31501
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
     },
     {
       "manifest": {
         "schemaVersion": 1,
-        "id": "impersonate-button",
-        "name": "Impersonate Button",
-        "version": "1.0.9",
-        "description": "Adds package-era composer quick actions for dry-run persona generation helpers.",
-        "engine": {
-          "min": "2.3.3",
-          "maxExclusive": "3.0.0"
-        },
-        "kind": [
-          "agent"
-        ],
-        "entrypoints": {
-          "client": "client.js",
-          "agents": "agents.json"
-        },
-        "files": [
-          {
-            "path": "agents.json",
-            "sha256": "27f7d1b712f5a507433ab4d84239e597d7e7d6610474009a2348f4d8ad188f72",
-            "bytes": 498
-          },
-          {
-            "path": "client.js",
-            "sha256": "0f9e355cf547646eb041eb1bf6a15ceb817190952f7620dc6f427a50a19ed5af",
-            "bytes": 90134
-          }
-        ],
-        "permissions": [
-          "chat-read",
-          "chat-write",
-          "network",
-          "storage",
-          "ui"
-        ],
-        "restartRequired": false
-      },
-      "category": "misc",
-      "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/impersonate-button-1.0.9.zip",
-        "sha256": "86e14417b02cee48755ea3f26ba4f077d54c07939a50a77a146414347ea060b1",
-        "bytes": 22131
-      },
-      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#impersonate-button"
-    },
-    {
-      "manifest": {
-        "schemaVersion": 1,
-        "id": "persona-reapply",
-        "name": "Persona Reapply",
-        "version": "1.0.3",
-        "description": "Refreshes saved persona colours on individual messages or across a whole chat.",
+        "id": "mari-bridge",
+        "name": "Mari Bridge",
+        "version": "1.0.0",
+        "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
         "engine": {
           "min": "2.4.2",
           "maxExclusive": "3.0.0"
@@ -2067,104 +2123,23 @@
         ],
         "entrypoints": {
           "server": "server.mjs",
-          "client": "client.js",
-          "agents": "agents.json"
+          "client": "client.js"
+        },
+        "contributions": {
+          "slots": [
+            "chat-runtime"
+          ]
         },
         "files": [
           {
-            "path": "agents.json",
-            "sha256": "d99b1c8217c8d75e866da5db7b9cc5554c9a3474503bb32c302c526f0c834b6a",
-            "bytes": 505
-          },
-          {
-            "path": "bridge/capability-slots.js",
-            "sha256": "5347256833e03c270b1588f674008c4b9daf9daf9b32d400b598f6f7637094ef",
-            "bytes": 32608
-          },
-          {
-            "path": "bridge/chat-settings.js",
-            "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
-            "bytes": 633
-          },
-          {
-            "path": "bridge/commands.js",
-            "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
-            "bytes": 9153
-          },
-          {
-            "path": "bridge/composer-actions.js",
-            "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
-            "bytes": 3635
-          },
-          {
-            "path": "bridge/composer-dom.js",
-            "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
-            "bytes": 6719
-          },
-          {
-            "path": "bridge/fetch-intercept.js",
-            "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
-            "bytes": 5720
-          },
-          {
-            "path": "bridge/generation-lifecycle.js",
-            "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
-            "bytes": 15046
-          },
-          {
-            "path": "bridge/generation-stream.js",
-            "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
-            "bytes": 2807
-          },
-          {
-            "path": "bridge/host-routes.js",
-            "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
-            "bytes": 1847
-          },
-          {
-            "path": "bridge/index.js",
-            "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
-            "bytes": 580
-          },
-          {
-            "path": "bridge/message-actions.js",
-            "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
-            "bytes": 481
-          },
-          {
-            "path": "bridge/prompt-contribution.js",
-            "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
-            "bytes": 6771
-          },
-          {
-            "path": "bridge/ranges.js",
-            "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
-            "bytes": 2012
-          },
-          {
-            "path": "bridge/runtime.js",
-            "sha256": "e94a7a51698854572a773c63d3adf914acc48378da4d9d692de1605ae45b7d00",
-            "bytes": 5418
-          },
-          {
-            "path": "bridge/summary-tracking.js",
-            "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
-            "bytes": 2620
-          },
-          {
-            "path": "bridge/topbar-panels.js",
-            "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
-            "bytes": 463
-          },
-          {
-            "path": "bridge/ui-slots.js",
-            "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
-            "bytes": 15676
+            "path": "bootstrap/register.mjs",
+            "sha256": "fb20310a30cd00e52fa591abe4acbb6af49868438d00e794af4b63d36bf2ffc3",
+            "bytes": 10957
           },
           {
             "path": "client.js",
-            "sha256": "43ee542ece5a7ae186615f4c2c25bed3fc8b4a978ff76e2cf5f4435af3f9a580",
-            "bytes": 72633
+            "sha256": "705e1ce5f80e708898ea0dd53f865dfe9bd98ee1bef6c8401477d6e27ebfa3e6",
+            "bytes": 23404
           },
           {
             "path": "server.mjs",
@@ -2172,43 +2147,84 @@
             "bytes": 61
           },
           {
-            "path": "src/server/index.js",
-            "sha256": "f3fe7ebd645ad3a0628653e2214d17df561110215cf9a4a7a79d30c4dfacc081",
-            "bytes": 863
+            "path": "src/client/runtime.js",
+            "sha256": "705e1ce5f80e708898ea0dd53f865dfe9bd98ee1bef6c8401477d6e27ebfa3e6",
+            "bytes": 23404
           },
           {
-            "path": "src/server/reapply.js",
-            "sha256": "0acf0ce50eab3c4fe190df8f8c676193089142caf6b40196e104a19e4775d81b",
-            "bytes": 1755
+            "path": "src/server/bootstrap-install.js",
+            "sha256": "4b5e00ddcb7a7b4b4b24fe6e8d19b7561261336e7fb578cd3149b5e2d68e001d",
+            "bytes": 679
+          },
+          {
+            "path": "src/server/bootstrap-restart.js",
+            "sha256": "84251ce5603c8cdc04f9e978c07f8b73c58b1fb5b956191a24f20af2b6787bb3",
+            "bytes": 2424
+          },
+          {
+            "path": "src/server/client-overlay.js",
+            "sha256": "b1bb96b74f2c749b5dbb3cbff47068db8298862a8d67065671d653998c18a924",
+            "bytes": 16399
+          },
+          {
+            "path": "src/server/index.js",
+            "sha256": "524631e695e24ee5cca224c8f33526e61bd7e35207a5f89ca03e88ad4391a848",
+            "bytes": 8489
+          },
+          {
+            "path": "src/server/prompt-registry.js",
+            "sha256": "9d49772ccd295dd807dd88842f6f948da6db485a1f33b9f297429eb958ac093e",
+            "bytes": 8379
+          },
+          {
+            "path": "src/server/result-registry.js",
+            "sha256": "fe13aa0b2d591ced7ba2fa6b9da56f2c2e5d7e15b0dfcb1ddd29fe1bffb6b208",
+            "bytes": 2995
           },
           {
             "path": "src/server/routes.js",
-            "sha256": "247fcc59a139bdd75c2a1c4bb9c5db0c61835f42d8337c5ed75efeb679e4372c",
-            "bytes": 4151
+            "sha256": "f363986ebde5706cf23eaa3a3f0544d4537f66d687eeaf3e1a011282c18ebb20",
+            "bytes": 265
+          },
+          {
+            "path": "src/server/runtime.js",
+            "sha256": "8d9f316ea0ad5d4bcb82be11329ee8af5a9da537256ab9363d0f67f3a0c03c15",
+            "bytes": 9763
+          },
+          {
+            "path": "src/server/tracker-context-registry.js",
+            "sha256": "0cc7b5af651cac6a20b8f1e03bf201bee59516b439b361054a5d73032324fec0",
+            "bytes": 3659
+          },
+          {
+            "path": "src/shared/contracts.js",
+            "sha256": "14741c1da824adc5a1652b93dd681da154bd75767f83e1cf661be9687443de0d",
+            "bytes": 1840
           }
         ],
         "permissions": [
-          "chat-read",
-          "chat-write",
+          "agent-runtime",
+          "prompt-context",
           "routes",
+          "storage",
           "ui"
         ],
         "restartRequired": true
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/persona-reapply-1.0.3.zip",
-        "sha256": "8c1c6c50851f98d77090f73e850a87886393aa8cc08dedb4659ddad742ea9b10",
-        "bytes": 54828
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/mari-bridge-1.0.0.zip",
+        "sha256": "4daba88c13a462daa1df0704fe2334ceef0a2395142494455bfb3a8ad1ddbeb6",
+        "bytes": 33037
       },
-      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#persona-reapply"
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#mari-bridge"
     },
     {
       "manifest": {
         "schemaVersion": 1,
         "id": "presence",
         "name": "Presence",
-        "version": "1.2.0",
+        "version": "1.4.0",
         "description": "Tracks per-message character presence with native per-character Hide From AI state.",
         "engine": {
           "min": "2.3.3",
@@ -2235,98 +2251,43 @@
         "files": [
           {
             "path": "agents.json",
-            "sha256": "430f8bfad1760a693485a35e390749c2fcea19a567c4db298715f434d6c93d9a",
-            "bytes": 401
+            "sha256": "b0a65fe5095f2e552fc6c5b22dc61c08ccc89d0e784d32f4e4bf9a201ae53149",
+            "bytes": 430
           },
           {
-            "path": "bridge/capability-slots.js",
-            "sha256": "5347256833e03c270b1588f674008c4b9daf9daf9b32d400b598f6f7637094ef",
-            "bytes": 32608
+            "path": "bridge-sdk/client.js",
+            "sha256": "0042f723d83a1f19a29961a62ee39688311f228f0b4960b2c8afd7bf37dd0b19",
+            "bytes": 1234
           },
           {
-            "path": "bridge/chat-settings.js",
-            "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
-            "bytes": 633
+            "path": "bridge-sdk/contracts.js",
+            "sha256": "a13155182bb2a3400911b8fc1bb91d4bf535e3c6cc8745408784179cd33f6b86",
+            "bytes": 1748
           },
           {
-            "path": "bridge/commands.js",
-            "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
-            "bytes": 9153
+            "path": "bridge-sdk/index.js",
+            "sha256": "d15eefdb57f7a7f5812dfa5dc2834c471c607d47f4a522c0d96cbd670fae4dd6",
+            "bytes": 150
           },
           {
-            "path": "bridge/composer-actions.js",
-            "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
-            "bytes": 3635
+            "path": "bridge-sdk/ranges.js",
+            "sha256": "7030e2af96817bc82d256367e920ec37d90d729b5ef9575a003673ac468eb155",
+            "bytes": 2128
           },
           {
-            "path": "bridge/composer-dom.js",
-            "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
-            "bytes": 6719
+            "path": "bridge-sdk/server.js",
+            "sha256": "ac9472aef2ba8c57d773b5a397375c078e1008c4c0bc0a1c3b4b4910e8dbcb3a",
+            "bytes": 1180
           },
           {
-            "path": "bridge/fetch-intercept.js",
-            "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
-            "bytes": 5720
-          },
-          {
-            "path": "bridge/generation-lifecycle.js",
-            "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
-            "bytes": 15046
-          },
-          {
-            "path": "bridge/generation-stream.js",
-            "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
-            "bytes": 2807
-          },
-          {
-            "path": "bridge/host-routes.js",
-            "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
-            "bytes": 1847
-          },
-          {
-            "path": "bridge/index.js",
-            "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
-            "bytes": 580
-          },
-          {
-            "path": "bridge/message-actions.js",
-            "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
-            "bytes": 481
-          },
-          {
-            "path": "bridge/prompt-contribution.js",
-            "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
-            "bytes": 6771
-          },
-          {
-            "path": "bridge/ranges.js",
-            "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
-            "bytes": 2012
-          },
-          {
-            "path": "bridge/runtime.js",
-            "sha256": "e94a7a51698854572a773c63d3adf914acc48378da4d9d692de1605ae45b7d00",
-            "bytes": 5418
-          },
-          {
-            "path": "bridge/summary-tracking.js",
-            "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
-            "bytes": 2620
-          },
-          {
-            "path": "bridge/topbar-panels.js",
-            "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
-            "bytes": 463
-          },
-          {
-            "path": "bridge/ui-slots.js",
-            "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
-            "bytes": 15676
+            "path": "bridge-sdk/settings.js",
+            "sha256": "edf0f4973baa1de999cff140346f816a7fb36e7f364fab80c1387ad3c045d120",
+            "bytes": 4963
           },
           {
             "path": "client.js",
-            "sha256": "e98af8b87f7e4d87473c6d6b15fa2056450a6e0af3538a0b368228c2d9cb7dc2",
-            "bytes": 78775
+            "sha256": "783e0dda499d88ac1d00dba00fb539d8ef65ae52a4429daacb564e776330231f",
+            "bytes": 30691
           },
           {
             "path": "server.mjs",
@@ -2335,23 +2296,23 @@
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "0b2a427005d8cbff119045a1e20d42d6b8824c4ef5f4d438c8e5b8844c4396e6",
-            "bytes": 19762
+            "sha256": "151fe82dd08430c3742d497a99b2c4f8e889258703260aa5d27ef5d8b4133fe9",
+            "bytes": 19777
           },
           {
             "path": "src/server/command-router.js",
-            "sha256": "35f8e5ee5bdfff0d739a5cbc5a3ab2e7fdfaa42d022b8dba31e97c1b282c8039",
-            "bytes": 737
+            "sha256": "107b7aaecf2b25092f03ebff9354f4873ae2e19c1fb601323ccf8efe0d5aaf6a",
+            "bytes": 954
           },
           {
             "path": "src/server/index.js",
-            "sha256": "d0b4ff5f1be56a1ed855b4013de9f51d28a220eba4a2d3ebaaa9e2115c0e1eb1",
-            "bytes": 911
+            "sha256": "a04a6dda802636273b20b375da55963330c7ea139adcbdbff86d519cdf857656",
+            "bytes": 1282
           },
           {
             "path": "src/server/routes.js",
-            "sha256": "7a30226a3dde7189d422e6cac8782118cbe069f59e4a125b9aa283b173dc949c",
-            "bytes": 24908
+            "sha256": "fd75e22460bde5900de415ac42a74e593e7b7cb54c9a0ff43d16f6978768128a",
+            "bytes": 25409
           },
           {
             "path": "src/shared/chat-state.js",
@@ -2391,9 +2352,9 @@
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.2.0.zip",
-        "sha256": "fba81c529246432911a8459033b129bf8d63deea908f94aa8ac60c19c452c1db",
-        "bytes": 67008
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.4.0.zip",
+        "sha256": "b0ed5c1aa27248c362465bcf2f482e272c5d24f7fe445900e183757f6e1940d5",
+        "bytes": 28660
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
     },
@@ -2423,8 +2384,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "bd9c96ca9e1915c539e8b445cb55f1391a8334e100347d1cdd6df73b649faa9d",
-            "bytes": 62004
+            "sha256": "9b98d7ef8a9654a69a02219d62e9ca69c9153c8f45b8085b678a6d37ad3a3cb0",
+            "bytes": 16880
           }
         ],
         "permissions": [
@@ -2435,105 +2396,21 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.5.zip",
-        "sha256": "a8ff39a92a755ba73a4f9618895384ccda1df81c43878b801702210d387b4f9e",
-        "bytes": 15624
+        "sha256": "c96772ac18eb8bd8c9df3b22577dc5307c9de738e45ec4efeb6f951db624301e",
+        "bytes": 5809
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
     },
     {
       "manifest": {
         "schemaVersion": 1,
-        "id": "response-keeper",
-        "name": "Response Keeper",
-        "version": "1.0.1",
-        "description": "Preserves stopped regenerations, stopped continuations, and manual edits.",
-        "engine": {
-          "min": "2.4.1",
-          "maxExclusive": "3.0.0"
-        },
-        "kind": [
-          "agent"
-        ],
-        "entrypoints": {
-          "client": "client.js",
-          "agents": "agents.json"
-        },
-        "files": [
-          {
-            "path": "agents.json",
-            "sha256": "f78775ae903cadd1d1f37fb6298bea6f0c75dcdd8ffc7f8c5895900391b0cddf",
-            "bytes": 532
-          },
-          {
-            "path": "client.js",
-            "sha256": "ff5b9c8a8f54229565fed6bb8e70f4bc574f01d66197c978dc2924a1a199022c",
-            "bytes": 28025
-          }
-        ],
-        "permissions": [
-          "chat-read",
-          "chat-write",
-          "ui"
-        ],
-        "restartRequired": false
-      },
-      "category": "misc",
-      "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/response-keeper-1.0.1.zip",
-        "sha256": "1b76191d2ed96531a9d7af063dab0f94e992b09fb031218c81f0e114352b8b30",
-        "bytes": 8015
-      },
-      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#response-keeper"
-    },
-    {
-      "manifest": {
-        "schemaVersion": 1,
-        "id": "tracker-json-editor",
-        "name": "Tracker JSON Editor",
-        "version": "1.0.2",
-        "description": "Adds per-section tracker JSON export/import buttons beside tracker rerun controls.",
-        "engine": {
-          "min": "2.3.3",
-          "maxExclusive": "3.0.0"
-        },
-        "kind": [
-          "agent"
-        ],
-        "entrypoints": {
-          "client": "client.js"
-        },
-        "files": [
-          {
-            "path": "client.js",
-            "sha256": "f5c51ea96c622c7b59535466f23ebf713571eb9e51a14c54bad3c658c0943ae9",
-            "bytes": 22033
-          }
-        ],
-        "permissions": [
-          "chat-read",
-          "chat-write",
-          "ui"
-        ],
-        "restartRequired": false
-      },
-      "category": "misc",
-      "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/tracker-json-editor-1.0.2.zip",
-        "sha256": "28bc3a4ea73a67ce5c1a5651bef290a9dc30b1ce8e853c3f2a16b1f0454d8e6e",
-        "bytes": 6002
-      },
-      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#tracker-json-editor"
-    },
-    {
-      "manifest": {
-        "schemaVersion": 1,
         "id": "world-map-background",
         "name": "World Map Background",
-        "version": "1.0.3",
+        "version": "1.1.0",
         "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
         "engine": {
-          "min": "2.3.5",
-          "maxExclusive": "4.0.0"
+          "min": "2.4.2",
+          "maxExclusive": "3.0.0"
         },
         "kind": [
           "agent"
@@ -2544,7 +2421,8 @@
         },
         "contributions": {
           "slots": [
-            "chat-runtime"
+            "chat-runtime",
+            "chat-settings"
           ]
         },
         "files": [
@@ -2554,99 +2432,14 @@
             "bytes": 465
           },
           {
-            "path": "bridge/capability-slots.js",
-            "sha256": "5347256833e03c270b1588f674008c4b9daf9daf9b32d400b598f6f7637094ef",
-            "bytes": 32608
-          },
-          {
-            "path": "bridge/chat-settings.js",
-            "sha256": "7c21d6a8b775322363df78b89218e28d215bdc72422401648ecbe9be13f0bfc6",
-            "bytes": 633
-          },
-          {
-            "path": "bridge/commands.js",
-            "sha256": "9ff7d23b480544d7001808ee1aa5de935e032ae2009224471823a4234614e798",
-            "bytes": 9153
-          },
-          {
-            "path": "bridge/composer-actions.js",
-            "sha256": "85dd769d36ff9cf45db88310a33a5f297894035130d22129a7e70b00fd594643",
-            "bytes": 3635
-          },
-          {
-            "path": "bridge/composer-dom.js",
-            "sha256": "af857c7e484279631bb05fa9ee50c4bc5c201b675ba1657543383582cc59738f",
-            "bytes": 6719
-          },
-          {
-            "path": "bridge/fetch-intercept.js",
-            "sha256": "b7862cf719b5187523dd9066f634c11499b701a02b1426b05b4f6549d974f364",
-            "bytes": 5720
-          },
-          {
-            "path": "bridge/generation-lifecycle.js",
-            "sha256": "46a96130414dc81cf14b9648743454a31276e5a0d230222fdefb1279dca5d2e8",
-            "bytes": 15046
-          },
-          {
-            "path": "bridge/generation-stream.js",
-            "sha256": "f713ce98194bf768df74b8fe591f6782d219a58b102169394a3a7affc80be546",
-            "bytes": 2807
-          },
-          {
-            "path": "bridge/host-routes.js",
-            "sha256": "51818ac25f3ac2ac2e58029bfa65dbcf1eeb5e65318c138707fe7131fe5165ff",
-            "bytes": 1847
-          },
-          {
-            "path": "bridge/index.js",
-            "sha256": "b23275ef8c23ea9a2602280eb4be0796643c1cc9153933f65c0dbbb84e7919cb",
-            "bytes": 580
-          },
-          {
-            "path": "bridge/message-actions.js",
-            "sha256": "fcf79ecb5a0077c6cd64e6df8852b0dfc0af9247911cc5437073a7282bea326c",
-            "bytes": 481
-          },
-          {
-            "path": "bridge/prompt-contribution.js",
-            "sha256": "65bb806f9232d7b48ceefe3e00e67e7833cf7f681e0afea6c3ab63814943abc9",
-            "bytes": 6771
-          },
-          {
-            "path": "bridge/ranges.js",
-            "sha256": "abb430dd569871149790cb0fe88ae6deceaf3042bdfd62eccf9505cd51d22a35",
-            "bytes": 2012
-          },
-          {
-            "path": "bridge/runtime.js",
-            "sha256": "e94a7a51698854572a773c63d3adf914acc48378da4d9d692de1605ae45b7d00",
-            "bytes": 5418
-          },
-          {
-            "path": "bridge/summary-tracking.js",
-            "sha256": "9502b9fd69ec6c7d590de4c907d877b59ccf46bd457b558aec8d2795296e2905",
-            "bytes": 2620
-          },
-          {
-            "path": "bridge/topbar-panels.js",
-            "sha256": "9da47aea8ef3b51a0914079a065c3d6ea3548b23f34924d8f4ccb41a046d1c2d",
-            "bytes": 463
-          },
-          {
-            "path": "bridge/ui-slots.js",
-            "sha256": "7bf402e9398253212354b65f28bd0aba44553ba06cab757f115c59e95548a42d",
-            "bytes": 15676
-          },
-          {
             "path": "client.js",
-            "sha256": "e60538c94efbce7806eeccdd45be2a609072562064f56bea056f747c1bc851a3",
-            "bytes": 26395
+            "sha256": "81b512a7921072bb6f8ce8fb6ba201799d6d73592434d4c02e32a4a02ea7ce2f",
+            "bytes": 27871
           },
           {
             "path": "src/client/runtime.js",
-            "sha256": "8fe0f7af8ed3460bd2085ab2f1bd2bf7806bfd75de909994f1d3112d4efb2b1b",
-            "bytes": 13006
+            "sha256": "a7b195305172314c63f5eeac70ec84ab19d263cc19d5b98cd5050ef6e42644bb",
+            "bytes": 20021
           }
         ],
         "permissions": [
@@ -2659,9 +2452,9 @@
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.0.3.zip",
-        "sha256": "2414c4da1e62c53064dc57e08584620ab3fd1864703ceb1252acf4585687b572",
-        "bytes": 45823
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.1.0.zip",
+        "sha256": "da7c1bec527276f1ea3fa42776aa861efb5f37b0fd4a5e598dc31451d3743938",
+        "bytes": 14137
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"
     }

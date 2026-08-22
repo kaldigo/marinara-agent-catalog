@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "id": "gm-notes",
+  "name": "GM Notes",
+  "version": "1.0.0",
+  "description": "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
+  "engine": {
+    "min": "2.4.2",
+    "maxExclusive": "3.0.0"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "server": "server.mjs",
+    "client": "client.js",
+    "agents": "agents.json"
+  },
+  "contributions": {
+    "slots": [
+      "chat-runtime"
+    ]
+  },
+  "files": [
+    {
+      "path": "agents.json",
+      "sha256": "350c2481b4d9cbbb4c910fd878adeaf461bd674620c84b44de51b3d0a00613bb",
+      "bytes": 2538
+    },
+    {
+      "path": "bridge-sdk/client.js",
+      "sha256": "0042f723d83a1f19a29961a62ee39688311f228f0b4960b2c8afd7bf37dd0b19",
+      "bytes": 1234
+    },
+    {
+      "path": "bridge-sdk/contracts.js",
+      "sha256": "a13155182bb2a3400911b8fc1bb91d4bf535e3c6cc8745408784179cd33f6b86",
+      "bytes": 1748
+    },
+    {
+      "path": "bridge-sdk/index.js",
+      "sha256": "d15eefdb57f7a7f5812dfa5dc2834c471c607d47f4a522c0d96cbd670fae4dd6",
+      "bytes": 150
+    },
+    {
+      "path": "bridge-sdk/ranges.js",
+      "sha256": "7030e2af96817bc82d256367e920ec37d90d729b5ef9575a003673ac468eb155",
+      "bytes": 2128
+    },
+    {
+      "path": "bridge-sdk/server.js",
+      "sha256": "ac9472aef2ba8c57d773b5a397375c078e1008c4c0bc0a1c3b4b4910e8dbcb3a",
+      "bytes": 1180
+    },
+    {
+      "path": "bridge-sdk/settings.js",
+      "sha256": "edf0f4973baa1de999cff140346f816a7fb36e7f364fab80c1387ad3c045d120",
+      "bytes": 4963
+    },
+    {
+      "path": "client.js",
+      "sha256": "7195bca3c1f6f34c3e52b2efcb1c067e401665022d00ebdc6884acadc1e21018",
+      "bytes": 24264
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+      "bytes": 61
+    },
+    {
+      "path": "src/server/index.js",
+      "sha256": "1223fe46922c7ec227e0ee6b7971c7abe46be12bd1b65bacd42cd62818685ae1",
+      "bytes": 2510
+    },
+    {
+      "path": "src/server/routes.js",
+      "sha256": "69514c1309287e75ceceda45447f716cbd967a617f0ec7574a30b41d48bbd55d",
+      "bytes": 2679
+    },
+    {
+      "path": "src/shared/state.js",
+      "sha256": "6b4e8d6d0df077a49392eee0344c5ad52635e5713a352af948505bf9f86412bf",
+      "bytes": 5982
+    }
+  ],
+  "permissions": [
+    "agent-runtime",
+    "chat-read",
+    "chat-write",
+    "prompt-context",
+    "routes",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": true
+}
