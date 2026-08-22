@@ -22,7 +22,7 @@ await fs.writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify({
   name: "Mari Bridge",
   version,
   description: "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
-  engine: { min: "2.4.2", maxExclusive: "3.0.0" },
+  engine: { min: "2.4.3", maxExclusive: "2.4.4" },
   kind: ["agent"],
   entrypoints: { server: "server.mjs", client: "client.js" },
   contributions: { slots: ["chat-runtime"] },

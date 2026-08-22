@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -353,4 +354,33 @@ assert.equal(
   "unsupported tracker guards retain native Engine behavior instead of crashing startup",
 );
 assert.equal(globalThis[kernelSymbol].patches["tracker.context-committed-active"], "failed");
+
+const preloadUrl = new URL("../bootstrap/register.mjs", import.meta.url).href;
+async function runBootstrapFixture(version) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-version-"));
+  const entryDir = path.join(root, "packages", "server", "dist");
+  const entry = path.join(entryDir, "index.mjs");
+  await fs.mkdir(entryDir, { recursive: true });
+  await fs.writeFile(path.join(root, "package.json"), `${JSON.stringify({ name: "marinara-engine", version })}\n`);
+  await fs.writeFile(
+    entry,
+    'console.log(JSON.stringify(globalThis[Symbol.for("marinara.mari-bridge.kernel.v1")]));\n',
+  );
+  const result = spawnSync(process.execPath, [`--import=${preloadUrl}`, entry], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  await fs.rm(root, { recursive: true, force: true });
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout.trim());
+}
+
+const wrongVersionKernel = await runBootstrapFixture("2.4.4");
+assert.equal(wrongVersionKernel.active, false);
+assert.equal(wrongVersionKernel.engineCompatibility.compatible, false);
+assert.equal(wrongVersionKernel.patches["engine.version"], "failed");
+const failedPreflightKernel = await runBootstrapFixture("2.4.3");
+assert.equal(failedPreflightKernel.active, false);
+assert.equal(failedPreflightKernel.engineCompatibility.compatible, true);
+assert.equal(failedPreflightKernel.patches["engine.preflight"], "failed");
 console.log("Mari Bridge runtime checks passed.");

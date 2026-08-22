@@ -13,8 +13,8 @@
     "name": "Mari Bridge",
     "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
     "engine": {
-      "min": "2.4.2",
-      "maxExclusive": "3.0.0"
+      "min": "2.4.3",
+      "maxExclusive": "2.4.4"
     },
     "kind": ["agent"],
     "permissions": ["agent-runtime", "prompt-context", "routes", "storage", "ui"],

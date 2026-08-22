@@ -1,15 +1,43 @@
 import { registerHooks } from "node:module";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
+export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.3"]);
 const disabled = process.env.MARI_BRIDGE_DISABLE === "1";
+
+export function detectMarinaraEngine(entry = process.argv[1], cwd = process.cwd()) {
+  const candidates = [
+    entry ? resolve(dirname(resolve(cwd, entry)), "..", "..", "..", "package.json") : "",
+    resolve(cwd, "package.json"),
+  ].filter(Boolean);
+  for (const packagePath of [...new Set(candidates)]) {
+    try {
+      const manifest = JSON.parse(readFileSync(packagePath, "utf8"));
+      if (manifest?.name === "marinara-engine" && typeof manifest.version === "string") {
+        return Object.freeze({ root: dirname(packagePath), version: manifest.version });
+      }
+    } catch {
+      // Try the next deterministic location.
+    }
+  }
+  return Object.freeze({ root: null, version: null });
+}
+
+const detectedEngine = detectMarinaraEngine();
+const engineCompatible = SUPPORTED_ENGINE_VERSIONS.includes(detectedEngine.version);
 const kernel = globalThis[KERNEL_SYMBOL] ?? {
-  active: !disabled,
-  version: "1.0.1",
+  active: false,
   patches: {},
   failures: [],
 };
+kernel.version = "1.0.2";
+kernel.engineCompatibility = Object.freeze({
+  detected: detectedEngine.version,
+  supported: SUPPORTED_ENGINE_VERSIONS,
+  compatible: engineCompatible,
+});
 globalThis[KERNEL_SYMBOL] = kernel;
 
 function recordPatchFailure(patchId, detail) {
@@ -46,13 +74,8 @@ export function patchCommittedTrackerActiveGuard(source) {
   );
 }
 
-if (!disabled) {
-
-  registerHooks({
-    load(url, context, nextLoad) {
-      const result = nextLoad(url, context);
-      if (result.format !== "module") return result;
-      let source = String(result.source);
+function patchServerModule(url, inputSource) {
+  let source = String(inputSource);
       if (url.endsWith("/capability-module-runtime.service.js")) {
         source = replaceExact(
           source,
@@ -66,7 +89,7 @@ if (!disabled) {
           ].join("\n"),
           "bridge-first.activation",
         );
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/services/prompt/assembler.js")) {
         source = replaceExact(
@@ -97,7 +120,7 @@ if (!disabled) {
           "prompt.active-agents.assembler",
         );
         kernel.patches["prompt.assembler"] = "applied";
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/services/prompt/macro-context.js")) {
         source = replaceExact(
@@ -111,7 +134,7 @@ if (!disabled) {
           ].join("\n"),
           "prompt.active-agents.context",
         );
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/utils/macro-engine.js")) {
         source = replaceExact(
@@ -123,7 +146,7 @@ if (!disabled) {
           ].join("\n"),
           "prompt.active-agents.macro",
         );
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/services/agents/agent-executor.js")) {
         source = replaceExact(
@@ -145,7 +168,7 @@ if (!disabled) {
           ].join("\n"),
           "tracker.context-agent",
         );
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/services/generation/committed-tracker-context.js")) {
         source = patchCommittedTrackerActiveGuard(source);
@@ -165,7 +188,7 @@ if (!disabled) {
           ].join("\n"),
           "tracker.context-committed",
         );
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/routes/generate.routes.js")) {
         source = replaceExact(
@@ -212,7 +235,7 @@ if (!disabled) {
           ].join("\n"),
           "agent.result-apply-main",
         );
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/routes/generate/retry-agents-route.js")) {
         source = replaceExact(
@@ -239,19 +262,75 @@ if (!disabled) {
           ].join("\n"),
           "agent.result-apply-retry",
         );
-        return { ...result, source };
+        return source;
       }
       if (url.endsWith("/app.js")) {
-        kernel.nativeClientRoot = resolve(dirname(fileURLToPath(url)), "..", "..", "client", "dist");
         source = replaceExact(
           source,
           'const clientDist = resolve(__dirname, "..", "..", "client", "dist");',
           'const clientDist = globalThis[Symbol.for("marinara.mari-bridge.kernel.v1")]?.clientRoot || resolve(__dirname, "..", "..", "client", "dist");',
           "client.overlay-root",
         );
-        return { ...result, source };
+        return source;
       }
-      return result;
+      return source;
+}
+
+const SERVER_PATCH_TARGETS = Object.freeze([
+  ["capability-module-runtime.service.js", ["packages", "server", "dist", "services", "capability-packages", "capability-module-runtime.service.js"]],
+  ["services/prompt/assembler.js", ["packages", "server", "dist", "services", "prompt", "assembler.js"]],
+  ["services/prompt/macro-context.js", ["packages", "server", "dist", "services", "prompt", "macro-context.js"]],
+  ["utils/macro-engine.js", ["packages", "shared", "dist", "utils", "macro-engine.js"]],
+  ["services/agents/agent-executor.js", ["packages", "server", "dist", "services", "agents", "agent-executor.js"]],
+  ["services/generation/committed-tracker-context.js", ["packages", "server", "dist", "services", "generation", "committed-tracker-context.js"]],
+  ["routes/generate.routes.js", ["packages", "server", "dist", "routes", "generate.routes.js"]],
+  ["routes/generate/retry-agents-route.js", ["packages", "server", "dist", "routes", "generate", "retry-agents-route.js"]],
+  ["app.js", ["packages", "server", "dist", "app.js"]],
+]);
+
+export function preflightServerPatches(engineRoot) {
+  kernel.patches = {};
+  kernel.failures = [];
+  for (const [label, segments] of SERVER_PATCH_TARGETS) {
+    const modulePath = resolve(engineRoot, ...segments);
+    try {
+      patchServerModule(pathToFileURL(modulePath).href, readFileSync(modulePath, "utf8"));
+    } catch (error) {
+      recordPatchFailure("engine.preflight", `Could not preflight ${label}: ${error instanceof Error ? error.message : String(error)}`);
+      break;
+    }
+  }
+  const compatible = kernel.failures.length === 0;
+  if (!compatible) {
+    for (const [patchId, status] of Object.entries(kernel.patches)) {
+      if (status === "applied") kernel.patches[patchId] = "skipped";
+    }
+  }
+  return compatible;
+}
+
+if (disabled) {
+  kernel.active = false;
+  kernel.patches["engine.version"] = "disabled";
+} else if (!engineCompatible || !detectedEngine.root) {
+  kernel.active = false;
+  recordPatchFailure(
+    "engine.version",
+    `engine.version supports ${SUPPORTED_ENGINE_VERSIONS.join(", ")}; detected ${detectedEngine.version ?? "unknown"}`,
+  );
+} else if (!preflightServerPatches(detectedEngine.root)) {
+  kernel.active = false;
+} else {
+  kernel.active = true;
+  kernel.patches["engine.version"] = "applied";
+  kernel.nativeClientRoot = resolve(detectedEngine.root, "packages", "client", "dist");
+  registerHooks({
+    load(url, context, nextLoad) {
+      const result = nextLoad(url, context);
+      if (result.format !== "module" || typeof result.source !== "string") return result;
+      const inputSource = String(result.source);
+      const source = patchServerModule(url, inputSource);
+      return source === inputSource ? result : { ...result, source };
     },
   });
 }

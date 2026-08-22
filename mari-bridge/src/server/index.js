@@ -64,9 +64,10 @@ export async function activate(context) {
   }
   const bootstrapPath = await installStableBootstrap(context);
   const kernel = globalThis[MARI_BRIDGE_KERNEL_SYMBOL] ?? null;
+  const bridgeOperational = kernel?.active === true && kernel?.engineCompatibility?.compatible === true;
   const bootstrapRestart = await schedulePackageBootstrapRestart(context, bootstrapPath);
   let clientOverlay = null;
-  if (kernel?.nativeClientRoot) {
+  if (bridgeOperational && kernel?.nativeClientRoot) {
     clientOverlay = await prepareClientOverlay({ dataDir: context.dataDir, sourceRoot: kernel.nativeClientRoot });
     kernel.clientRoot = clientOverlay.root;
     kernel.patches["client.bridge-first"] = "applied";
@@ -88,16 +89,15 @@ export async function activate(context) {
     kernel?.patches?.["tracker.context-agent"] === "applied";
   const runtime = createBridgeRuntime({
     capabilities: [
-      "consumer.sessions",
       "diagnostics",
       "runtime.health",
-      ...(promptPatchApplied
+      ...(bridgeOperational ? ["consumer.sessions", "host.request"] : []),
+      ...(bridgeOperational && promptPatchApplied
         ? ["prompt.inject", "prompt.suppress", "prompt.transform-final", "prompt.transform-history"]
         : []),
       ...(clientOverlay ? ["client.bridge-first"] : []),
       ...(agentResultPatchApplied ? ["agent.result-types"] : []),
       ...(trackerContextPatchApplied ? ["tracker.context"] : []),
-      "host.request",
     ],
     promptRegistry,
     agentResultRegistry,
@@ -105,9 +105,18 @@ export async function activate(context) {
     hostRequest: createHostRequest(context.app),
     patches: [
       {
+        id: "engine.version",
+        status: bridgeOperational ? "applied" : "unavailable",
+        detail: bridgeOperational
+          ? `Engine ${kernel.engineCompatibility.detected} is supported`
+          : `Mari Bridge supports Engine ${kernel?.engineCompatibility?.supported?.join(", ") ?? "2.4.3"}; detected ${kernel?.engineCompatibility?.detected ?? "unknown"}`,
+      },
+      {
         id: "bridge-first.activation",
         status: kernel?.patches?.["bridge-first.activation"] === "applied" ? "applied" : "unavailable",
-        detail: kernel ? null : "Mari Bridge preload is not active; configure the stable bootstrap and restart",
+        detail: bridgeOperational
+          ? null
+          : kernel?.failures?.join("; ") || "Mari Bridge preload is not active; configure the stable bootstrap and restart",
       },
       {
         id: "prompt.assembler",
@@ -194,7 +203,7 @@ export async function activate(context) {
 export async function selfCheck() {
   const snapshot = activeRuntime?.getSnapshot();
   if (!snapshot || snapshot.status !== "ready") throw new Error("Mari Bridge runtime did not become ready");
-  for (const capability of ["consumer.sessions", "diagnostics", "runtime.health"]) {
+  for (const capability of ["diagnostics", "runtime.health"]) {
     if (!snapshot.capabilities.includes(capability)) throw new Error(`Mari Bridge is missing ${capability}`);
   }
 }
