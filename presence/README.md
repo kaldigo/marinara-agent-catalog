@@ -18,7 +18,7 @@ The positive record remains authoritative when the roster changes. A character a
 
 ## Always Present
 
-Chat Settings includes an avatar picker for characters that should always be present. This is intended for narrator and system-style cards. Selecting one updates existing non-globally-hidden messages and includes that character in future stamps even while inactive.
+Chat Settings and the Presence agent detail view include the shared Mari Bridge avatar picker for characters that should always be present. This is intended for narrator and system-style cards. Selecting one updates existing non-globally-hidden messages and includes that character in future stamps even while inactive.
 
 ## Slash Commands
 

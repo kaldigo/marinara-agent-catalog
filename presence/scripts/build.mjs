@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(projectRoot, "dist");
 const packageRoot = path.join(distRoot, "package");
-const bridgeRoot = path.resolve(projectRoot, "..", "_mari-bridge", "src");
+const sdkRoot = path.resolve(projectRoot, "..", "_mari-bridge", "sdk");
 const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8")).version;
 
 await fs.rm(distRoot, { recursive: true, force: true });
@@ -17,7 +17,7 @@ await fs.mkdir(packageRoot, { recursive: true });
 await copyTree(path.join(projectRoot, "src/shared"), path.join(packageRoot, "src/shared"));
 await copyTree(path.join(projectRoot, "src/server"), path.join(packageRoot, "src/server"), rewriteSourceImports);
 await copyTree(path.join(projectRoot, "src/client"), path.join(packageRoot, "src/client"), rewriteSourceImports);
-await copyTree(bridgeRoot, path.join(packageRoot, "bridge"));
+await copyTree(sdkRoot, path.join(packageRoot, "bridge-sdk"));
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
 await writeFile(path.join(packageRoot, "server.mjs"), `export { activate, selfCheck } from "./src/server/index.js";\n`);
@@ -61,6 +61,7 @@ function agentDefinitions() {
       phase: "pre_generation",
       execution: "feature",
       enabledByDefault: false,
+      runtimeDisabled: true,
       modeAllowlist: ["roleplay", "visual_novel"],
       defaultTools: [],
       defaultSettings: {},
@@ -84,17 +85,15 @@ async function copyTree(from, to, transform = (content) => content) {
 }
 
 function rewriteSourceImports(content) {
-  return content.replaceAll("../../../_mari-bridge/src/", "../../bridge/");
+  return content.replaceAll("../../../_mari-bridge/sdk/", "../../bridge-sdk/");
 }
 
 async function buildClientEntrypoint() {
   const files = [
-    path.join(bridgeRoot, "runtime.js"),
-    path.join(bridgeRoot, "ranges.js"),
-    path.join(bridgeRoot, "composer-dom.js"),
-    path.join(bridgeRoot, "capability-slots.js"),
-    path.join(bridgeRoot, "chat-settings.js"),
-    path.join(bridgeRoot, "commands.js"),
+    path.join(sdkRoot, "contracts.js"),
+    path.join(sdkRoot, "ranges.js"),
+    path.join(sdkRoot, "settings.js"),
+    path.join(sdkRoot, "client.js"),
     path.join(projectRoot, "src/client/runtime.js"),
   ];
   const modules = [];
@@ -102,7 +101,7 @@ async function buildClientEntrypoint() {
     modules.push(stripBrowserModuleSyntax(await fs.readFile(file, "utf8")));
   }
   return [
-    "(() => {",
+    "(async () => {",
     "  \"use strict\";",
     indent(modules.join("\n\n")),
     "})();",
@@ -143,6 +142,6 @@ export function bytesFile(file) {
   return statSync(file).size;
 }
 
-if (!existsSync(bridgeRoot)) {
+if (!existsSync(sdkRoot)) {
   throw new Error("Missing shared root: _mari-bridge");
 }

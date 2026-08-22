@@ -1,30 +1,30 @@
 import fs from "node:fs";
-import { createSlashCommandRouter, matchSlashCommand } from "../../_mari-bridge/src/commands.js";
+import { createHideCommandOwner } from "../../_mari-bridge/sdk/ranges.js";
 import { readPresenceChatState } from "../src/shared/chat-state.js";
 import { buildPresenceExtraPatch, readPresenceState } from "../src/shared/presence-state.js";
 import { planRosterBackfill } from "../src/shared/roster.js";
 import { activate, selfCheck } from "../src/server/index.js";
+import { createPresenceCommandRouter } from "../src/server/command-router.js";
 
-const command = {
-  id: "presence-hide",
-  hijacks: ["/hide", "/unhide"],
-  owns: ({ tokens }) => tokens[0] === "Sophie",
-  handler: () => null,
-};
-assert(matchSlashCommand("/hide Sophie 4-46", [command])?.hijacked === true, "hijacked hide command");
-assert(matchSlashCommand("/hide 4-46", [command]) === null, "native hide command passes through");
+const hideOwner = createHideCommandOwner();
+assert(hideOwner({ tokens: ["Sophie", "4-46"] }) === true, "character-scoped hide command is owned");
+assert(hideOwner({ tokens: ["4-46"] }) === false, "native hide range passes through");
 
-const router = createSlashCommandRouter();
-router.register({ id: "context-check", commands: ["/presence"], handler: ({ context }) => context.chatId });
+const router = createPresenceCommandRouter({
+  runPresenceCommand: ({ context }) => context.chatId,
+  runScopedHideCommand: () => null,
+});
 assert((await router.run("/presence test", { chatId: "chat-1" })).result === "chat-1", "router passes context");
 
 const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import.meta.url), "utf8");
-assert(clientRuntime.includes("registerBridgeSlashCommand"), "client registers commands through the bridge");
-assert(clientRuntime.includes("registerCapabilityChatSettingsContribution"), "client registers chat settings through the bridge");
+assert(clientRuntime.includes("bridgeSession.commands.register"), "client registers commands through the installed bridge");
+assert(clientRuntime.includes("bridgeSession.ui.register"), "client registers chat settings through the installed bridge");
+assert(clientRuntime.includes('slot: "chat.settings"'), "client targets the native chat settings slot");
 assert(clientRuntime.includes("mari-presence-character-choice"), "settings use an avatar character picker");
 assert(clientRuntime.includes("Selected characters see every non-globally-hidden message"), "settings explain always-present behavior");
 assert(!clientRuntime.includes("summary"), "client no longer describes summary behavior");
 assert(!clientRuntime.includes("MutationObserver"), "client does not DOM-inject chat settings");
+assert(!clientRuntime.includes("watchActiveChatId"), "client uses bridge active-chat state without polling");
 
 const patch = buildPresenceExtraPatch({
   extra: { hiddenFromAI: true, hiddenFromAICharacterIds: ["outside-roster"] },
@@ -136,6 +136,26 @@ const hostApp = {
   },
 };
 
+const bridgeSymbol = Symbol.for("marinara.mari-bridge.v1");
+globalThis[bridgeSymbol] = {
+  registerConsumer(requirements) {
+    assert(requirements.consumerId === "presence", "server activates through the Presence bridge identity");
+    assert(requirements.require.includes("host.request"), "Presence requires the bridge host service");
+    const cleanups = [];
+    return {
+      signal: new AbortController().signal,
+      host: {
+        async request(input) {
+          const response = await hostApp.inject({ method: input.method, url: input.path, payload: input.body, headers: input.headers });
+          return response.payload ? JSON.parse(response.payload) : null;
+        },
+      },
+      addCleanup(cleanup) { cleanups.push(cleanup); },
+      async close() { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); },
+    };
+  },
+};
+
 await activate({ app: hostApp, api: { runtime } });
 assert(registeredRoutes.includes("GET /chat/:chatId/state"), "state route registered");
 assert(registeredRoutes.includes("POST /chat/:chatId/command"), "command route registered");
@@ -220,6 +240,7 @@ assert(!currentMessages.find((message) => message.id === "global").extra.marinar
 assert(!injectedRequests.some((request) => request.url.includes("summary") || request.url.includes("lorebook")), "Presence does not touch summaries or lorebooks");
 
 await selfCheck({ api: { runtime } });
+delete globalThis[bridgeSymbol];
 console.log("Presence checks passed.");
 
 function replyStub() {

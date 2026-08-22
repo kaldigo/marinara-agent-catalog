@@ -1,11 +1,11 @@
 {
   "name": "marinara-presence-package",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "description": "Package-era Presence source for Marinara Engine.",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node scripts/check.mjs && npm run build && node scripts/validate-dist.mjs"
+    "check": "node scripts/check.mjs && npm run build && node --check dist/package/client.js && node scripts/validate-dist.mjs"
   }
 }

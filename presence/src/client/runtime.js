@@ -1,6 +1,18 @@
-import { createHideHijackOwner, ensureSlashCommandBridge, registerBridgeSlashCommand } from "../../../_mari-bridge/src/commands.js";
-import { registerCapabilityChatSettingsContribution } from "../../../_mari-bridge/src/chat-settings.js";
-import { getActiveChatIdFromClient, watchActiveChatId } from "../../../_mari-bridge/src/composer-dom.js";
+import { activateClientWithMariBridge } from "../../../_mari-bridge/sdk/client.js";
+import {
+  escapeMariBridgeSettingsHtml,
+  prepareMariBridgeSettingsRoot,
+  setMariBridgeSettingsHtml,
+} from "../../../_mari-bridge/sdk/settings.js";
+import { createHideCommandOwner } from "../../../_mari-bridge/sdk/ranges.js";
+
+const cleanupPresenceClient = await activateClientWithMariBridge(
+  {
+    consumerId: "presence",
+    api: { major: 1, minMinor: 0 },
+    require: ["chat.active", "client.bridge-first", "commands", "consumer.sessions", "runtime.health", "ui.chat-settings"],
+  },
+  async (bridgeSession) => {
 
 const PACKAGE_ID = "presence";
 const TAG_NAME = "marinara-capability-presence";
@@ -66,17 +78,18 @@ class PresenceCapabilityElement extends HTMLElement {
   }
 
   render() {
-    if (this.getAttribute("view") !== "settings") {
+    const view = this.getAttribute("view");
+    if (view !== "settings" && view !== "detail") {
       this.hidden = true;
       this.setAttribute("aria-hidden", "true");
       this.replaceChildren();
       return;
     }
-    injectPresenceSettingsStyle();
     this.hidden = false;
     this.removeAttribute("aria-hidden");
     const mount = getSettingsRenderRoot(this);
-    const chatId = getChatIdFromCapabilityProps(this.capabilityProps) || getActiveChatIdFromClient();
+    prepareMariBridgeSettingsRoot(mount, { surface: view === "detail" ? "detail" : "chat" });
+    const chatId = getChatIdFromCapabilityProps(this.capabilityProps) || getActiveChatId();
     this.dataset.chatId = chatId || "";
     if (!chatId) {
       renderPresenceSettingsNotice(mount, "Open a chat to configure Presence.");
@@ -87,7 +100,7 @@ class PresenceCapabilityElement extends HTMLElement {
     else renderPresenceSettingsLoading(mount);
     if (!cached || Date.now() - cached.loadedAt >= 5_000) {
       loadPresenceSettings(chatId).then(() => {
-        if (this.isConnected && this.getAttribute("view") === "settings" && this.dataset.chatId === chatId) this.render();
+        if (this.isConnected && ["settings", "detail"].includes(this.getAttribute("view")) && this.dataset.chatId === chatId) this.render();
       });
     }
   }
@@ -105,29 +118,23 @@ if (!state.chatSettingsDisposer) registerPresenceChatSettings();
 if (!state.chatWatcherCleanup) startChatLifecycleDetection();
 
 function registerPresenceChatSettings() {
-  state.chatSettingsDisposer = registerCapabilityChatSettingsContribution({
-    packageId: PACKAGE_ID,
+  state.chatSettingsDisposer = bridgeSession.ui.register({
     id: "presence.settings",
-    agentId: "presence",
-    match: { sectionId: "roleplay-agents" },
-    title: "Presence",
-    description: "Configure character visibility for this chat.",
-    iconText: "P",
-    className: "block",
+    slot: "chat.settings",
+    view: "settings",
     props: () => ({ enabledForChat: true }),
   });
 }
 
 function startChatLifecycleDetection() {
-  state.chatWatcherCleanup = watchActiveChatId((chatId) => {
-    scheduleEnsureActiveChat(chatId);
-  }, {
-    debounceMs: 150,
-    intervalMs: 2_000,
-  });
+  state.chatWatcherCleanup = bridgeSession.chat.active.subscribe(({ chatId }) => scheduleEnsureActiveChat(chatId));
 }
 
-function scheduleEnsureActiveChat(chatId = getActiveChatIdFromClient()) {
+function getActiveChatId() {
+  return bridgeSession.chat.active.getSnapshot().chatId || "";
+}
+
+function scheduleEnsureActiveChat(chatId = getActiveChatId()) {
   state.pendingChatId = chatId || "";
   if (state.ensureTimer) window.clearTimeout(state.ensureTimer);
   state.ensureTimer = window.setTimeout(ensureActiveChat, 150);
@@ -136,7 +143,7 @@ function scheduleEnsureActiveChat(chatId = getActiveChatIdFromClient()) {
 
 async function ensureActiveChat() {
   state.ensureTimer = 0;
-  const chatId = state.pendingChatId || getActiveChatIdFromClient();
+  const chatId = state.pendingChatId || getActiveChatId();
   state.pendingChatId = "";
   const now = Date.now();
   if (!chatId || chatId === state.activeChatId || state.ensureInFlight.has(chatId)) return;
@@ -239,21 +246,11 @@ function normalizeSettingsData(data) {
 }
 
 function renderPresenceSettingsLoading(mount) {
-  mount.className = "mari-presence-settings-section";
-  setPresenceSettingsHtml(mount, `loading:${mount.dataset.chatId || ""}`, `
-    <div class="mari-presence-settings-body">
-      <p class="mari-presence-settings-muted">Loading Presence settings...</p>
-    </div>
-  `);
+  setPresenceSettingsHtml(mount, `loading:${mount.dataset.chatId || ""}`, '<p class="mari-sdk-settings-status">Loading Presence settings...</p>');
 }
 
 function renderPresenceSettingsNotice(mount, message) {
-  mount.className = "mari-presence-settings-section";
-  setPresenceSettingsHtml(mount, `notice:${message}`, `
-    <div class="mari-presence-settings-body">
-      <p class="mari-presence-settings-muted">${escapeHtml(message)}</p>
-    </div>
-  `);
+  setPresenceSettingsHtml(mount, `notice:${message}`, `<p class="mari-sdk-settings-status">${escapeMariBridgeSettingsHtml(message)}</p>`);
 }
 
 function renderPresenceSettingsSection(mount, data) {
@@ -269,7 +266,6 @@ function renderPresenceSettingsSection(mount, data) {
   }
   mount.hidden = false;
   const alwaysPresent = new Set(uniqueStrings(data.state?.alwaysPresentCharacterIds));
-  mount.className = "mari-presence-settings-section";
   const renderKey = JSON.stringify({
     chatId: data.chatId,
     roster: data.roster.map((character) => [character.id, character.name, character.avatarUrl]),
@@ -282,27 +278,25 @@ function renderPresenceSettingsSection(mount, data) {
       ? `<img src="${escapeAttribute(character.avatarUrl)}" alt="" aria-hidden="true" loading="lazy">`
       : `<span aria-hidden="true">${escapeHtml(character.name.trim().charAt(0).toUpperCase() || "?")}</span>`;
     return `
-      <button type="button" class="mari-presence-character-choice${selected ? " is-selected" : ""}" data-presence-always-character-id="${escapeAttribute(character.id)}" role="checkbox" aria-checked="${selected ? "true" : "false"}" aria-label="${selected ? "Remove" : "Add"} ${escapeAttribute(character.name)} as always present" title="${escapeAttribute(character.name)}">
-        <span class="mari-presence-character-avatar">${avatar}</span>
-        <span class="mari-presence-character-label">${escapeHtml(character.name)}</span>
+      <button type="button" class="mari-sdk-settings-chip" data-presence-always-character-id="${escapeAttribute(character.id)}" role="checkbox" aria-checked="${selected ? "true" : "false"}" aria-label="${selected ? "Remove" : "Add"} ${escapeAttribute(character.name)} as always present" title="${escapeAttribute(character.name)}">
+        <span class="mari-sdk-settings-chip-avatar">${avatar}</span>
+        <span class="mari-sdk-settings-chip-label">${escapeHtml(character.name)}</span>
       </button>
     `;
   }).join("");
   const changed = setPresenceSettingsHtml(mount, renderKey, `
-    <div class="mari-presence-settings-body">
-      <section class="mari-presence-subsection">
-        <div class="mari-presence-subsection-header">
-          <span class="mari-presence-subsection-title">Always present</span>
+      <section class="mari-sdk-settings-group">
+        <div class="mari-sdk-settings-heading">
+          <h3 class="mari-sdk-settings-title">Always present</h3>
           ${activeCount > 0 ? `<span class="mari-presence-count">${activeCount} selected</span>` : ""}
         </div>
-        <p class="mari-presence-subsection-description">
+        <p class="mari-sdk-settings-description">
           Selected characters see every non-globally-hidden message, even while inactive. Use this for narrators or other cards that should always know the full scene.
         </p>
+        <div class="mari-sdk-settings-chip-list" role="group" aria-label="Always present characters">
+          ${items || '<p class="mari-sdk-settings-status">No characters in this chat.</p>'}
+        </div>
       </section>
-      <div class="mari-presence-character-picker" role="group" aria-label="Always present characters">
-        ${items || '<p class="mari-presence-settings-muted">No characters in this chat.</p>'}
-      </div>
-    </div>
   `);
   if (!changed) return;
   for (const button of mount.querySelectorAll("[data-presence-always-character-id]")) {
@@ -315,10 +309,7 @@ function renderPresenceSettingsSection(mount, data) {
 }
 
 function setPresenceSettingsHtml(mount, renderKey, html) {
-  if (mount.dataset.presenceRenderKey === renderKey) return false;
-  mount.dataset.presenceRenderKey = renderKey;
-  mount.innerHTML = html;
-  return true;
+  return setMariBridgeSettingsHtml(mount, renderKey, html);
 }
 
 async function toggleAlwaysPresentCharacter(chatId, characterId) {
@@ -499,7 +490,7 @@ function escapeAttribute(value) {
 }
 
 async function runServerCommand(raw, context) {
-  const chatId = context?.chatId || getActiveChatIdFromClient();
+  const chatId = context?.chatId || getActiveChatId();
   if (!chatId) throw new Error("No active chat detected.");
   const response = await fetch(`/api/${PACKAGE_ID}/chat/${encodeURIComponent(chatId)}/command`, {
     method: "POST",
@@ -512,24 +503,34 @@ async function runServerCommand(raw, context) {
 }
 
 function registerPresenceCommands() {
-  ensureSlashCommandBridge();
   state.commandDisposers.push(
-    registerBridgeSlashCommand({
-      packageId: PACKAGE_ID,
+    bridgeSession.commands.register({
       id: "presence.command",
-      kind: "command",
       commands: ["/presence"],
       handler: ({ raw, context }) => runServerCommand(raw, context),
     }),
   );
   state.commandDisposers.push(
-    registerBridgeSlashCommand({
-      packageId: PACKAGE_ID,
+    bridgeSession.commands.register({
       id: "hide-from-ai.augment",
-      kind: "augment",
       hijacks: ["/hide", "/unhide"],
-      owns: createHideHijackOwner(),
+      owns: createHideCommandOwner(),
       handler: ({ raw, context }) => runServerCommand(raw, context),
     }),
   );
 }
+
+return async () => {
+  if (state.ensureTimer) window.clearTimeout(state.ensureTimer);
+  if (state.settingsTimer) window.clearTimeout(state.settingsTimer);
+  state.chatWatcherCleanup?.();
+  state.chatWatcherCleanup = null;
+  state.chatSettingsDisposer?.();
+  state.chatSettingsDisposer = null;
+  for (const dispose of state.commandDisposers.splice(0)) dispose();
+  state.initialized = false;
+};
+  },
+);
+
+void cleanupPresenceClient;
