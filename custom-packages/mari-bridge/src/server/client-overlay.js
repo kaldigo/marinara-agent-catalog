@@ -153,17 +153,17 @@ export function patchActiveChatEvents(source) {
 export function patchGenerationControllerEvents(source) {
   const identifier = "[A-Za-z_$][\\w$]*";
   const pattern = new RegExp(
-    `setAbortController:\\((?<chat>${identifier}),(?<controller>${identifier})\\)=>(?<set>${identifier})\\((?<state>${identifier})=>\\{const (?<map>${identifier})=new Map\\(\\k<state>\\.abortControllers\\);return \\k<controller>\\?\\k<map>\\.set\\(\\k<chat>,\\k<controller>\\):\\k<map>\\.delete\\(\\k<chat>\\),\\{abortControllers:\\k<map>\\}\\}\\)`,
+    `setAbortController:\\((?<chat>${identifier}),(?<controller>${identifier})\\)=>(?<set>${identifier})\\(`,
     "gu",
   );
   const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) {
     throw new Error(`Mari Bridge generation-controller patch expected one store action, found ${matches.length}`);
   }
-  const { chat, controller } = matches[0].groups;
+  const { chat, controller, set } = matches[0].groups;
   return source.replace(
     pattern,
-    `${matches[0][0].slice(0, matches[0][0].indexOf("=>") + 2)}(window.dispatchEvent(new CustomEvent("marinara:generation-controller",{detail:{chatId:${chat},active:!!${controller}}})),${matches[0][0].slice(matches[0][0].indexOf("=>") + 2)})`,
+    `setAbortController:(${chat},${controller})=>(window.dispatchEvent(new CustomEvent("marinara:generation-controller",{detail:{chatId:${chat},active:!!${controller}}})),${set})(`,
   );
 }
 
