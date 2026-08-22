@@ -67,7 +67,10 @@ function manifest() {
       client: "client.js",
       agents: "agents.json",
     },
-    contributions: { slots: ["chat-settings"] },
+    contributions: {
+      agentDetail: { agentIds: ["better-impersonate"] },
+      slots: ["chat-settings"],
+    },
     files: [{ path: "client.js", sha256: "0".repeat(64), bytes: 0 }],
     permissions: ["chat-read", "chat-write", "network", "storage", "ui"],
     restartRequired: false,

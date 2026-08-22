@@ -32,24 +32,36 @@ const cleanupImpersonateCommands = await activateClientWithMariBridge(
       bridgeSession.commands.register({
         id: "impersonate-draft",
         commands: ["/impersonate-draft"],
+        aliases: ["/impersonate_draft"],
+        description: "Generate a persona response draft using optional guidance",
+        usage: "/impersonate-draft [guidance]",
         modes: ["roleplay"],
         handler: ({ raw, context }) => generateDraft(bridgeSession, "impersonate", commandArgument(raw), context),
       }),
       bridgeSession.commands.register({
         id: "impersonate-continue",
         commands: ["/impersonate-continue"],
+        aliases: ["/impersonate_continue"],
+        description: "Continue the current persona draft",
+        usage: "/impersonate-continue <current draft>",
         modes: ["roleplay"],
         handler: ({ raw, context }) => generateDraft(bridgeSession, "continue", commandArgument(raw), context),
       }),
       bridgeSession.commands.register({
         id: "impersonate-thinking",
         commands: ["/impersonate-thinking"],
+        aliases: ["/impersonate_thinking"],
+        description: "Generate a persona draft guided by private thoughts or feelings",
+        usage: "/impersonate-thinking <private guidance>",
         modes: ["roleplay"],
         handler: ({ raw, context }) => generateDraft(bridgeSession, "inner_state", commandArgument(raw), context),
       }),
       bridgeSession.commands.register({
         id: "impersonate-last",
         commands: ["/impersonate-last"],
+        aliases: ["/impersonate_last"],
+        description: "Restore the last persona guidance to the input",
+        usage: "/impersonate-last",
         modes: ["roleplay"],
         handler: ({ context }) => restoreLastGuidance(context),
       }),
@@ -77,7 +89,7 @@ function defineCapabilityElement() {
         this.render();
       }
       render() {
-        if (this.getAttribute("view") !== "settings") {
+        if (!["settings", "detail"].includes(this.getAttribute("view"))) {
           this.hidden = true;
           this.setAttribute("aria-hidden", "true");
           this.replaceChildren();
@@ -143,7 +155,11 @@ async function generateDraft(bridgeSession, mode, input, context) {
     if (error instanceof DOMException && error.name === "AbortError") {
       return { handled: true, feedback: "Persona draft generation stopped." };
     }
-    throw error;
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      handled: true,
+      feedback: `Persona draft generation failed: ${detail}`,
+    };
   } finally {
     context.setDraftGenerating?.(false);
   }
@@ -204,7 +220,7 @@ function readBetterImpersonateSettings() {
 }
 
 function renderBetterImpersonateSettings(root) {
-  prepareMariBridgeSettingsRoot(root);
+  prepareMariBridgeSettingsRoot(root, { surface: root.getAttribute("view") === "detail" ? "detail" : "chat" });
   const settings = readBetterImpersonateSettings();
   const fields = [
     ["draftTemplate", "Draft guidance template", settings.draftTemplate],

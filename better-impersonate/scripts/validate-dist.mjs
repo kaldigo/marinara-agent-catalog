@@ -7,7 +7,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "manifest.jso
 const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 
 assert(manifest.id === "better-impersonate", "manifest id must use the renamed package identity");
-assert(manifest.version === "2.3.0", "manifest version must be 2.3.0");
+assert(manifest.version === "2.3.1", "manifest version must be 2.3.1");
 assert(manifest.name === "Better Impersonate", "package uses its expanded feature name");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint must be client.js");
 assert(client.includes('const PACKAGE_ID = "better-impersonate"'), "client uses the renamed bridge consumer identity");
@@ -17,6 +17,8 @@ assert(client.includes('commands: ["/impersonate-draft"]'), "client registers im
 assert(client.includes('commands: ["/impersonate-continue"]'), "client registers impersonate-continue");
 assert(client.includes('commands: ["/impersonate-thinking"]'), "client registers impersonate-thinking");
 assert(client.includes('commands: ["/impersonate-last"]'), "client registers impersonate-last");
+assert(client.includes('aliases: ["/impersonate_draft"]'), "client registers the underscore draft alias");
+assert(manifest.contributions?.agentDetail?.agentIds?.includes("better-impersonate"), "manifest contributes Better Impersonate agent detail");
 assert(client.includes('slot: "chat.settings"'), "client contributes editable native chat settings");
 assert(client.includes("data-bi-setting"), "client exposes command-specific prompt templates");
 assert(!client.includes('hijacks: ["/impersonate"'), "client leaves native impersonation commands untouched");
