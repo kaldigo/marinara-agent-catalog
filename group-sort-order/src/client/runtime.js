@@ -90,7 +90,7 @@ return (function () {
       }
 
       render() {
-        if (this.getAttribute("view") === "settings") {
+        if (["settings", "detail"].includes(this.getAttribute("view"))) {
           state.settingsNodes.add(this);
           void renderSettings(this);
           return;
@@ -281,7 +281,7 @@ return (function () {
   }
 
   async function renderSettings(root) {
-    prepareMariBridgeSettingsRoot(root);
+    prepareMariBridgeSettingsRoot(root, { surface: root.getAttribute("view") === "detail" ? "detail" : "chat" });
     const chatId = root.capabilityProps?.chatId || state.activeChatId;
     if (!chatId) {
       setMariBridgeSettingsHtml(root, "no-chat", '<p class="mari-sdk-settings-status">Open a chat to configure Group Sort Order.</p>');

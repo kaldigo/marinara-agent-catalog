@@ -46,6 +46,7 @@ function manifest() {
       agents: "agents.json"
     },
     contributions: {
+      agentDetail: { agentIds: ["group-sort-order"] },
       slots: ["chat-runtime", "chat-settings"]
     },
     files: [{ path: "server.mjs", sha256: "0".repeat(64), bytes: 0 }],

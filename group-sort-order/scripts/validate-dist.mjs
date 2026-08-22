@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "group-sort-order", "manifest id is group-sort-order");
-assert(manifest.version === "1.2.0", "manifest version is 1.2.0");
+assert(manifest.version === "1.2.1", "manifest version is 1.2.1");
 assert(manifest.engine?.min === "2.4.0", "manifest requires the capability request resolver introduced in Engine 2.4");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
@@ -17,6 +17,7 @@ assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint declared");
 assert(manifest.contributions?.slots?.includes("chat-runtime"), "chat-runtime contribution declared");
 assert(manifest.contributions?.slots?.includes("chat-settings"), "chat-settings contribution declared");
+assert(manifest.contributions?.agentDetail?.agentIds?.includes("group-sort-order"), "Group Sort Order agent detail contribution declared");
 assert(agents[0]?.id === "group-sort-order", "feature agent id matches package");
 assert(agents[0]?.execution === "feature", "agent is feature execution");
 assert(agents[0]?.category === "misc", "feature agent category is misc");
