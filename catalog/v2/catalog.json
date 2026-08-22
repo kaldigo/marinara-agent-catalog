@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-22T19:03:50.257Z",
+  "generatedAt": "2026-08-22T19:15:19.776Z",
   "packages": [
     {
       "manifest": {
@@ -1888,7 +1888,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-2.3.4.zip",
-        "sha256": "d7b38fb54f3c78305db26523ac5ec675f3404cb4e8ef4d2c7a89c2c4eb04d84c",
+        "sha256": "a007b8647a937248ed9cd90a18fdb82c1b8d6ead0f16c56263a9d14332dbcdcb",
         "bytes": 10897
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
@@ -1993,7 +1993,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/gm-notes-1.0.2.zip",
-        "sha256": "ce318dfcd40d541a4c2e5d5a772fe9f8f0c47cb66a46b4f434b9e01aa6ead85d",
+        "sha256": "4680edbfc8adbd59cce9e01b7cde6547e71bab0ad8033194c96cf32f2d342a28",
         "bytes": 20896
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#gm-notes"
@@ -2109,7 +2109,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/group-sort-order-1.2.4.zip",
-        "sha256": "15fbe16609a5675df4d57e0224d591567271d0dc82986afc9210d7e76d207236",
+        "sha256": "d3b0e375ab2aca5facd5904f0267ff8d8466981080e74289be299e3793f739e7",
         "bytes": 36728
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#group-sort-order"
@@ -2119,7 +2119,7 @@
         "schemaVersion": 1,
         "id": "mari-bridge",
         "name": "Mari Bridge",
-        "version": "1.0.6",
+        "version": "1.0.7",
         "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
         "engine": {
           "min": "2.4.3",
@@ -2220,8 +2220,8 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/mari-bridge-1.0.6.zip",
-        "sha256": "44fe96495d951c98528a698549918924c0a906d7f7c177e567c2388314d0d6e3",
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/mari-bridge-1.0.7.zip",
+        "sha256": "514ad262363bcd99a76e6d34d54b5c6e43daf4e91f18190cc6598b043d4bfa21",
         "bytes": 36189
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#mari-bridge"
@@ -2360,7 +2360,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/presence-1.4.4.zip",
-        "sha256": "2ace77b3641ef5b8e463c277399fac0a545d8c04a04ac339a0cff04dfdd0442c",
+        "sha256": "25313002edf21b78aa995c18498ca4fb6e5d3985decc9a71f100de3ad0c67939",
         "bytes": 31803
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#presence"
@@ -2403,7 +2403,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/pwa-helper-1.0.6.zip",
-        "sha256": "c69d35c18c1acd6dfc51c93a567f90894532d00dc36d0524059bbbf294e51d94",
+        "sha256": "23f2b281e56fb5917c9285568a308ba3ef7b7f73ec30253ec3e865be1b370401",
         "bytes": 5986
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#pwa-helper"
@@ -2460,7 +2460,7 @@
       "category": "tracker",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/world-map-background-1.1.1.zip",
-        "sha256": "df5c6c9a0e20a16db823227f5f52e93d7ff18cf47aab664fd7c49df5140848af",
+        "sha256": "6446c6336cefdda909172ee7ade3bcfbb59bef452b3e15f7062c999b679f0f54",
         "bytes": 16417
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#world-map-background"
