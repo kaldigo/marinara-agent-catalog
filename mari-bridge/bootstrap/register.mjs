@@ -48,7 +48,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.4";
+kernel.version = "1.0.5";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -111,6 +111,12 @@ export function patchServerModule(url, inputSource) {
             "        for (const installed of await capabilityPackageManager.installed()) {",
             "            if (installed.status === \"restart-required\" && !installed.manifest.entrypoints.server) {",
             "                await capabilityPackageManager.markRuntimeStatus(installed.id, \"active\");",
+            "            }",
+            "        }",
+            "        for (const installed of await capabilityPackageManager.installed()) {",
+            "            const bridgeCapabilityError = typeof installed.error === \"string\" && installed.error.startsWith(\"Mari Bridge is missing required capabilities for \");",
+            "            if (installed.status === \"error\" && bridgeCapabilityError && installed.manifest.entrypoints.server) {",
+            "                await this.activateOne(app, { installed }, false, false);",
             "            }",
             "        }",
           ].join("\n"),

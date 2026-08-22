@@ -291,10 +291,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: false,
 });
 assert.equal((await fs.stat(bootstrapTarget)).mtimeMs, firstTargetStat.mtimeMs);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.4"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.4" }, false, "1.0.4"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.3" }, false, "1.0.4"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.4" }, true, "1.0.4"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.5"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.5" }, false, "1.0.5"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.4" }, false, "1.0.5"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.5" }, true, "1.0.5"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
@@ -364,6 +364,8 @@ const patchedPackageStartup = patchServerModule(
 assert.match(patchedPackageStartup, /left\.installed\.id === "mari-bridge"/u);
 assert.match(patchedPackageStartup, /installed\.status === "restart-required"/u);
 assert.match(patchedPackageStartup, /markRuntimeStatus\(installed\.id, "active"\)/u);
+assert.match(patchedPackageStartup, /Mari Bridge is missing required capabilities for /u);
+assert.match(patchedPackageStartup, /this\.activateOne\(app, \{ installed \}, false, false\)/u);
 assert.equal(globalThis[kernelSymbol].patches["packages.client-only-updates"], "applied");
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";

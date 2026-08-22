@@ -1,6 +1,6 @@
 {
   "name": "marinara-mari-bridge-package",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "type": "module",
   "description": "Installable Mari Bridge runtime for Marinara Engine capability packages.",
