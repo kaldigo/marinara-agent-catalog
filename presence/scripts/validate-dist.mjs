@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "presence", "manifest id is presence");
-assert(manifest.version === "1.4.0", "manifest version is 1.4.0");
+assert(manifest.version === "1.4.1", "manifest version is 1.4.1");
 assert(manifest.engine?.maxExclusive === "3.0.0", "manifest caps Presence before unknown Engine 3 behavior");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");
@@ -28,6 +28,7 @@ assert(bundledClient.includes("activateClientWithMariBridge"), "client bundles f
 assert(bundledClient.includes("bridgeSession.ui.register"), "client registers native bridge chat settings");
 assert(bundledClient.includes('slot: "chat.settings"'), "client targets the chat-settings slot");
 assert(bundledClient.includes('view !== "settings" && view !== "detail"'), "client renders both chat settings and agent detail views");
+assert(bundledClient.includes('description: "Show or update character presence for this chat"'), "client advertises its slash command");
 assert(bundledClient.includes("mari-sdk-settings-chip"), "client uses shared bridge settings controls");
 assert(!bundledClient.includes("data-presence-chat-settings"), "client does not DOM-inject Presence chat settings");
 assert(!bundledClient.includes("watchActiveChatId"), "client does not poll or scan for active chat state");
