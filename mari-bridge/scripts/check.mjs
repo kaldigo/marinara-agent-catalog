@@ -135,7 +135,7 @@ globalThis.document = { documentElement: { dataset: {} } };
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.9");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.10");
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.chat-settings"), true);
@@ -301,10 +301,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.9"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.9" }, false, "1.0.9"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.8" }, false, "1.0.9"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.9" }, true, "1.0.9"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.10"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.10" }, false, "1.0.10"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.9" }, false, "1.0.10"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.10" }, true, "1.0.10"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
@@ -374,7 +374,8 @@ const patchedPackageStartup = patchServerModule(
 assert.match(patchedPackageStartup, /left\.installed\.id === "mari-bridge"/u);
 assert.match(patchedPackageStartup, /installed\.status === "restart-required"/u);
 assert.match(patchedPackageStartup, /markRuntimeStatus\(installed\.id, "active"\)/u);
-assert.match(patchedPackageStartup, /Mari Bridge is missing required capabilities for /u);
+assert.match(patchedPackageStartup, /bridgeStartupError/u);
+assert.match(patchedPackageStartup, /startsWith\("Mari Bridge "\)/u);
 assert.match(patchedPackageStartup, /this\.activateOne\(app, \{ installed \}, false, false\)/u);
 assert.equal(globalThis[kernelSymbol].patches["packages.client-only-updates"], "applied");
 const legacyCommittedGuard =
