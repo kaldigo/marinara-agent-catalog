@@ -7,19 +7,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(projectRoot, "dist");
 const packageRoot = path.join(distRoot, "package");
-const bridgeRoot = path.resolve(projectRoot, "..", "_mari-bridge", "src");
+const sdkRoot = path.resolve(projectRoot, "..", "_mari-bridge", "sdk");
 const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8")).version;
-const bridgeClientSources = ["runtime.js", "composer-dom.js"];
 
-if (!existsSync(bridgeRoot)) {
+if (!existsSync(sdkRoot)) {
   throw new Error("Missing shared root: _mari-bridge");
 }
 
 await fs.rm(distRoot, { recursive: true, force: true });
 await fs.mkdir(packageRoot, { recursive: true });
 
-await copyTree(path.join(projectRoot, "src/client"), path.join(packageRoot, "src/client"), rewriteSourceImports);
-await copyTree(bridgeRoot, path.join(packageRoot, "bridge"));
+await copyTree(path.join(projectRoot, "src/client"), path.join(packageRoot, "src/client"));
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
 await writeFile(path.join(packageRoot, "client.js"), await buildClientEntrypoint());
@@ -35,14 +33,14 @@ function manifest() {
     name: "World Map Background",
     version,
     description: "Uses the active World Maps location reference image as the Roleplay chat background.",
-    engine: { min: "2.3.5", maxExclusive: "4.0.0" },
+    engine: { min: "2.4.2", maxExclusive: "3.0.0" },
     kind: ["agent"],
     entrypoints: {
       client: "client.js",
       agents: "agents.json"
     },
     contributions: {
-      slots: ["chat-runtime"]
+      slots: ["chat-runtime", "chat-settings"]
     },
     files: [],
     permissions: ["agent-runtime", "chat-read", "chat-write", "ui"],
@@ -83,25 +81,15 @@ async function copyTree(from, to, transform = (content) => content) {
   }
 }
 
-function rewriteSourceImports(content) {
-  return content.replaceAll("../../../_mari-bridge/src/", "../../bridge/");
-}
-
 async function buildClientEntrypoint() {
   const chunks = [];
-  for (const file of bridgeClientSources) {
-    const source = await fs.readFile(path.join(bridgeRoot, file), "utf8");
-    chunks.push(`// bridge/${file}\n${stripBrowserModuleSyntax(source).trim()}\n`);
+  for (const file of ["contracts.js", "settings.js", "client.js"]) {
+    const source = await fs.readFile(path.join(sdkRoot, file), "utf8");
+    chunks.push(`// bridge-sdk/${file}\n${stripBrowserModuleSyntax(source).trim()}\n`);
   }
   const runtimeSource = await fs.readFile(path.join(projectRoot, "src/client/runtime.js"), "utf8");
   chunks.push(`// src/client/runtime.js\n${stripBrowserModuleSyntax(runtimeSource).trim()}\n`);
-  return [
-    "(() => {",
-    "  \"use strict\";",
-    indent(chunks.join("\n")),
-    "})();",
-    "",
-  ].join("\n");
+  return `${chunks.join("\n")}\n`;
 }
 
 function stripBrowserModuleSyntax(content) {
@@ -120,11 +108,4 @@ function stripBrowserModuleSyntax(content) {
 async function writeFile(file, content) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content);
-}
-
-function indent(content) {
-  return content
-    .split("\n")
-    .map((line) => (line ? `  ${line}` : line))
-    .join("\n");
 }

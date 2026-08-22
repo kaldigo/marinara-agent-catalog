@@ -1,13 +1,17 @@
-import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/composer-dom.js";
-
-(function () {
+const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
+  {
+    consumerId: "world-map-background",
+    api: { major: 1, minMinor: 0 },
+    require: ["chat.active", "client.bridge-first", "consumer.sessions", "runtime.health", "ui.chat-settings"],
+  },
+  async (bridgeSession) => {
   const PACKAGE_ID = "world-map-background";
   const WORLD_MAPS_AGENT_ID = "hierarchical-maps";
   const TAG_NAME = "marinara-capability-world-map-background";
   const STYLE_ID = "marinara-world-map-background-style";
   const RUNTIME_KEY = "__marinaraWorldMapBackgroundRuntime";
   const OWNER_STORAGE_KEY = "marinara-world-map-background-owner";
-  const RUNTIME_VERSION = "1.0.3";
+  const RUNTIME_VERSION = "1.1.0";
   const CAPABILITY_SERVER_EVENT = "marinara-capability-server-event";
   const GLOBAL_GALLERY_PREFIX = "global-gallery:";
   const SYNC_INTERVAL_MS = 2500;
@@ -17,6 +21,7 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
   if (previousState && previousState.version !== RUNTIME_VERSION) {
     previousState.disposed = true;
     previousState.cleanups?.forEach?.((cleanup) => cleanup());
+    previousState.settingsCleanup?.();
     window.clearTimeout(previousState.syncTimer);
     removeLiveBackground();
     window[RUNTIME_KEY] = null;
@@ -34,6 +39,7 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
     lastSyncKey: "",
     lastAppliedUrl: "",
     cleanups: [],
+    settingsCleanup: null,
   };
   state.version = RUNTIME_VERSION;
   state.disposed = false;
@@ -41,6 +47,7 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
 
   injectStyle(STYLE_ID, styleText());
   defineCapabilityElement();
+  document.documentElement.dataset.mariBridgeConsumerWorldMap = "ready";
 
   if (!state.initialized) {
     state.initialized = true;
@@ -52,8 +59,25 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
 
     class WorldMapBackgroundCapabilityElement extends HTMLElement {
       connectedCallback() {
-        this.setAttribute("aria-hidden", "true");
-        this.style.display = "contents";
+        this.addEventListener("marinara-capability-props", this);
+        this.render();
+      }
+      disconnectedCallback() {
+        this.removeEventListener("marinara-capability-props", this);
+      }
+      handleEvent() {
+        this.render();
+      }
+      render() {
+        if (this.getAttribute("view") !== "settings") {
+          this.setAttribute("aria-hidden", "true");
+          this.style.display = "contents";
+          this.replaceChildren();
+          return;
+        }
+        this.removeAttribute("aria-hidden");
+        this.style.display = "block";
+        void renderWorldMapBackgroundSettings(this);
       }
     }
 
@@ -61,15 +85,11 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
   }
 
   function startRuntime() {
-    state.cleanups.push(
-      watchActiveChatId(
-        (chatId) => {
-          bindActiveChat(chatId || "");
-          scheduleSync(0);
-        },
-        { debounceMs: 100, intervalMs: 1000 },
-      ),
-    );
+    state.settingsCleanup = bridgeSession.ui.register({ id: "settings", slot: "chat.settings", view: "settings", priority: 20 });
+    state.cleanups.push(bridgeSession.chat.active.subscribe(({ chatId }) => {
+      bindActiveChat(chatId || "");
+      scheduleSync(0);
+    }));
     on(document, "visibilitychange", () => {
       if (!document.hidden) scheduleSync(100);
     });
@@ -97,6 +117,17 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
   function on(target, type, handler, options) {
     target.addEventListener(type, handler, options);
     state.cleanups.push(() => target.removeEventListener(type, handler, options));
+  }
+
+  function injectStyle(id, cssText) {
+    let style = document.getElementById(id);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = id;
+      document.head.appendChild(style);
+    }
+    style.textContent = cssText;
+    return style;
   }
 
   function bindActiveChat(chatId) {
@@ -158,8 +189,9 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
         return;
       }
 
-      const syncKey = `${chatId}:${image.referenceImageId}:${image.url}`;
-      if (!applyLiveBackground(image.url)) return;
+      const displaySettings = normalizeWorldMapBackgroundSettings(metadata.worldMapBackground);
+      const syncKey = `${chatId}:${image.referenceImageId}:${image.url}:${JSON.stringify(displaySettings)}`;
+      if (!applyLiveBackground(image.url, displaySettings)) return;
       if (state.lastSyncKey === syncKey && metadata.background === image.url) return;
       state.lastSyncKey = syncKey;
       await persistOwnedBackground(chatId, metadata, image);
@@ -257,7 +289,7 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
     state.lastAppliedUrl = "";
   }
 
-  function applyLiveBackground(url) {
+  function applyLiveBackground(url, displaySettings = normalizeWorldMapBackgroundSettings()) {
     const root = findRoleplayRoot();
     if (!root) return false;
 
@@ -284,6 +316,11 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
       image.setAttribute("src", url);
     }
     image.setAttribute("data-reference-owned-by", PACKAGE_ID);
+    image.style.objectFit = displaySettings.fit;
+    image.style.objectPosition = displaySettings.position;
+    image.style.opacity = String(displaySettings.opacity);
+    image.style.filter = displaySettings.blur > 0 ? `blur(${displaySettings.blur}px)` : "none";
+    image.style.transform = displaySettings.blur > 0 ? "scale(1.02)" : "none";
     if (image.complete && image.naturalWidth > 0) image.dataset.loadState = "loaded";
     return image.dataset.loadState === "loaded";
   }
@@ -342,6 +379,77 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
     return typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
+  function normalizeWorldMapBackgroundSettings(value = {}) {
+    const input = normalizeObject(value);
+    const fit = input.fit === "contain" ? "contain" : "cover";
+    const allowedPositions = new Set(["center", "top", "bottom", "left", "right"]);
+    const position = allowedPositions.has(input.position) ? input.position : "center";
+    const opacityValue = Number(input.opacity);
+    const blurValue = Number(input.blur);
+    return {
+      fit,
+      position,
+      opacity: Number.isFinite(opacityValue) ? Math.min(1, Math.max(0.1, opacityValue)) : 1,
+      blur: Number.isFinite(blurValue) ? Math.min(20, Math.max(0, blurValue)) : 0,
+    };
+  }
+
+  async function renderWorldMapBackgroundSettings(root) {
+    prepareMariBridgeSettingsRoot(root);
+    const chatId = root.capabilityProps?.chatId || state.activeChatId;
+    if (!chatId) {
+      setMariBridgeSettingsHtml(root, "no-chat", '<p class="mari-sdk-settings-status">Open a chat to configure World Map Background.</p>');
+      return;
+    }
+    root.setAttribute("aria-busy", "true");
+    try {
+      const chat = await api(`/chats/${encodeURIComponent(chatId)}`);
+      const metadata = normalizeObject(chat?.metadata);
+      const settings = normalizeWorldMapBackgroundSettings(metadata.worldMapBackground);
+      setMariBridgeSettingsHtml(root, `${chatId}:${JSON.stringify(settings)}`, `
+        <section class="mari-sdk-settings-group">
+          <div class="mari-sdk-settings-heading"><h3 class="mari-sdk-settings-title">World Map Background</h3></div>
+          <p class="mari-sdk-settings-description">Controls how the current World Maps location image is displayed in this chat.</p>
+          <div class="mari-sdk-settings-grid">
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Image fit</span><select class="mari-sdk-settings-select" data-wmb-setting="fit"><option value="cover"${settings.fit === "cover" ? " selected" : ""}>Cover</option><option value="contain"${settings.fit === "contain" ? " selected" : ""}>Contain</option></select></label>
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Position</span><select class="mari-sdk-settings-select" data-wmb-setting="position">${["center","top","bottom","left","right"].map((value) => `<option value="${value}"${settings.position === value ? " selected" : ""}>${value[0].toUpperCase() + value.slice(1)}</option>`).join("")}</select></label>
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Opacity</span><input class="mari-sdk-settings-input" type="number" min="10" max="100" step="5" data-wmb-setting="opacity" value="${Math.round(settings.opacity * 100)}"><span class="mari-sdk-settings-help">10–100 percent.</span></label>
+            <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Blur</span><input class="mari-sdk-settings-input" type="number" min="0" max="20" step="1" data-wmb-setting="blur" value="${settings.blur}"><span class="mari-sdk-settings-help">0–20 pixels.</span></label>
+          </div>
+          <p class="mari-sdk-settings-status" data-wmb-status></p>
+          <div class="mari-sdk-settings-actions"><button type="button" class="mari-sdk-settings-button" data-wmb-reset>Reset defaults</button><button type="button" class="mari-sdk-settings-button" data-variant="primary" data-wmb-save>Save</button></div>
+        </section>
+      `);
+      root.querySelector("[data-wmb-save]")?.addEventListener("click", () => saveWorldMapBackgroundSettings(root, chatId, false));
+      root.querySelector("[data-wmb-reset]")?.addEventListener("click", () => saveWorldMapBackgroundSettings(root, chatId, true));
+    } catch (error) {
+      setMariBridgeSettingsHtml(root, `error:${chatId}:${error.message}`, `<p class="mari-sdk-settings-status">World Map Background settings could not load: ${escapeMariBridgeSettingsHtml(error.message)}</p>`);
+    } finally {
+      root.removeAttribute("aria-busy");
+    }
+  }
+
+  async function saveWorldMapBackgroundSettings(root, chatId, reset) {
+    const status = root.querySelector("[data-wmb-status]");
+    if (status) status.textContent = "Saving…";
+    const read = (name) => root.querySelector(`[data-wmb-setting="${name}"]`);
+    const value = reset ? {} : normalizeWorldMapBackgroundSettings({
+      fit: read("fit")?.value,
+      position: read("position")?.value,
+      opacity: Number(read("opacity")?.value) / 100,
+      blur: Number(read("blur")?.value),
+    });
+    try {
+      await patchChatMetadata(chatId, { worldMapBackground: value });
+      state.lastSyncKey = "";
+      scheduleSync(0);
+      root.dataset.mariBridgeSettingsRenderKey = "";
+      await renderWorldMapBackgroundSettings(root);
+    } catch (error) {
+      if (status) status.textContent = `Save failed: ${error.message}`;
+    }
+  }
+
   function asArray(value) {
     return Array.isArray(value) ? value : [];
   }
@@ -381,4 +489,15 @@ import { injectStyle, watchActiveChatId } from "../../../_mari-bridge/src/compos
       }
     `;
   }
-})();
+  return () => {
+    state.disposed = true;
+    state.cleanups.splice(0).reverse().forEach((cleanup) => cleanup());
+    state.settingsCleanup?.();
+    window.clearTimeout(state.syncTimer);
+    document.getElementById(STYLE_ID)?.remove();
+    delete document.documentElement.dataset.mariBridgeConsumerWorldMap;
+    removeLiveBackground();
+    if (window[RUNTIME_KEY] === state) delete window[RUNTIME_KEY];
+  };
+  },
+);
