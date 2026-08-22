@@ -20,7 +20,8 @@ const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import
 assert(clientRuntime.includes("bridgeSession.commands.register"), "client registers commands through the installed bridge");
 assert(clientRuntime.includes("bridgeSession.ui.register"), "client registers chat settings through the installed bridge");
 assert(clientRuntime.includes('slot: "chat.settings"'), "client targets the native chat settings slot");
-assert(clientRuntime.includes("mari-presence-character-choice"), "settings use an avatar character picker");
+assert(clientRuntime.includes("setMariBridgeNativeSettingsHtml"), "settings are rendered by the bridge-owned native descriptor renderer");
+assert(clientRuntime.includes("data-presence-always-character-id"), "settings expose an avatar character picker");
 assert(clientRuntime.includes("Selected characters see every non-globally-hidden message"), "settings explain always-present behavior");
 assert(!clientRuntime.includes("summary"), "client no longer describes summary behavior");
 assert(!clientRuntime.includes("MutationObserver"), "client does not DOM-inject chat settings");

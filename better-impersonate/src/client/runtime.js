@@ -1,7 +1,7 @@
 import { activateClientWithMariBridge } from "../../../_mari-bridge/sdk/client.js";
 import {
   escapeMariBridgeSettingsHtml,
-  setMariBridgeSettingsHtml,
+  setMariBridgeNativeSettingsHtml,
 } from "../../../_mari-bridge/sdk/settings.js";
 
 const PACKAGE_ID = "better-impersonate";
@@ -294,60 +294,53 @@ function renderBetterImpersonateSettingsHtml(root, settings, state = {}) {
     error: state.error || "",
     saved: state.saved === true,
   });
-  setMariBridgeSettingsHtml(root, renderKey, `
-    <section class="mari-editor-shell mari-editor-legacy-bridge flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="better-impersonate-title">
-      <header class="mari-editor-header">
-        <button type="button" class="mari-editor-action inline-flex" data-bi-back aria-label="Back to Agents">Back</button>
-        <div class="mari-editor-icon-tile">BI</div>
-        <div class="min-w-0 flex-1">
-          <h1 id="better-impersonate-title" class="mari-editor-title truncate">Better Impersonate</h1>
-          <p class="mari-editor-subtitle truncate">Global slash-command prompt templates</p>
-        </div>
-      </header>
-      <div class="mari-editor-content max-md:p-4">
-        <div class="mari-editor-content-inner mari-editor-content-inner--wide flex flex-col gap-4">
-          <section class="mari-editor-panel p-4">
-            <div class="flex flex-wrap items-start gap-3">
-              <div class="min-w-52 flex-1">
-                <h2 class="text-xs font-semibold text-[var(--marinara-editor-foreground,var(--foreground))]">Command prompt templates</h2>
-                <p class="mt-1 text-[0.6875rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]">These are global Better Impersonate settings. They wrap Marinara's native impersonate prompt for slash commands and system Quick Replies; they are not added to active chats.</p>
-              </div>
-              <span class="rounded-full bg-[var(--secondary)] px-2 py-1 text-[0.625rem] font-medium text-[var(--marinara-editor-muted,var(--muted-foreground))]">${state.loading ? "Loading" : state.saved ? "Saved" : "Global"}</span>
-            </div>
-            ${state.error ? `<p class="mt-3 rounded-lg bg-[var(--destructive)]/10 px-3 py-2 text-[0.6875rem] text-[var(--destructive)]" role="alert">${escapeMariBridgeSettingsHtml(state.error)}</p>` : ""}
-            ${state.status ? `<p class="mt-3 text-[0.6875rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]">${escapeMariBridgeSettingsHtml(state.status)}</p>` : ""}
-            <div class="mt-4 flex flex-col gap-4">
-              ${fields.map(([key, label, description, value]) => `
-                <section class="border-t border-[var(--border)] pt-4 first:border-t-0 first:pt-0">
-                  <label class="text-[0.6875rem] font-semibold" for="better-impersonate-${key}">${label}</label>
-                  <p class="mt-1 text-[0.625rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]">${description}</p>
-                  <textarea id="better-impersonate-${key}" rows="9" spellcheck="false" class="mt-3 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--foreground)] outline-none transition-colors focus:border-[var(--primary)]/50 focus:ring-2 focus:ring-[var(--ring)] disabled:opacity-45" data-bi-setting="${key}" ${state.loading ? "disabled" : ""}>${escapeMariBridgeSettingsHtml(value)}</textarea>
-                </section>
-              `).join("")}
-            </div>
-            <div class="mt-4 border-t border-[var(--border)] pt-4">
-              <p class="text-[0.625rem] font-semibold text-[var(--marinara-editor-muted,var(--muted-foreground))]">Available variables</p>
-              <div class="mt-2 flex flex-wrap gap-1.5">
-                ${["{{base_prompt}}", "{{user}}", "{{impersonate_direction}}", "{{input}}"].map((macro) => `<code class="rounded-md border border-[var(--border)] bg-[var(--secondary)] px-2 py-1 text-[0.625rem] text-[var(--foreground)]">${escapeMariBridgeSettingsHtml(macro)}</code>`).join("")}
-              </div>
-              <p class="mt-2 text-[0.625rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]"><code>{{input}}</code> is resolved by the Mari Bridge Quick Reply macro before the slash command runs. Prompt templates should keep <code>{{impersonate_direction}}</code> so the command guidance reaches the model.</p>
-              <p class="mt-2 text-[0.6875rem] text-[var(--marinara-editor-muted,var(--muted-foreground))]" data-bi-status>${state.saved ? "Saved." : ""}</p>
-            </div>
-          </section>
-          <div class="flex flex-wrap justify-end gap-2">
-            <button type="button" class="mari-editor-action inline-flex min-h-11 px-4" data-bi-reset>Reset defaults</button>
-            <button type="button" class="mari-editor-action mari-editor-action--accent inline-flex min-h-11 px-4" data-bi-save>Save</button>
+  setMariBridgeNativeSettingsHtml(root, renderKey, {
+    surface: "detail",
+    title: "Better Impersonate",
+    subtitle: "Global slash-command prompt templates",
+    iconText: "BI",
+    sections: [
+      {
+        title: "Command prompt templates",
+        description: "These are global Better Impersonate settings. They wrap Marinara's native impersonate prompt for slash commands and system Quick Replies; they are not added to active chats.",
+        badge: { label: state.loading ? "Loading" : state.saved ? "Saved" : "Global", muted: !state.saved },
+        html: [
+          state.error ? `<p class="mari-native-settings-error" role="alert">${escapeMariBridgeSettingsHtml(state.error)}</p>` : "",
+          state.status ? `<p class="mari-native-settings-muted">${escapeMariBridgeSettingsHtml(state.status)}</p>` : "",
+        ].join(""),
+        fields: fields.map(([key, label, description, value]) => ({
+          type: "textarea",
+          settingAttribute: "data-bi-setting",
+          name: key,
+          label,
+          help: description,
+          rows: 9,
+          value,
+          disabled: state.loading === true,
+        })),
+      },
+      {
+        title: "Available variables",
+        html: `
+          <div class="mari-native-settings-macro-list">
+            ${["{{base_prompt}}", "{{user}}", "{{impersonate_direction}}", "{{input}}"].map((macro) => `<code class="mari-native-settings-macro">${escapeMariBridgeSettingsHtml(macro)}</code>`).join("")}
           </div>
-        </div>
-      </div>
-    </section>
-  `);
-  root.querySelector("[data-bi-back]")?.addEventListener("click", () => {
+          <p class="mari-native-settings-muted"><code>{{input}}</code> is resolved by the Mari Bridge Quick Reply macro before the slash command runs. Prompt templates should keep <code>{{impersonate_direction}}</code> so the command guidance reaches the model.</p>
+          <p class="mari-native-settings-status" data-bi-status>${state.saved ? "Saved." : ""}</p>
+        `,
+      },
+    ],
+    actions: [
+      { id: "reset", label: "Reset defaults" },
+      { id: "save", label: "Save", variant: "primary" },
+    ],
+  });
+  root.querySelector('[data-mari-native-action="back"]')?.addEventListener("click", () => {
     const close = root.capabilityProps?.onClose;
     if (typeof close === "function") close();
   });
-  root.querySelector("[data-bi-save]")?.addEventListener("click", () => persistBetterImpersonateSettings(root, false));
-  root.querySelector("[data-bi-reset]")?.addEventListener("click", () => persistBetterImpersonateSettings(root, true));
+  root.querySelector('[data-mari-native-action="save"]')?.addEventListener("click", () => persistBetterImpersonateSettings(root, false));
+  root.querySelector('[data-mari-native-action="reset"]')?.addEventListener("click", () => persistBetterImpersonateSettings(root, true));
 }
 
 async function persistBetterImpersonateSettings(root, reset) {

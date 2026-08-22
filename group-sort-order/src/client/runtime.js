@@ -1,8 +1,7 @@
 import { activateClientWithMariBridge } from "../../../_mari-bridge/sdk/client.js";
 import {
   escapeMariBridgeSettingsHtml,
-  prepareMariBridgeSettingsRoot,
-  setMariBridgeSettingsHtml,
+  setMariBridgeNativeSettingsHtml,
 } from "../../../_mari-bridge/sdk/settings.js";
 
 const cleanupGroupSortClient = await activateClientWithMariBridge(
@@ -18,7 +17,7 @@ return (function () {
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "2.1.0";
+  const RUNTIME_VERSION = "2.2.0";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
@@ -281,10 +280,16 @@ return (function () {
   }
 
   async function renderSettings(root) {
-    prepareMariBridgeSettingsRoot(root, { surface: root.getAttribute("view") === "detail" ? "detail" : "chat" });
+    const detailView = root.getAttribute("view") === "detail";
     const chatId = root.capabilityProps?.chatId || state.activeChatId;
     if (!chatId) {
-      setMariBridgeSettingsHtml(root, "no-chat", '<p class="mari-sdk-settings-status">Open a chat to configure Group Sort Order.</p>');
+      setMariBridgeNativeSettingsHtml(root, `no-chat:${detailView}`, {
+        surface: detailView ? "detail" : "chat",
+        title: "Group Sort Order",
+        subtitle: "Open a Roleplay chat",
+        iconText: "GS",
+        sections: [{ html: '<p class="mari-native-settings-muted">Open a Roleplay chat to configure Group Sort Order.</p>' }],
+      });
       return;
     }
     root.setAttribute("aria-busy", "true");
@@ -295,32 +300,70 @@ return (function () {
       ]);
       if (!root.isConnected || (root.capabilityProps?.chatId || state.activeChatId) !== chatId) return;
       const settings = normalizeObject(view.settings);
-      const options = (Array.isArray(connections) ? connections : []).map((connection) => {
-        const id = escapeMariBridgeSettingsHtml(connection?.id || "");
-        const label = escapeMariBridgeSettingsHtml(connection?.name || connection?.model || connection?.id || "Connection");
-        const model = connection?.model ? ` — ${escapeMariBridgeSettingsHtml(connection.model)}` : "";
-        return `<option value="${id}"${settings.selectorConnectionId === connection?.id ? " selected" : ""}>${label}${model}</option>`;
-      }).join("");
-      setMariBridgeSettingsHtml(root, `${chatId}:${JSON.stringify(settings)}:${options}`, `
-        <section class="mari-sdk-settings-group">
-          <div class="mari-sdk-settings-heading"><h3 class="mari-sdk-settings-title">Group Sort Order</h3></div>
-          <p class="mari-sdk-settings-description">Controls the terminal next-speaker marker and the optional hidden selector call for this chat.</p>
-          <label class="mari-sdk-settings-switch">
-            <span class="mari-sdk-settings-switch-copy"><span class="mari-sdk-settings-label">Include persona candidate</span><span class="mari-sdk-settings-help">Allow the current persona to be selected as the next participant.</span></span>
-            <input data-gso-setting="includePersonaCandidate" type="checkbox"${view.includePersonaCandidate ? " checked" : ""}>
-          </label>
-          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Selector connection / model</span><select class="mari-sdk-settings-select" data-gso-setting="selectorConnectionId"><option value="">Use Agent default</option><option value="random"${settings.selectorConnectionId === "random" ? " selected" : ""}>Random pool</option>${options}</select><span class="mari-sdk-settings-help">Used only by Refresh. Normal replies still use the chat model.</span></label>
-          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Terminal marker</span><input class="mari-sdk-settings-input" data-gso-setting="markerTemplate" value="${escapeMariBridgeSettingsHtml(settings.markerTemplate)}"><span class="mari-sdk-settings-help">Must contain exactly one <code>{{speaker_id}}</code>.</span></label>
-          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Main-response instruction</span><textarea rows="8" class="mari-sdk-settings-textarea" data-gso-setting="promptTemplate">${escapeMariBridgeSettingsHtml(settings.promptTemplate)}</textarea><span class="mari-sdk-settings-help">Macros: <code>{{candidates}}</code>, <code>{{marker}}</code>, <code>{{excluded_candidate_id}}</code>.</span></label>
-          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Refresh selector prompt</span><textarea rows="7" class="mari-sdk-settings-textarea" data-gso-setting="selectorPrompt">${escapeMariBridgeSettingsHtml(settings.selectorPrompt)}</textarea></label>
-          <p class="mari-sdk-settings-status" data-gso-settings-status></p>
-          <div class="mari-sdk-settings-actions"><button type="button" class="mari-sdk-settings-button" data-gso-reset>Reset defaults</button><button type="button" class="mari-sdk-settings-button" data-variant="primary" data-gso-save>Save</button></div>
-        </section>
-      `);
-      root.querySelector("[data-gso-save]")?.addEventListener("click", () => saveGsoSettings(root, chatId, false));
-      root.querySelector("[data-gso-reset]")?.addEventListener("click", () => saveGsoSettings(root, chatId, true));
+      const options = [
+        { value: "", label: "Use Agent default" },
+        { value: "random", label: "Random pool" },
+        ...(Array.isArray(connections) ? connections : []).map((connection) => ({
+          value: connection?.id || "",
+          label: `${connection?.name || connection?.model || connection?.id || "Connection"}${connection?.model ? ` — ${connection.model}` : ""}`,
+        })),
+      ];
+      setMariBridgeNativeSettingsHtml(root, `${detailView}:${chatId}:${JSON.stringify(settings)}:${JSON.stringify(options)}`, {
+        surface: detailView ? "detail" : "chat",
+        title: "Group Sort Order",
+        subtitle: root.capabilityProps?.chatName || "Current chat",
+        iconText: "GS",
+        activation: detailView ? {
+          enabled: root.capabilityProps?.enabledForChat === true,
+          description: "Group Sort Order only applies to chats where this agent is enabled.",
+        } : null,
+        sections: [
+          {
+            title: "Next speaker controls",
+            description: "Controls the terminal next-speaker marker and the optional hidden selector call for this chat.",
+            badge: { label: view.enabled ? "Active in chat" : "Not active", muted: !view.enabled },
+            fields: [
+              { type: "switch", settingAttribute: "data-gso-setting", name: "includePersonaCandidate", label: "Include persona candidate", help: "Allow the current persona to be selected as the next participant.", checked: view.includePersonaCandidate === true },
+              { type: "select", settingAttribute: "data-gso-setting", name: "selectorConnectionId", label: "Selector connection / model", help: "Used only by Refresh. Normal replies still use the chat model.", value: settings.selectorConnectionId || "", options },
+            ],
+          },
+          {
+            title: "Prompt and marker templates",
+            description: "These values are inserted into the main generation prompt and stripped from the final message after generation.",
+            fields: [
+              { type: "input", settingAttribute: "data-gso-setting", name: "markerTemplate", label: "Terminal marker", help: "Must contain exactly one {{speaker_id}}.", value: settings.markerTemplate || "" },
+              { type: "textarea", settingAttribute: "data-gso-setting", name: "promptTemplate", label: "Main-response instruction", help: "Macros: {{candidates}}, {{marker}}, {{excluded_candidate_id}}.", rows: 8, value: settings.promptTemplate || "" },
+              { type: "textarea", settingAttribute: "data-gso-setting", name: "selectorPrompt", label: "Refresh selector prompt", rows: 7, value: settings.selectorPrompt || "" },
+            ],
+            html: '<p class="mari-native-settings-status" data-gso-settings-status></p>',
+          },
+        ],
+        actions: [
+          { id: "reset", label: "Reset defaults" },
+          { id: "save", label: "Save", variant: "primary" },
+        ],
+      });
+      root.querySelector('[data-mari-native-action="back"]')?.addEventListener("click", () => root.capabilityProps?.onClose?.());
+      root.querySelector('[data-mari-native-action="toggle-agent"]')?.addEventListener("click", async () => {
+        const next = root.capabilityProps?.enabledForChat !== true;
+        const button = root.querySelector('[data-mari-native-action="toggle-agent"]');
+        if (button) button.disabled = true;
+        try {
+          await root.capabilityProps?.onEnabledForChatChange?.(next);
+        } finally {
+          if (button) button.disabled = false;
+        }
+      });
+      root.querySelector('[data-mari-native-action="save"]')?.addEventListener("click", () => saveGsoSettings(root, chatId, false));
+      root.querySelector('[data-mari-native-action="reset"]')?.addEventListener("click", () => saveGsoSettings(root, chatId, true));
     } catch (error) {
-      setMariBridgeSettingsHtml(root, `error:${chatId}:${error.message}`, `<p class="mari-sdk-settings-status">Group Sort Order settings could not load: ${escapeMariBridgeSettingsHtml(error.message)}</p>`);
+      setMariBridgeNativeSettingsHtml(root, `error:${chatId}:${error.message}`, {
+        surface: detailView ? "detail" : "chat",
+        title: "Group Sort Order",
+        subtitle: root.capabilityProps?.chatName || "Current chat",
+        iconText: "GS",
+        sections: [{ html: `<p class="mari-native-settings-error">Group Sort Order settings could not load: ${escapeMariBridgeSettingsHtml(error.message)}</p>` }],
+      });
     } finally {
       root.removeAttribute("aria-busy");
     }

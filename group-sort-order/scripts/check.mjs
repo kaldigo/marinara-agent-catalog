@@ -398,7 +398,8 @@ assert(clientSource.includes('slot: "composer.above-input"'), "client targets th
 assert(!clientSource.includes("_mari-bridge/src"), "client does not import legacy bridge implementation");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "2.1.0"'), "client runtime version identifies the settings-capable bridge rewrite");
+assert(clientSource.includes('RUNTIME_VERSION = "2.2.0"'), "client runtime version identifies the native-styled settings rewrite");
+assert(clientSource.includes("setMariBridgeNativeSettingsHtml"), "settings are rendered by the bridge-owned native descriptor renderer");
 assert(clientSource.includes('slot: "chat.settings"'), "client contributes native chat settings");
 assert(clientSource.includes("data-gso-setting"), "client exposes editable prompt, marker, and selector settings");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");

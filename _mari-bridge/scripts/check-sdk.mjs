@@ -6,10 +6,34 @@ import {
   MARI_BRIDGE_SERVER_SYMBOL,
   MariBridgeUnavailableError,
 } from "../sdk/contracts.js";
-import { MARI_BRIDGE_SETTINGS_STYLE_ID, escapeMariBridgeSettingsHtml } from "../sdk/settings.js";
+import {
+  MARI_BRIDGE_SETTINGS_STYLE_ID,
+  escapeMariBridgeSettingsHtml,
+  renderMariBridgeNativeSettingsHtml,
+} from "../sdk/settings.js";
 
 assert.equal(MARI_BRIDGE_SETTINGS_STYLE_ID, "mari-bridge-sdk-settings-style");
 assert.equal(escapeMariBridgeSettingsHtml('<tag a="b">&'), "&lt;tag a=&quot;b&quot;&gt;&amp;");
+const nativeSettingsHtml = renderMariBridgeNativeSettingsHtml({
+  surface: "detail",
+  title: "SDK Test",
+  iconText: "ST",
+  sections: [
+    {
+      title: "Fields",
+      fields: [
+        { type: "textarea", settingAttribute: "data-test-setting", name: "prompt", value: "<unsafe>" },
+        { type: "chips", optionAttribute: "data-test-option", options: [{ value: "a", label: "Alice", selected: true }] },
+      ],
+    },
+  ],
+  actions: [{ id: "save", label: "Save", variant: "primary" }],
+});
+assert(nativeSettingsHtml.includes("mari-editor-shell") || nativeSettingsHtml.includes("mari-editor-header"));
+assert(nativeSettingsHtml.includes("mari-native-settings-card"));
+assert(nativeSettingsHtml.includes('data-test-setting="prompt"'));
+assert(nativeSettingsHtml.includes("&lt;unsafe&gt;"));
+assert(nativeSettingsHtml.includes('data-test-option="a"'));
 
 await assert.rejects(
   activateWithMariBridge(

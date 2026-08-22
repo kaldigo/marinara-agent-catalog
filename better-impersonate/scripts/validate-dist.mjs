@@ -7,7 +7,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "manifest.jso
 const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 
 assert(manifest.id === "better-impersonate", "manifest id must use the renamed package identity");
-assert(manifest.version === "2.3.3", "manifest version must be 2.3.3");
+assert(manifest.version === "2.3.4", "manifest version must be 2.3.4");
 assert(manifest.name === "Better Impersonate", "package uses its expanded feature name");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint must be client.js");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint must be agents.json");
@@ -24,6 +24,7 @@ assert(manifest.contributions?.agentDetail?.agentIds?.includes("better-impersona
 assert(!client.includes('slot: "chat.settings"'), "client does not contribute chat-level settings");
 assert(!client.includes('"ui.chat-settings"'), "client does not require the chat-settings bridge capability");
 assert(client.includes("mari-editor-shell"), "client uses the native editor/detail shell for global settings");
+assert(client.includes("setMariBridgeNativeSettingsHtml"), "client uses the bridge-owned native settings renderer");
 assert(client.includes("data-bi-setting"), "client exposes command-specific prompt templates");
 assert(client.includes("/api/agents/type/"), "client persists prompt settings through Marinara's global agent settings API");
 assert(!client.includes("mari-better-impersonate-settings:v1"), "client must not store global prompt templates in browser localStorage");
