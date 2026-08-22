@@ -133,12 +133,12 @@ globalThis.customElements = {
 };
 globalThis.document = { documentElement: { dataset: {} } };
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
-const preloadedClientSource = clientSource.replace(
-  "const bridgeFirst = isBridgeFirstImport();",
-  "const bridgeFirst = true; // unit fixture simulates the preload URL",
-);
-await import(`data:text/javascript;base64,${Buffer.from(preloadedClientSource).toString("base64")}`);
+await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.8");
+assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("ui.chat-settings"), true);
 assert.equal(typeof customElements.get("marinara-capability-mari-bridge"), "function");
 assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
 const clientSession = globalThis[clientSymbol].registerConsumer({
@@ -298,10 +298,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.7"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.7" }, false, "1.0.7"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.6" }, false, "1.0.7"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.7" }, true, "1.0.7"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.8"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.8" }, false, "1.0.8"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.7" }, false, "1.0.8"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.8" }, true, "1.0.8"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
