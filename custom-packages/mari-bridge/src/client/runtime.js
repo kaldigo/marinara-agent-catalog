@@ -317,14 +317,6 @@ function defineNativeSlotElement(ui) {
   });
 }
 
-function isBridgeFirstImport() {
-  try {
-    return new URL(import.meta.url).searchParams.get("preload") === "1";
-  } catch {
-    return false;
-  }
-}
-
 function createGenerationLifecycle() {
   const activeByChat = new Map();
   const subscribers = new Set();
@@ -433,28 +425,25 @@ function createClientRuntime(serverHealth) {
   const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
   const mountNativeSlot = createNativeSlotMounter();
-  const bridgeFirst = isBridgeFirstImport();
   const capabilities = new Set([
+    "chat.active",
+    "client.bridge-first",
+    "commands",
+    "commands.draft-write",
     "consumer.sessions",
     "diagnostics",
+    "generation.draft",
+    "generation.lifecycle",
+    "quick-replies.input-macro",
     "runtime.health",
-    ...(bridgeFirst ? [
-      "chat.active",
-      "client.bridge-first",
-      "commands",
-      "commands.draft-write",
-      "generation.draft",
-      "generation.lifecycle",
-      "quick-replies.input-macro",
-      "ui.chat-settings",
-      "ui.composer.above-input",
-      "ui.tracker-panel",
-      "ui.roleplay-hud",
-    ] : []),
+    "ui.chat-settings",
+    "ui.composer.above-input",
+    "ui.tracker-panel",
+    "ui.roleplay-hud",
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.6",
+    implementationVersion: "1.0.8",
     status: "ready",
     capabilities,
     serverHealth,
