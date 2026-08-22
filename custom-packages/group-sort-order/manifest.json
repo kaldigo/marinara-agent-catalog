@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "group-sort-order",
   "name": "Group Sort Order",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
   "engine": {
     "min": "2.4.0",
@@ -90,8 +90,8 @@
     },
     {
       "path": "src/shared/state.js",
-      "sha256": "f1e34507853ada6c6d1c89079c53fef7a3ac704fdbe4e558f5e46ee197644fe5",
-      "bytes": 13323
+      "sha256": "d2affdc89c145f2f793427424b464d5238088455cda08eda90d1c87abc6d4410",
+      "bytes": 13322
     }
   ],
   "permissions": [

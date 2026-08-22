@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
     "min": "2.3.3",
@@ -89,8 +89,8 @@
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "fd75e22460bde5900de415ac42a74e593e7b7cb54c9a0ff43d16f6978768128a",
-      "bytes": 25409
+      "sha256": "34dad0e8bbfba31365313caee9c065f0b92d9b6e6f7bee70935b9c95cd51b97e",
+      "bytes": 25408
     },
     {
       "path": "src/shared/chat-state.js",

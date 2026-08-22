@@ -193,7 +193,8 @@
   const PACKAGE_ID = "better-impersonate";
   const TAG_NAME = "marinara-capability-better-impersonate";
   const LAST_GUIDANCE_PREFIX = "mari-si-guidance:";
-  const PACKAGE_SETTINGS_KEY = "mari-better-impersonate-settings:v1";
+  const SETTINGS_FIELDS = ["draftTemplate", "continueTemplate", "thinkingTemplate"];
+  let betterImpersonateSettingsCache = null;
 
   const cleanupImpersonateCommands = await activateClientWithMariBridge(
     {
@@ -208,7 +209,6 @@
         "generation.draft",
         "quick-replies.input-macro",
         "runtime.health",
-        "ui.chat-settings",
       ],
     },
     async (bridgeSession) => {
@@ -250,7 +250,6 @@
           modes: ["roleplay"],
           handler: ({ context }) => restoreLastGuidance(context),
         }),
-        bridgeSession.ui.register({ id: "settings", slot: "chat.settings", view: "settings", priority: 30 }),
       ];
       return () => {
         for (const dispose of disposers.splice(0).reverse()) dispose();
@@ -274,7 +273,7 @@
           this.render();
         }
         render() {
-          if (!["settings", "detail"].includes(this.getAttribute("view"))) {
+          if (this.getAttribute("view") !== "detail") {
             this.hidden = true;
             this.setAttribute("aria-hidden", "true");
             this.replaceChildren();
@@ -282,7 +281,7 @@
           }
           this.hidden = false;
           this.removeAttribute("aria-hidden");
-          renderBetterImpersonateSettings(this);
+          void renderBetterImpersonateSettings(this);
         }
       },
     );
@@ -308,7 +307,7 @@
     }
 
     const settings = readImpersonateSettings();
-    const packageSettings = readBetterImpersonateSettings();
+    const packageSettings = await readBetterImpersonateSettings();
     rememberGuidance(context.chatId, mode, draft);
     const baseTemplate = settings.impersonatePromptTemplate || (await readChatImpersonatePrompt(context.chatId));
     const impersonatePromptTemplate = resolvePromptTemplate(mode, baseTemplate, packageSettings);
@@ -377,7 +376,7 @@
     }
   }
 
-  function resolvePromptTemplate(mode, baseTemplate, settings = readBetterImpersonateSettings()) {
+  function resolvePromptTemplate(mode, baseTemplate, settings = defaultBetterImpersonateSettings()) {
     if (mode === "continue") return applyImpersonateModeTemplate(settings.continueTemplate, baseTemplate);
     if (mode === "inner_state") return applyImpersonateModeTemplate(settings.thinkingTemplate, baseTemplate);
     return applyImpersonateModeTemplate(settings.draftTemplate, baseTemplate);
@@ -391,60 +390,169 @@
     };
   }
 
-  function readBetterImpersonateSettings() {
+  function normalizeBetterImpersonateSettings(value) {
     const defaults = defaultBetterImpersonateSettings();
+    const settings = typeof value === "string" ? parseJsonObject(value) : value;
+    return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [
+      key,
+      typeof settings?.[key] === "string" && settings[key].trim() ? settings[key].trim() : fallback,
+    ]));
+  }
+
+  function parseJsonObject(value) {
     try {
-      const value = JSON.parse(localStorage.getItem(PACKAGE_SETTINGS_KEY) || "{}");
-      return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [
-        key,
-        typeof value?.[key] === "string" && value[key].trim() ? value[key].trim() : fallback,
-      ]));
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch {
-      return defaults;
+      return {};
     }
   }
 
-  function renderBetterImpersonateSettings(root) {
-    prepareMariBridgeSettingsRoot(root, { surface: root.getAttribute("view") === "detail" ? "detail" : "chat" });
-    const settings = readBetterImpersonateSettings();
-    const fields = [
-      ["draftTemplate", "Draft guidance template", settings.draftTemplate],
-      ["continueTemplate", "Continue template", settings.continueTemplate],
-      ["thinkingTemplate", "Private thinking template", settings.thinkingTemplate],
-    ];
-    setMariBridgeSettingsHtml(root, JSON.stringify(settings), `
-      <section class="mari-sdk-settings-group">
-        <div class="mari-sdk-settings-heading"><h3 class="mari-sdk-settings-title">Better Impersonate</h3></div>
-        <p class="mari-sdk-settings-description">These global templates wrap Marinara's native impersonate prompt. Connection, model, preset, and agent blocking remain in Marinara's Impersonate section.</p>
-        ${fields.map(([key, label, value]) => `<label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">${label}</span><textarea rows="7" class="mari-sdk-settings-textarea" data-bi-setting="${key}">${escapeMariBridgeSettingsHtml(value)}</textarea></label>`).join("")}
-        <p class="mari-sdk-settings-help">Macros: <code>{{base_prompt}}</code>, <code>{{user}}</code>, and <code>{{impersonate_direction}}</code>. Quick Replies resolve <code>{{input}}</code> before the slash command runs.</p>
-        <p class="mari-sdk-settings-status" data-bi-status></p>
-        <div class="mari-sdk-settings-actions"><button type="button" class="mari-sdk-settings-button" data-bi-reset>Reset defaults</button><button type="button" class="mari-sdk-settings-button" data-variant="primary" data-bi-save>Save</button></div>
-      </section>
-    `);
-    root.querySelector("[data-bi-save]")?.addEventListener("click", () => saveBetterImpersonateSettings(root, false));
-    root.querySelector("[data-bi-reset]")?.addEventListener("click", () => saveBetterImpersonateSettings(root, true));
+  async function readBetterImpersonateSettings(options = {}) {
+    if (!options.fresh && betterImpersonateSettingsCache) return betterImpersonateSettingsCache;
+    const response = await fetch("/api/agents", {
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      if (betterImpersonateSettingsCache) return betterImpersonateSettingsCache;
+      return defaultBetterImpersonateSettings();
+    }
+    const agents = await response.json();
+    const config = Array.isArray(agents)
+      ? agents.find((agent) => agent && typeof agent === "object" && (agent.type === PACKAGE_ID || agent.id === PACKAGE_ID))
+      : null;
+    betterImpersonateSettingsCache = normalizeBetterImpersonateSettings(config?.settings);
+    return betterImpersonateSettingsCache;
   }
 
-  function saveBetterImpersonateSettings(root, reset) {
+  async function saveBetterImpersonateSettings(next) {
+    const response = await fetch(`/api/agents/type/${encodeURIComponent(PACKAGE_ID)}`, {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "x-marinara-csrf": "1",
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({ settings: next }),
+    });
+    if (!response.ok) throw new Error(`Agent settings update failed (${response.status})`);
+    const config = await response.json().catch(() => null);
+    betterImpersonateSettingsCache = normalizeBetterImpersonateSettings(config?.settings ?? next);
+    return betterImpersonateSettingsCache;
+  }
+
+  async function renderBetterImpersonateSettings(root, state = {}) {
+    const nonce = (root._betterImpersonateRenderNonce ?? 0) + 1;
+    root._betterImpersonateRenderNonce = nonce;
+    if (!betterImpersonateSettingsCache && !state.settings) {
+      renderBetterImpersonateSettingsHtml(root, defaultBetterImpersonateSettings(), {
+        loading: true,
+        status: "Loading saved prompt templates…",
+      });
+    }
+    let settings;
+    try {
+      settings = state.settings ?? await readBetterImpersonateSettings({ fresh: state.fresh === true });
+    } catch (error) {
+      if (root._betterImpersonateRenderNonce !== nonce) return;
+      settings = defaultBetterImpersonateSettings();
+      renderBetterImpersonateSettingsHtml(root, settings, {
+        error: `Could not load saved prompt templates. Using built-ins for this view. ${error instanceof Error ? error.message : String(error)}`,
+      });
+      return;
+    }
+    if (root._betterImpersonateRenderNonce !== nonce) return;
+    renderBetterImpersonateSettingsHtml(root, settings, state);
+  }
+
+  function renderBetterImpersonateSettingsHtml(root, settings, state = {}) {
+    const fields = [
+      ["draftTemplate", "Draft guidance prompt", "Wraps /impersonate_draft guidance before calling Marinara's native impersonate endpoint.", settings.draftTemplate],
+      ["continueTemplate", "Continue prompt", "Wraps /impersonate_continue so the model appends to the current draft instead of restarting it.", settings.continueTemplate],
+      ["thinkingTemplate", "Private thinking prompt", "Wraps /impersonate_thinking as quiet inner-state context for the drafted response.", settings.thinkingTemplate],
+    ];
+    const renderKey = JSON.stringify({
+      settings,
+      loading: state.loading === true,
+      status: state.status || "",
+      error: state.error || "",
+      saved: state.saved === true,
+    });
+    setMariBridgeSettingsHtml(root, renderKey, `
+      <section class="mari-editor-shell mari-editor-legacy-bridge flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="better-impersonate-title">
+        <header class="mari-editor-header">
+          <button type="button" class="mari-editor-action inline-flex" data-bi-back aria-label="Back to Agents">Back</button>
+          <div class="mari-editor-icon-tile">BI</div>
+          <div class="min-w-0 flex-1">
+            <h1 id="better-impersonate-title" class="mari-editor-title truncate">Better Impersonate</h1>
+            <p class="mari-editor-subtitle truncate">Global slash-command prompt templates</p>
+          </div>
+        </header>
+        <div class="mari-editor-content max-md:p-4">
+          <div class="mari-editor-content-inner mari-editor-content-inner--wide flex flex-col gap-4">
+            <section class="mari-editor-panel p-4">
+              <div class="flex flex-wrap items-start gap-3">
+                <div class="min-w-52 flex-1">
+                  <h2 class="text-xs font-semibold text-[var(--marinara-editor-foreground,var(--foreground))]">Command prompt templates</h2>
+                  <p class="mt-1 text-[0.6875rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]">These are global Better Impersonate settings. They wrap Marinara's native impersonate prompt for slash commands and system Quick Replies; they are not added to active chats.</p>
+                </div>
+                <span class="rounded-full bg-[var(--secondary)] px-2 py-1 text-[0.625rem] font-medium text-[var(--marinara-editor-muted,var(--muted-foreground))]">${state.loading ? "Loading" : state.saved ? "Saved" : "Global"}</span>
+              </div>
+              ${state.error ? `<p class="mt-3 rounded-lg bg-[var(--destructive)]/10 px-3 py-2 text-[0.6875rem] text-[var(--destructive)]" role="alert">${escapeMariBridgeSettingsHtml(state.error)}</p>` : ""}
+              ${state.status ? `<p class="mt-3 text-[0.6875rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]">${escapeMariBridgeSettingsHtml(state.status)}</p>` : ""}
+              <div class="mt-4 flex flex-col gap-4">
+                ${fields.map(([key, label, description, value]) => `
+                  <section class="border-t border-[var(--border)] pt-4 first:border-t-0 first:pt-0">
+                    <label class="text-[0.6875rem] font-semibold" for="better-impersonate-${key}">${label}</label>
+                    <p class="mt-1 text-[0.625rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]">${description}</p>
+                    <textarea id="better-impersonate-${key}" rows="9" spellcheck="false" class="mt-3 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-xs leading-relaxed text-[var(--foreground)] outline-none transition-colors focus:border-[var(--primary)]/50 focus:ring-2 focus:ring-[var(--ring)] disabled:opacity-45" data-bi-setting="${key}" ${state.loading ? "disabled" : ""}>${escapeMariBridgeSettingsHtml(value)}</textarea>
+                  </section>
+                `).join("")}
+              </div>
+              <div class="mt-4 border-t border-[var(--border)] pt-4">
+                <p class="text-[0.625rem] font-semibold text-[var(--marinara-editor-muted,var(--muted-foreground))]">Available variables</p>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  ${["{{base_prompt}}", "{{user}}", "{{impersonate_direction}}", "{{input}}"].map((macro) => `<code class="rounded-md border border-[var(--border)] bg-[var(--secondary)] px-2 py-1 text-[0.625rem] text-[var(--foreground)]">${escapeMariBridgeSettingsHtml(macro)}</code>`).join("")}
+                </div>
+                <p class="mt-2 text-[0.625rem] leading-relaxed text-[var(--marinara-editor-muted,var(--muted-foreground))]"><code>{{input}}</code> is resolved by the Mari Bridge Quick Reply macro before the slash command runs. Prompt templates should keep <code>{{impersonate_direction}}</code> so the command guidance reaches the model.</p>
+                <p class="mt-2 text-[0.6875rem] text-[var(--marinara-editor-muted,var(--muted-foreground))]" data-bi-status>${state.saved ? "Saved." : ""}</p>
+              </div>
+            </section>
+            <div class="flex flex-wrap justify-end gap-2">
+              <button type="button" class="mari-editor-action inline-flex min-h-11 px-4" data-bi-reset>Reset defaults</button>
+              <button type="button" class="mari-editor-action mari-editor-action--accent inline-flex min-h-11 px-4" data-bi-save>Save</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    `);
+    root.querySelector("[data-bi-back]")?.addEventListener("click", () => {
+      const close = root.capabilityProps?.onClose;
+      if (typeof close === "function") close();
+    });
+    root.querySelector("[data-bi-save]")?.addEventListener("click", () => persistBetterImpersonateSettings(root, false));
+    root.querySelector("[data-bi-reset]")?.addEventListener("click", () => persistBetterImpersonateSettings(root, true));
+  }
+
+  async function persistBetterImpersonateSettings(root, reset) {
     const status = root.querySelector("[data-bi-status]");
     try {
-      if (reset) localStorage.removeItem(PACKAGE_SETTINGS_KEY);
-      else {
-        const next = {};
-        for (const key of ["draftTemplate", "continueTemplate", "thinkingTemplate"]) {
+      const next = reset ? defaultBetterImpersonateSettings() : {};
+      if (!reset) {
+        for (const key of SETTINGS_FIELDS) {
           const value = root.querySelector(`[data-bi-setting="${key}"]`)?.value.trim() || "";
           if (!value.includes("{{impersonate_direction}}")) throw new Error(`${key} must contain {{impersonate_direction}}.`);
           next[key] = value;
         }
-        localStorage.setItem(PACKAGE_SETTINGS_KEY, JSON.stringify(next));
       }
+      if (status) status.textContent = reset ? "Restoring defaults…" : "Saving…";
+      const saved = await saveBetterImpersonateSettings(next);
       root.dataset.mariBridgeSettingsRenderKey = "";
-      renderBetterImpersonateSettings(root);
-      const nextStatus = root.querySelector("[data-bi-status]");
-      if (nextStatus) nextStatus.textContent = reset ? "Defaults restored." : "Saved.";
+      renderBetterImpersonateSettingsHtml(root, saved, { saved: true });
     } catch (error) {
-      if (status) status.textContent = `Save failed: ${error.message}`;
+      if (status) status.textContent = `Save failed: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 

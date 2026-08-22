@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gm-notes",
   "name": "GM Notes",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
   "engine": {
     "min": "2.4.2",

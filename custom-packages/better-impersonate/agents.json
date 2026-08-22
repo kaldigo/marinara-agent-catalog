@@ -2,7 +2,7 @@
   {
     "id": "better-impersonate",
     "name": "Better Impersonate",
-    "description": "Feature marker for bridge-registered persona draft commands.",
+    "description": "Global bridge-registered persona draft slash commands and prompt templates.",
     "category": "misc",
     "phase": "pre_generation",
     "execution": "feature",
@@ -14,7 +14,11 @@
       "visual_novel"
     ],
     "defaultTools": [],
-    "defaultSettings": {},
+    "defaultSettings": {
+      "draftTemplate": "{{base_prompt}}\n\nGuidance for {{user}}'s next in-character response:\n{{impersonate_direction}}\n\nUse this as a suggestion for the generated response, not as dialogue or chat history.\nDo not quote or rush to fulfill the suggestion; let it guide you naturally.",
+      "thinkingTemplate": "{{base_prompt}}\n\nPrivate inner state for {{user}}:\n{{impersonate_direction}}\n\nUse this as quiet context for {{user}}'s current thoughts and feelings. Do not treat it as dialogue, chat history, or an instruction for what must happen next.\nLet this ground the response in {{user}}'s feelings rather than force an outcome.",
+      "continueTemplate": "{{base_prompt}}\n\nContinue {{user}}'s current in-character draft.\nThe draft so far is:\n{{impersonate_direction}}\n\nReturn only the continuation text.\nDo not restart the draft.\nDo not repeat any part of the draft.\nDo not explain."
+    },
     "defaultPromptTemplate": ""
   }
 ]

@@ -54,7 +54,7 @@ export function uniqueStrings(value) {
 export function isGroupSortEnabled(chat) {
   const meta = normalizeObject(chat?.metadata);
   const activeAgentIds = uniqueStrings(meta.activeAgentIds);
-  return meta.enableAgents !== false && activeAgentIds.includes(GROUP_SORT_ORDER_PACKAGE_ID);
+  return meta.enableAgents === true && activeAgentIds.includes(GROUP_SORT_ORDER_PACKAGE_ID);
 }
 
 export function normalizeGroupSortState(raw) {
