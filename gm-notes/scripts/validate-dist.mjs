@@ -9,6 +9,10 @@ assert.equal(manifest.id, "gm-notes");
 assert.equal(manifest.entrypoints.agents, "agents.json");
 assert.equal(manifest.restartRequired, true);
 for (const entrypoint of Object.values(manifest.entrypoints)) await fs.access(path.join(root, entrypoint));
+const manifestFiles = new Set((manifest.files ?? []).map((file) => file.path));
+for (const entrypoint of Object.values(manifest.entrypoints)) {
+  assert.ok(manifestFiles.has(entrypoint), `manifest files include entrypoint ${entrypoint}`);
+}
 const agents = JSON.parse(await fs.readFile(path.join(root, "agents.json"), "utf8"));
 const agent = agents[0];
 assert.equal(agent.id, "gm-notes");
