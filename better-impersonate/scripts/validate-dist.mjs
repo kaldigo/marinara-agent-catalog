@@ -7,7 +7,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "manifest.jso
 const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 
 assert(manifest.id === "better-impersonate", "manifest id must use the renamed package identity");
-assert(manifest.version === "2.3.1", "manifest version must be 2.3.1");
+assert(manifest.version === "2.3.2", "manifest version must be 2.3.2");
 assert(manifest.name === "Better Impersonate", "package uses its expanded feature name");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint must be client.js");
 assert(client.includes('const PACKAGE_ID = "better-impersonate"'), "client uses the renamed bridge consumer identity");
