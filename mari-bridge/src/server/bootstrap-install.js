@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export function requiresBootstrapHandoff(kernel, bootstrapChanged, implementationVersion) {
@@ -20,6 +20,12 @@ export async function installBootstrapFile(source, target) {
   if (await sameFileContents(source, target)) {
     return { path: target, changed: false };
   }
+  try {
+    await chmod(target, 0o600);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   await copyFile(source, target);
+  await chmod(target, 0o600);
   return { path: target, changed: true };
 }
