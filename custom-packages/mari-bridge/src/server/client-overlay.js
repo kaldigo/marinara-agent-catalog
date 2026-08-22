@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v11";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v12";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
@@ -196,10 +196,13 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   const indexPath = join(sourceRoot, "index.html");
   const index = await readFile(indexPath, "utf8");
   const overlayImplementation = await readFile(fileURLToPath(import.meta.url));
+  const bridgeClientRuntime = await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "client", "runtime.js"), "utf8");
   const fingerprint = createHash("sha256")
     .update(OVERLAY_FORMAT_VERSION)
     .update("\0")
     .update(overlayImplementation)
+    .update("\0")
+    .update(bridgeClientRuntime)
     .update("\0")
     .update(index)
     .digest("hex")
@@ -295,7 +298,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   await writeFile(
     join(temporary, bridgeBootstrapName),
     [
-      'await import("/api/capability-packages/mari-bridge/client?preload=1");',
+      bridgeClientRuntime,
       `await import(${JSON.stringify(versionedMainModule)});`,
       "",
     ].join("\n"),

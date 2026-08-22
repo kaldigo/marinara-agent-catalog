@@ -362,66 +362,73 @@
   const SETTINGS_FIELDS = ["draftTemplate", "continueTemplate", "thinkingTemplate"];
   let betterImpersonateSettingsCache = null;
 
-  const cleanupImpersonateCommands = await activateClientWithMariBridge(
-    {
-      consumerId: PACKAGE_ID,
-      api: { major: 1, minMinor: 0 },
-      require: [
-        "chat.active",
-        "client.bridge-first",
-        "commands",
-        "commands.draft-write",
-        "consumer.sessions",
-        "generation.draft",
-        "quick-replies.input-macro",
-        "runtime.health",
-      ],
-    },
-    async (bridgeSession) => {
-      defineCapabilityElement();
-      const disposers = [
-        bridgeSession.commands.register({
-          id: "impersonate-draft",
-          commands: ["/impersonate_draft"],
-          aliases: ["/impersonate-draft"],
-          description: "Generate a persona response draft using optional guidance",
-          usage: "/impersonate_draft [guidance]",
-          modes: ["roleplay"],
-          handler: ({ raw, context }) => generateDraft(bridgeSession, "impersonate", commandArgument(raw), context),
-        }),
-        bridgeSession.commands.register({
-          id: "impersonate-continue",
-          commands: ["/impersonate_continue"],
-          aliases: ["/impersonate-continue"],
-          description: "Continue the current persona draft",
-          usage: "/impersonate_continue <current draft>",
-          modes: ["roleplay"],
-          handler: ({ raw, context }) => generateDraft(bridgeSession, "continue", commandArgument(raw), context),
-        }),
-        bridgeSession.commands.register({
-          id: "impersonate-thinking",
-          commands: ["/impersonate_thinking"],
-          aliases: ["/impersonate-thinking"],
-          description: "Generate a persona draft guided by private thoughts or feelings",
-          usage: "/impersonate_thinking <private guidance>",
-          modes: ["roleplay"],
-          handler: ({ raw, context }) => generateDraft(bridgeSession, "inner_state", commandArgument(raw), context),
-        }),
-        bridgeSession.commands.register({
-          id: "impersonate-last",
-          commands: ["/impersonate_last"],
-          aliases: ["/impersonate-last"],
-          description: "Restore the last persona guidance to the input",
-          usage: "/impersonate_last",
-          modes: ["roleplay"],
-          handler: ({ context }) => restoreLastGuidance(context),
-        }),
-      ];
-      return () => {
-        for (const dispose of disposers.splice(0).reverse()) dispose();
-      };
-    },
-  );
+  defineCapabilityElement();
+
+  let cleanupImpersonateCommands = async () => {};
+  try {
+    cleanupImpersonateCommands = await activateClientWithMariBridge(
+      {
+        consumerId: PACKAGE_ID,
+        api: { major: 1, minMinor: 0 },
+        require: [
+          "chat.active",
+          "client.bridge-first",
+          "commands",
+          "commands.draft-write",
+          "consumer.sessions",
+          "generation.draft",
+          "quick-replies.input-macro",
+          "runtime.health",
+        ],
+      },
+      async (bridgeSession) => {
+        const disposers = [
+          bridgeSession.commands.register({
+            id: "impersonate-draft",
+            commands: ["/impersonate_draft"],
+            aliases: ["/impersonate-draft"],
+            description: "Generate a persona response draft using optional guidance",
+            usage: "/impersonate_draft [guidance]",
+            modes: ["roleplay"],
+            handler: ({ raw, context }) => generateDraft(bridgeSession, "impersonate", commandArgument(raw), context),
+          }),
+          bridgeSession.commands.register({
+            id: "impersonate-continue",
+            commands: ["/impersonate_continue"],
+            aliases: ["/impersonate-continue"],
+            description: "Continue the current persona draft",
+            usage: "/impersonate_continue <current draft>",
+            modes: ["roleplay"],
+            handler: ({ raw, context }) => generateDraft(bridgeSession, "continue", commandArgument(raw), context),
+          }),
+          bridgeSession.commands.register({
+            id: "impersonate-thinking",
+            commands: ["/impersonate_thinking"],
+            aliases: ["/impersonate-thinking"],
+            description: "Generate a persona draft guided by private thoughts or feelings",
+            usage: "/impersonate_thinking <private guidance>",
+            modes: ["roleplay"],
+            handler: ({ raw, context }) => generateDraft(bridgeSession, "inner_state", commandArgument(raw), context),
+          }),
+          bridgeSession.commands.register({
+            id: "impersonate-last",
+            commands: ["/impersonate_last"],
+            aliases: ["/impersonate-last"],
+            description: "Restore the last persona guidance to the input",
+            usage: "/impersonate_last",
+            modes: ["roleplay"],
+            handler: ({ context }) => restoreLastGuidance(context),
+          }),
+        ];
+        return () => {
+          for (const dispose of disposers.splice(0).reverse()) dispose();
+        };
+      },
+    );
+  } catch (error) {
+    console.warn("[Better Impersonate] Mari Bridge activation failed; command handlers are disabled until the package is reloaded.", error);
+    document.documentElement.dataset.mariBridgeConsumerBetterImpersonate = "bridge-unavailable";
+  }
 
   function defineCapabilityElement() {
     if (customElements.get(TAG_NAME)) return;
