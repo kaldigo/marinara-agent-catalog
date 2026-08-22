@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package",
+    "sharedRoots": ["_mari-bridge"]
+  },
+  "package": {
+    "id": "better-impersonate",
+    "name": "Better Impersonate",
+    "description": "Adds slash commands for persona draft generation through system Quick Replies with {{input}}.",
+    "engine": {
+      "min": "2.3.3",
+      "maxExclusive": "3.0.0"
+    },
+    "kind": ["agent"],
+    "permissions": ["chat-read", "chat-write", "network", "storage", "ui"],
+    "restartRequired": false
+  }
+}
