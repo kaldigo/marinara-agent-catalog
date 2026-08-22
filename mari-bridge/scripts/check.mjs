@@ -135,7 +135,7 @@ globalThis.document = { documentElement: { dataset: {} } };
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.8");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.9");
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.chat-settings"), true);
@@ -276,6 +276,9 @@ assert.equal(
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
+const clientOverlaySource = await fs.readFile(new URL("../src/server/client-overlay.js", import.meta.url), "utf8");
+assert.match(clientOverlaySource, /bridgeClientRuntime/u);
+assert.doesNotMatch(clientOverlaySource, /client\?preload=1/u);
 
 const bootstrapFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-check-"));
 const bootstrapSource = path.join(bootstrapFixtureRoot, "source.mjs");
@@ -298,10 +301,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.8"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.8" }, false, "1.0.8"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.7" }, false, "1.0.8"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.8" }, true, "1.0.8"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.9"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.9" }, false, "1.0.9"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.8" }, false, "1.0.9"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.9" }, true, "1.0.9"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
