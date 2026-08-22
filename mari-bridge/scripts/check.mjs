@@ -298,10 +298,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.6"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.6" }, false, "1.0.6"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.5" }, false, "1.0.6"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.6" }, true, "1.0.6"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.7"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.7" }, false, "1.0.7"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.6" }, false, "1.0.7"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.7" }, true, "1.0.7"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
