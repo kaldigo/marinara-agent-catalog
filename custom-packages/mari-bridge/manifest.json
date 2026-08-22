@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
   "engine": {
     "min": "2.4.3",
@@ -23,12 +23,12 @@
   "files": [
     {
       "path": "bootstrap/register.mjs",
-      "sha256": "86cb0d5ec0fc0d4edad08dc58d6dd73b76287b4c6408903ed3ee6acca8714b9e",
-      "bytes": 17083
+      "sha256": "f444321348fd5791f7a9e07a7d327880972d196488470af1bcf849b548833a93",
+      "bytes": 17631
     },
     {
       "path": "client.js",
-      "sha256": "10b63faa218891057dabc16f6c380ad0f03df2be4f5443c8e484d97912ea7662",
+      "sha256": "de875a418824f5e620b5828a36d394d0e9a9824e4544aba5ec3cb3226cf5ad1c",
       "bytes": 24282
     },
     {
@@ -38,7 +38,7 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "10b63faa218891057dabc16f6c380ad0f03df2be4f5443c8e484d97912ea7662",
+      "sha256": "de875a418824f5e620b5828a36d394d0e9a9824e4544aba5ec3cb3226cf5ad1c",
       "bytes": 24282
     },
     {
@@ -88,7 +88,7 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "ce051544b6184cb5db6836862d891d9abd751f3021ac30301c169fa324ce6c8e",
+      "sha256": "7b91feaa5767bed9957fcc31fc77b23d9ebd2c129f67f8f06d77e3e85624538e",
       "bytes": 1840
     }
   ],
