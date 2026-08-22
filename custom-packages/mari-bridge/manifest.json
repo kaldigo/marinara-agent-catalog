@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
   "engine": {
     "min": "2.4.3",
@@ -23,12 +23,12 @@
   "files": [
     {
       "path": "bootstrap/register.mjs",
-      "sha256": "74cee818f2e96bcb58c96d38e0f0ab1143ef44ff949df439ae157a27aaf15329",
-      "bytes": 16295
+      "sha256": "86cb0d5ec0fc0d4edad08dc58d6dd73b76287b4c6408903ed3ee6acca8714b9e",
+      "bytes": 17083
     },
     {
       "path": "client.js",
-      "sha256": "d3c339c3a4a510f5fb6c1b0617c46f0b3401cd8687f2ff1f99a4aa11e99cf3dc",
+      "sha256": "10b63faa218891057dabc16f6c380ad0f03df2be4f5443c8e484d97912ea7662",
       "bytes": 24282
     },
     {
@@ -38,18 +38,18 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "d3c339c3a4a510f5fb6c1b0617c46f0b3401cd8687f2ff1f99a4aa11e99cf3dc",
+      "sha256": "10b63faa218891057dabc16f6c380ad0f03df2be4f5443c8e484d97912ea7662",
       "bytes": 24282
     },
     {
       "path": "src/server/bootstrap-install.js",
-      "sha256": "4b5e00ddcb7a7b4b4b24fe6e8d19b7561261336e7fb578cd3149b5e2d68e001d",
-      "bytes": 679
+      "sha256": "1e7aff1e752514723fb4fea1e5cf7545b7ce59c5a53840396d799e72e3d0d939",
+      "bytes": 866
     },
     {
       "path": "src/server/bootstrap-restart.js",
-      "sha256": "c2466568bc4f3d0af06508f4cdedafccd111477afcb5cafb7c0c48c7608f48cc",
-      "bytes": 2777
+      "sha256": "55230c69a7e6a2d9cd5141eaeacefc59c3522e7175e7c00f47437a0eda3a9239",
+      "bytes": 2857
     },
     {
       "path": "src/server/client-overlay.js",
@@ -58,8 +58,8 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "e5693008f5100d2d85777b3b1a3231465a2840e8e149ae7df78ca4fcbbb78bae",
-      "bytes": 9606
+      "sha256": "a57f87102647430fcf0860ebb938d4028fd539f42da403f8d6fc5fa1187ea1e7",
+      "bytes": 10314
     },
     {
       "path": "src/server/prompt-registry.js",
@@ -88,7 +88,7 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "5dc2bc6f8c017eb5d65e7f860e0197a5337753d40031f5bace6af5ad66876a68",
+      "sha256": "ce051544b6184cb5db6836862d891d9abd751f3021ac30301c169fa324ce6c8e",
       "bytes": 1840
     }
   ],

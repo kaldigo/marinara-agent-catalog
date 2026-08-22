@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gm-notes",
   "name": "GM Notes",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
   "engine": {
     "min": "2.4.2",
@@ -29,8 +29,8 @@
     },
     {
       "path": "bridge-sdk/client.js",
-      "sha256": "0042f723d83a1f19a29961a62ee39688311f228f0b4960b2c8afd7bf37dd0b19",
-      "bytes": 1234
+      "sha256": "a018c45b0bf03c42e99b2b878f62396801e7fb690e989ae2e62b57ec4f532442",
+      "bytes": 1812
     },
     {
       "path": "bridge-sdk/contracts.js",
@@ -59,8 +59,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "7195bca3c1f6f34c3e52b2efcb1c067e401665022d00ebdc6884acadc1e21018",
-      "bytes": 24264
+      "sha256": "db2de5f36c3cff2520dbb8a062338839b1c1fb2729980c7119b4e15fd9169e13",
+      "bytes": 24842
     },
     {
       "path": "server.mjs",

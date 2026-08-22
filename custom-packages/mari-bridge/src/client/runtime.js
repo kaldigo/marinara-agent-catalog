@@ -454,7 +454,7 @@ function createClientRuntime(serverHealth) {
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.3",
+    implementationVersion: "1.0.4",
     status: "ready",
     capabilities,
     serverHealth,

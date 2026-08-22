@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "pwa-helper",
   "name": "PWA Helper",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Keeps mobile and tablet screens awake while Marinara generation is running and improves iOS home-screen metadata.",
   "engine": {
     "min": "2.3.3",
@@ -23,8 +23,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "9b98d7ef8a9654a69a02219d62e9ca69c9153c8f45b8085b678a6d37ad3a3cb0",
-      "bytes": 16880
+      "sha256": "f50ff34e5ee0a751c13f9ca64c5b88e7a4d36e34da2b7c5bd415ef99e1c28abb",
+      "bytes": 17458
     }
   ],
   "permissions": [

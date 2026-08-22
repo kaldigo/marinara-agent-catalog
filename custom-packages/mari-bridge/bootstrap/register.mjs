@@ -48,7 +48,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.3";
+kernel.version = "1.0.4";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -90,21 +90,35 @@ export function patchCommittedTrackerActiveGuard(source) {
   );
 }
 
-function patchServerModule(url, inputSource) {
+export function patchServerModule(url, inputSource) {
   let source = String(inputSource);
       if (url.endsWith("/capability-module-runtime.service.js")) {
         source = replaceExact(
           source,
-          "for (const runtimePackage of await capabilityPackageManager.runtimePackages()) {",
+          [
+            "for (const runtimePackage of await capabilityPackageManager.runtimePackages()) {",
+            "            await this.activateOne(app, runtimePackage, true, false);",
+            "        }",
+          ].join("\n"),
           [
             "for (const runtimePackage of (await capabilityPackageManager.runtimePackages()).sort((left, right) => {",
             "      if (left.installed.id === \"mari-bridge\") return -1;",
             "      if (right.installed.id === \"mari-bridge\") return 1;",
             "      return 0;",
             "    })) {",
+            "            await this.activateOne(app, runtimePackage, true, false);",
+            "        }",
+            "        for (const installed of await capabilityPackageManager.installed()) {",
+            "            if (installed.status === \"restart-required\" && !installed.manifest.entrypoints.server) {",
+            "                await capabilityPackageManager.markRuntimeStatus(installed.id, \"active\");",
+            "            }",
+            "        }",
           ].join("\n"),
           "bridge-first.activation",
         );
+        if (kernel.patches["bridge-first.activation"] === "applied") {
+          kernel.patches["packages.client-only-updates"] = "applied";
+        }
         return source;
       }
       if (url.endsWith("/services/prompt/assembler.js")) {

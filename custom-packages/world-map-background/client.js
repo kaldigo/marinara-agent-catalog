@@ -106,11 +106,27 @@ function escapeMariBridgeSettingsHtml(value) {
 }
 
 // bridge-sdk/client.js
+function readyClientRuntime() {
+  const runtime = globalThis[MARI_BRIDGE_CLIENT_SYMBOL];
+  return runtime?.status === "ready" && typeof runtime.registerConsumer === "function" ? runtime : null;
+}
+
+async function waitForClientRuntime(timeoutMs) {
+  const timeout = Math.max(0, Math.min(30_000, Number(timeoutMs) || 0));
+  const deadline = Date.now() + timeout;
+  let runtime = readyClientRuntime();
+  while (!runtime && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))));
+    runtime = readyClientRuntime();
+  }
+  return runtime;
+}
+
 async function activateClientWithMariBridge(input, activateConsumer) {
   if (typeof activateConsumer !== "function") throw new TypeError("Mari Bridge consumer activation must be a function");
   const requirements = normalizeBridgeRequirements(input);
-  const runtime = globalThis[MARI_BRIDGE_CLIENT_SYMBOL];
-  if (!runtime || runtime.status !== "ready" || typeof runtime.registerConsumer !== "function") {
+  const runtime = readyClientRuntime() ?? await waitForClientRuntime(input?.waitForBridgeMs ?? 5_000);
+  if (!runtime) {
     throw missingBridgeError(requirements.consumerId, "client");
   }
   const session = runtime.registerConsumer(requirements);
@@ -143,7 +159,7 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
   const STYLE_ID = "marinara-world-map-background-style";
   const RUNTIME_KEY = "__marinaraWorldMapBackgroundRuntime";
   const OWNER_STORAGE_KEY = "marinara-world-map-background-owner";
-  const RUNTIME_VERSION = "1.1.0";
+  const RUNTIME_VERSION = "1.1.1";
   const CAPABILITY_SERVER_EVENT = "marinara-capability-server-event";
   const GLOBAL_GALLERY_PREFIX = "global-gallery:";
   const SYNC_INTERVAL_MS = 2500;
