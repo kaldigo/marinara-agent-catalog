@@ -7,7 +7,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "manifest.jso
 const client = fs.readFileSync(path.join(packageRoot, "client.js"), "utf8");
 
 assert(manifest.id === "better-impersonate", "manifest id must use the renamed package identity");
-assert(manifest.version === "2.3.4", "manifest version must be 2.3.4");
+assert(manifest.version === "2.3.5", "manifest version must be 2.3.5");
 assert(manifest.name === "Better Impersonate", "package uses its expanded feature name");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint must be client.js");
 assert(manifest.entrypoints?.agents === "agents.json", "agents entrypoint must be agents.json");
@@ -15,6 +15,10 @@ assert(!manifest.contributions?.slots?.includes("chat-settings"), "Better Impers
 assert(client.includes('const PACKAGE_ID = "better-impersonate"'), "client uses the renamed bridge consumer identity");
 assert(client.includes('const TAG_NAME = "marinara-capability-better-impersonate"'), "client uses the renamed capability element");
 assert(client.includes("activateClientWithMariBridge"), "client must fail closed through the Mari Bridge SDK");
+assert(
+  client.indexOf("defineCapabilityElement();") < client.indexOf("cleanupImpersonateCommands = await activateClientWithMariBridge("),
+  "client must register the capability element before bridge activation can fail",
+);
 assert(client.includes('commands: ["/impersonate_draft"]'), "client registers impersonate_draft");
 assert(client.includes('commands: ["/impersonate_continue"]'), "client registers impersonate_continue");
 assert(client.includes('commands: ["/impersonate_thinking"]'), "client registers impersonate_thinking");

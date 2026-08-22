@@ -1,6 +1,6 @@
 {
   "name": "marinara-better-impersonate-package",
-  "version": "2.3.4",
+  "version": "2.3.5",
   "private": true,
   "type": "module",
   "description": "Bridge command helpers for persona draft generation.",
