@@ -18,7 +18,7 @@ explicitly version-bound.
 
 ## Current implementation boundary
 
-Version `1.0.2` supports Marinara Engine 2.4.3 and adds package-owned structured
+Version `1.0.3` supports Marinara Engine 2.4.3 and adds package-owned structured
 agent result types, committed and agent-facing tracker-context sections, and
 native mount points for the docked Tracker panel and Roleplay HUD. It also
 retains the package-owned loader, SDK dependency gate, prompt kernel, and first

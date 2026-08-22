@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
     "min": "2.3.3",
@@ -64,8 +64,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "783e0dda499d88ac1d00dba00fb539d8ef65ae52a4429daacb564e776330231f",
-      "bytes": 30691
+      "sha256": "a830943a564bf26023658e9db3a32b17856c1887caec05f5e88d74a2deaea63d",
+      "bytes": 30678
     },
     {
       "path": "server.mjs",
@@ -74,8 +74,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "151fe82dd08430c3742d497a99b2c4f8e889258703260aa5d27ef5d8b4133fe9",
-      "bytes": 19777
+      "sha256": "d9c0baef2d7c131f30b69ed82e482162aee5817e0a3ee11f1b87fecbc43b7e09",
+      "bytes": 19770
     },
     {
       "path": "src/server/command-router.js",

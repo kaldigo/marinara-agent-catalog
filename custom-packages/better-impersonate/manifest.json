@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "better-impersonate",
   "name": "Better Impersonate",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Adds bridge-registered persona draft commands for use from system Quick Replies.",
   "engine": {
     "min": "2.3.3",
@@ -16,6 +16,11 @@
     "agents": "agents.json"
   },
   "contributions": {
+    "agentDetail": {
+      "agentIds": [
+        "better-impersonate"
+      ]
+    },
     "slots": [
       "chat-settings"
     ]
@@ -28,8 +33,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "6c098213681c7e995097ca076180f1ea95a2c5df0cf8267f3f5091a9adbc0f2b",
-      "bytes": 21919
+      "sha256": "5b2c269dd971196b93e418d28d04d62d408e6c785fda86573331e3d5813826fc",
+      "bytes": 22872
     }
   ],
   "permissions": [

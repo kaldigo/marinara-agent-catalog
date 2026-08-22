@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   MARI_BRIDGE_KERNEL_SYMBOL,
   MARI_BRIDGE_SERVER_SYMBOL,
@@ -65,14 +65,24 @@ export async function activate(context) {
   const bootstrapPath = await installStableBootstrap(context);
   const kernel = globalThis[MARI_BRIDGE_KERNEL_SYMBOL] ?? null;
   const bridgeOperational = kernel?.active === true && kernel?.engineCompatibility?.compatible === true;
-  const bootstrapRestart = await schedulePackageBootstrapRestart(context, bootstrapPath);
   let clientOverlay = null;
-  if (bridgeOperational && kernel?.nativeClientRoot) {
-    clientOverlay = await prepareClientOverlay({ dataDir: context.dataDir, sourceRoot: kernel.nativeClientRoot });
+  const firstStartNativeClientRoot = process.argv[1]
+    ? resolve(dirname(resolve(process.argv[1])), "..", "..", "client", "dist")
+    : null;
+  const clientSourceRoot = kernel?.nativeClientRoot ?? (!kernel ? firstStartNativeClientRoot : null);
+  if ((bridgeOperational || !kernel) && clientSourceRoot) {
+    clientOverlay = await prepareClientOverlay({
+      dataDir: context.dataDir,
+      sourceRoot: clientSourceRoot,
+      engineVersion: kernel?.engineCompatibility?.detected ?? "2.4.3",
+    });
+  }
+  if (bridgeOperational && clientOverlay) {
     kernel.clientRoot = clientOverlay.root;
     kernel.patches["client.bridge-first"] = "applied";
     for (const patchId of clientOverlay.patches ?? []) kernel.patches[patchId] = "applied";
   }
+  const bootstrapRestart = await schedulePackageBootstrapRestart(context, bootstrapPath);
   const promptRegistry = createPromptRegistry();
   const agentResultRegistry = createAgentResultRegistry();
   const trackerContextRegistry = createTrackerContextRegistry();

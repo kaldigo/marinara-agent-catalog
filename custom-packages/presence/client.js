@@ -431,11 +431,6 @@
   }
 
   function renderPresenceSettingsSection(mount, data) {
-    if (data.enabled === false) {
-      mount.hidden = true;
-      setPresenceSettingsHtml(mount, "disabled", "");
-      return;
-    }
     if (data.error) {
       mount.hidden = false;
       renderPresenceSettingsNotice(mount, `Presence settings could not load: ${data.error}`);
@@ -684,6 +679,8 @@
       bridgeSession.commands.register({
         id: "presence.command",
         commands: ["/presence"],
+        description: "Show or update character presence for this chat",
+        usage: "/presence [status or character]",
         handler: ({ raw, context }) => runServerCommand(raw, context),
       }),
     );

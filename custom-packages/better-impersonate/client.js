@@ -200,25 +200,37 @@
       const disposers = [
         bridgeSession.commands.register({
           id: "impersonate-draft",
-          commands: ["/impersonate-draft"],
+          commands: ["/impersonate_draft"],
+          aliases: ["/impersonate-draft"],
+          description: "Generate a persona response draft using optional guidance",
+          usage: "/impersonate_draft [guidance]",
           modes: ["roleplay"],
           handler: ({ raw, context }) => generateDraft(bridgeSession, "impersonate", commandArgument(raw), context),
         }),
         bridgeSession.commands.register({
           id: "impersonate-continue",
-          commands: ["/impersonate-continue"],
+          commands: ["/impersonate_continue"],
+          aliases: ["/impersonate-continue"],
+          description: "Continue the current persona draft",
+          usage: "/impersonate_continue <current draft>",
           modes: ["roleplay"],
           handler: ({ raw, context }) => generateDraft(bridgeSession, "continue", commandArgument(raw), context),
         }),
         bridgeSession.commands.register({
           id: "impersonate-thinking",
-          commands: ["/impersonate-thinking"],
+          commands: ["/impersonate_thinking"],
+          aliases: ["/impersonate-thinking"],
+          description: "Generate a persona draft guided by private thoughts or feelings",
+          usage: "/impersonate_thinking <private guidance>",
           modes: ["roleplay"],
           handler: ({ raw, context }) => generateDraft(bridgeSession, "inner_state", commandArgument(raw), context),
         }),
         bridgeSession.commands.register({
           id: "impersonate-last",
-          commands: ["/impersonate-last"],
+          commands: ["/impersonate_last"],
+          aliases: ["/impersonate-last"],
+          description: "Restore the last persona guidance to the input",
+          usage: "/impersonate_last",
           modes: ["roleplay"],
           handler: ({ context }) => restoreLastGuidance(context),
         }),
@@ -246,7 +258,7 @@
           this.render();
         }
         render() {
-          if (this.getAttribute("view") !== "settings") {
+          if (!["settings", "detail"].includes(this.getAttribute("view"))) {
             this.hidden = true;
             this.setAttribute("aria-hidden", "true");
             this.replaceChildren();
@@ -271,8 +283,8 @@
         handled: true,
         feedback:
           mode === "continue"
-            ? "Usage: /impersonate-continue <current persona draft>"
-            : "Usage: /impersonate-thinking <private thoughts or feelings>",
+            ? "Usage: /impersonate_continue <current persona draft>"
+            : "Usage: /impersonate_thinking <private thoughts or feelings>",
       };
     }
     if (!context?.chatId || typeof context.setDraft !== "function") {
@@ -312,7 +324,11 @@
       if (error instanceof DOMException && error.name === "AbortError") {
         return { handled: true, feedback: "Persona draft generation stopped." };
       }
-      throw error;
+      const detail = error instanceof Error ? error.message : String(error);
+      return {
+        handled: true,
+        feedback: `Persona draft generation failed: ${detail}`,
+      };
     } finally {
       context.setDraftGenerating?.(false);
     }
@@ -373,7 +389,7 @@
   }
 
   function renderBetterImpersonateSettings(root) {
-    prepareMariBridgeSettingsRoot(root);
+    prepareMariBridgeSettingsRoot(root, { surface: root.getAttribute("view") === "detail" ? "detail" : "chat" });
     const settings = readBetterImpersonateSettings();
     const fields = [
       ["draftTemplate", "Draft guidance template", settings.draftTemplate],
