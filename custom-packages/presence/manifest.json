@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
     "min": "2.3.3",
@@ -59,13 +59,13 @@
     },
     {
       "path": "bridge-sdk/settings.js",
-      "sha256": "edf0f4973baa1de999cff140346f816a7fb36e7f364fab80c1387ad3c045d120",
-      "bytes": 4963
+      "sha256": "db40d865807c30a11f4d334f68ca2f1da147fa78cdd796fe6e42631c6a7fd615",
+      "bytes": 17348
     },
     {
       "path": "client.js",
-      "sha256": "6915e8ca8a1722e77ec59f9d349a2294cdd0c2309ad33274fe19c6f1ea8f58b4",
-      "bytes": 31284
+      "sha256": "54f3c19a6a647d3222fdd0ae6d49bf18715b3f5f442f64ce151e208a6a6bbcf9",
+      "bytes": 40194
     },
     {
       "path": "server.mjs",
@@ -74,8 +74,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "d9c0baef2d7c131f30b69ed82e482162aee5817e0a3ee11f1b87fecbc43b7e09",
-      "bytes": 19770
+      "sha256": "87c1258814e33095aca15e132f87189d4958343dd53ecdb4da98e7981f6edfe9",
+      "bytes": 16191
     },
     {
       "path": "src/server/command-router.js",

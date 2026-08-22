@@ -1,8 +1,7 @@
 import { activateClientWithMariBridge } from "../../bridge-sdk/client.js";
 import {
   escapeMariBridgeSettingsHtml,
-  prepareMariBridgeSettingsRoot,
-  setMariBridgeSettingsHtml,
+  setMariBridgeNativeSettingsHtml,
 } from "../../bridge-sdk/settings.js";
 import { createHideCommandOwner } from "../../bridge-sdk/ranges.js";
 
@@ -32,7 +31,6 @@ const state = window.__marinaraPresencePackageRuntime || {
   settingsLoadingChatIds: new Set(),
   settingsLoadPromisesByChatId: new Map(),
   settingsElements: new Set(),
-  settingsStyleInjected: false,
 };
 window.__marinaraPresencePackageRuntime = state;
 state.activeChatId = typeof state.activeChatId === "string" ? state.activeChatId : "";
@@ -49,7 +47,6 @@ state.commandDisposers = Array.isArray(state.commandDisposers) ? state.commandDi
 state.lastEnsureAttemptAt = Number(state.lastEnsureAttemptAt) || 0;
 state.lastEnsureAttemptChatId = typeof state.lastEnsureAttemptChatId === "string" ? state.lastEnsureAttemptChatId : "";
 state.settingsTimer = Number(state.settingsTimer) || 0;
-state.settingsStyleInjected = state.settingsStyleInjected === true;
 state.settingsElements = state.settingsElements instanceof Set ? state.settingsElements : new Set();
 
 class PresenceCapabilityElement extends HTMLElement {
@@ -88,7 +85,7 @@ class PresenceCapabilityElement extends HTMLElement {
     this.hidden = false;
     this.removeAttribute("aria-hidden");
     const mount = getSettingsRenderRoot(this);
-    prepareMariBridgeSettingsRoot(mount, { surface: view === "detail" ? "detail" : "chat" });
+    mount.dataset.presenceDetailView = view === "detail" ? "true" : "false";
     const chatId = getChatIdFromCapabilityProps(this.capabilityProps) || getActiveChatId();
     this.dataset.chatId = chatId || "";
     if (!chatId) {
@@ -246,11 +243,17 @@ function normalizeSettingsData(data) {
 }
 
 function renderPresenceSettingsLoading(mount) {
-  setPresenceSettingsHtml(mount, `loading:${mount.dataset.chatId || ""}`, '<p class="mari-sdk-settings-status">Loading Presence settings...</p>');
+  setPresenceNativeSettings(mount, `loading:${mount.dataset.chatId || ""}`, {
+    sections: [{ html: '<p class="mari-native-settings-muted">Loading Presence settings...</p>' }],
+  });
+  bindPresenceChromeActions(mount);
 }
 
 function renderPresenceSettingsNotice(mount, message) {
-  setPresenceSettingsHtml(mount, `notice:${message}`, `<p class="mari-sdk-settings-status">${escapeMariBridgeSettingsHtml(message)}</p>`);
+  setPresenceNativeSettings(mount, `notice:${message}`, {
+    sections: [{ html: `<p class="mari-native-settings-muted">${escapeMariBridgeSettingsHtml(message)}</p>` }],
+  });
+  bindPresenceChromeActions(mount);
 }
 
 function renderPresenceSettingsSection(mount, data) {
@@ -267,33 +270,30 @@ function renderPresenceSettingsSection(mount, data) {
     alwaysPresent: [...alwaysPresent].sort(),
   });
   const activeCount = alwaysPresent.size;
-  const items = data.roster.map((character) => {
-    const selected = alwaysPresent.has(character.id);
-    const avatar = character.avatarUrl
-      ? `<img src="${escapeAttribute(character.avatarUrl)}" alt="" aria-hidden="true" loading="lazy">`
-      : `<span aria-hidden="true">${escapeHtml(character.name.trim().charAt(0).toUpperCase() || "?")}</span>`;
-    return `
-      <button type="button" class="mari-sdk-settings-chip" data-presence-always-character-id="${escapeAttribute(character.id)}" role="checkbox" aria-checked="${selected ? "true" : "false"}" aria-label="${selected ? "Remove" : "Add"} ${escapeAttribute(character.name)} as always present" title="${escapeAttribute(character.name)}">
-        <span class="mari-sdk-settings-chip-avatar">${avatar}</span>
-        <span class="mari-sdk-settings-chip-label">${escapeHtml(character.name)}</span>
-      </button>
-    `;
-  }).join("");
-  const changed = setPresenceSettingsHtml(mount, renderKey, `
-      <section class="mari-sdk-settings-group">
-        <div class="mari-sdk-settings-heading">
-          <h3 class="mari-sdk-settings-title">Always present</h3>
-          ${activeCount > 0 ? `<span class="mari-presence-count">${activeCount} selected</span>` : ""}
-        </div>
-        <p class="mari-sdk-settings-description">
-          Selected characters see every non-globally-hidden message, even while inactive. Use this for narrators or other cards that should always know the full scene.
-        </p>
-        <div class="mari-sdk-settings-chip-list" role="group" aria-label="Always present characters">
-          ${items || '<p class="mari-sdk-settings-status">No characters in this chat.</p>'}
-        </div>
-      </section>
-  `);
+  const changed = setPresenceNativeSettings(mount, renderKey, {
+    sections: [
+      {
+        title: "Always present",
+        description: "Selected characters see every non-globally-hidden message, even while inactive. Use this for narrators or other cards that should always know the full scene.",
+        badge: activeCount > 0 ? { label: `${activeCount} selected` } : null,
+        fields: [
+          {
+            type: "chips",
+            optionAttribute: "data-presence-always-character-id",
+            emptyText: "No characters in this chat.",
+            options: data.roster.map((character) => ({
+              value: character.id,
+              label: character.name,
+              avatarUrl: character.avatarUrl,
+              selected: alwaysPresent.has(character.id),
+            })),
+          },
+        ],
+      },
+    ],
+  });
   if (!changed) return;
+  bindPresenceChromeActions(mount);
   for (const button of mount.querySelectorAll("[data-presence-always-character-id]")) {
     button.addEventListener("click", () => {
       const characterId = button.getAttribute("data-presence-always-character-id");
@@ -303,8 +303,36 @@ function renderPresenceSettingsSection(mount, data) {
   }
 }
 
-function setPresenceSettingsHtml(mount, renderKey, html) {
-  return setMariBridgeSettingsHtml(mount, renderKey, html);
+function bindPresenceChromeActions(mount) {
+  mount.querySelector('[data-mari-native-action="back"]')?.addEventListener("click", () => mount.parentElement?.capabilityProps?.onClose?.());
+  mount.querySelector('[data-mari-native-action="toggle-agent"]')?.addEventListener("click", async () => {
+    const element = mount.parentElement;
+    const next = element?.capabilityProps?.enabledForChat !== true;
+    const button = mount.querySelector('[data-mari-native-action="toggle-agent"]');
+    if (button) button.disabled = true;
+    try {
+      await element?.capabilityProps?.onEnabledForChatChange?.(next);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+}
+
+function setPresenceNativeSettings(mount, renderKey, descriptor) {
+  const host = mount.parentElement;
+  const chatName = host?.capabilityProps?.chatName || "Current chat";
+  const enabled = host?.capabilityProps?.enabledForChat === true;
+  return setMariBridgeNativeSettingsHtml(mount, renderKey, {
+    surface: mount.dataset.presenceDetailView === "true" ? "detail" : "chat",
+    title: "Presence",
+    subtitle: chatName,
+    iconText: "PR",
+    activation: mount.dataset.presenceDetailView === "true" ? {
+      enabled,
+      description: "Presence only tracks chats where this agent is enabled.",
+    } : null,
+    ...descriptor,
+  });
 }
 
 async function toggleAlwaysPresentCharacter(chatId, characterId) {
@@ -342,146 +370,8 @@ async function toggleAlwaysPresentCharacter(chatId, characterId) {
   }
 }
 
-function injectPresenceSettingsStyle() {
-  if (state.settingsStyleInjected || document.getElementById("mari-presence-settings-style")) return;
-  const style = document.createElement("style");
-  style.id = "mari-presence-settings-style";
-  style.textContent = `
-    .mari-presence-settings-section {
-      display: block;
-    }
-    .mari-presence-settings-body {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    .mari-presence-subsection {
-      border-top: 1px solid var(--border);
-      padding-top: 0.75rem;
-    }
-    .mari-presence-subsection-header {
-      align-items: center;
-      display: flex;
-      gap: 0.375rem;
-      justify-content: space-between;
-      padding-inline: 0.125rem;
-    }
-    .mari-presence-subsection-title {
-      color: var(--foreground);
-      font-size: 0.6875rem;
-      font-weight: 600;
-      line-height: 1.35;
-      min-width: 0;
-    }
-    .mari-presence-count {
-      background: color-mix(in srgb, var(--primary) 10%, transparent);
-      border-radius: 999px;
-      color: var(--primary);
-      flex: 0 0 auto;
-      font-size: 0.5625rem;
-      font-weight: 500;
-      line-height: 1.2;
-      padding: 0.125rem 0.375rem;
-    }
-    .mari-presence-subsection-description {
-      color: var(--muted-foreground);
-      font-size: 0.59375rem;
-      line-height: 1.35;
-      margin: 0.125rem 0 0;
-      padding-inline: 0.125rem;
-    }
-    .mari-presence-settings-muted {
-      color: color-mix(in srgb, var(--muted-foreground) 80%, transparent);
-      font-size: 0.6875rem;
-      line-height: 1.35;
-      margin: 0;
-    }
-    .mari-presence-character-picker {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      padding: 0.25rem 0.125rem 0;
-    }
-    .mari-presence-character-choice {
-      align-items: center;
-      background: transparent;
-      border: 0;
-      color: var(--foreground);
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 0.25rem;
-      padding: 0;
-      width: 3.5rem;
-    }
-    .mari-presence-character-avatar {
-      align-items: center;
-      background: var(--marinara-chat-chrome-highlight-bg, var(--accent));
-      border: 2px solid transparent;
-      border-radius: 999px;
-      color: var(--marinara-chat-chrome-highlight-text, var(--accent-foreground));
-      display: flex;
-      font-size: 0.75rem;
-      font-weight: 700;
-      height: 2.5rem;
-      justify-content: center;
-      opacity: 0.55;
-      overflow: hidden;
-      transition: opacity 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
-      width: 2.5rem;
-    }
-    .mari-presence-character-avatar img {
-      height: 100%;
-      object-fit: cover;
-      width: 100%;
-    }
-    .mari-presence-character-choice:hover .mari-presence-character-avatar {
-      opacity: 1;
-      transform: translateY(-1px);
-    }
-    .mari-presence-character-choice:focus-visible {
-      outline: none;
-    }
-    .mari-presence-character-choice:focus-visible .mari-presence-character-avatar {
-      box-shadow: 0 0 0 2px var(--marinara-chat-chrome-focus-ring, var(--ring));
-      opacity: 1;
-    }
-    .mari-presence-character-choice.is-selected .mari-presence-character-avatar {
-      border-color: var(--marinara-chat-chrome-button-border-active, var(--primary));
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
-      opacity: 1;
-    }
-    .mari-presence-character-label {
-      display: block;
-      font-size: 0.59375rem;
-      line-height: 1.2;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      width: 100%;
-    }
-  `;
-  document.head.appendChild(style);
-  state.settingsStyleInjected = true;
-}
-
 function uniqueStrings(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(String).map((value) => value.trim()).filter(Boolean))];
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[char]);
-}
-
-function escapeAttribute(value) {
-  return escapeHtml(value);
 }
 
 async function runServerCommand(raw, context) {

@@ -54,8 +54,8 @@
     },
     {
       "path": "bridge-sdk/settings.js",
-      "sha256": "edf0f4973baa1de999cff140346f816a7fb36e7f364fab80c1387ad3c045d120",
-      "bytes": 4963
+      "sha256": "db40d865807c30a11f4d334f68ca2f1da147fa78cdd796fe6e42631c6a7fd615",
+      "bytes": 17348
     },
     {
       "path": "client.js",
