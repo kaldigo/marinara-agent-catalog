@@ -41,11 +41,11 @@ assert(client.includes("window[PUBLIC_API_KEY] = api"), "client exposes public A
 assert(client.includes('PACKAGE_VERSION = "1.0.5"'), "client package version matches manifest");
 assert(client.includes("marinara:pwa-helper-ready"), "client dispatches ready event");
 assert(client.includes("`${PACKAGE_ID}:bridge-generation`"), "client has bridge generation wake lease");
-assert(client.includes("mari-bridge:generation-state"), "client consumes bridge generation state events");
-assert(client.includes("mari-bridge:generating-main"), "client consumes bridge main generation events");
-assert(client.includes("mari-bridge:generating-agent"), "client consumes bridge agent generation events");
-assert(client.includes("ensureGenerationLifecycleBridge"), "client starts the bridge generation lifecycle");
-assert(client.includes("getBridgeGenerationSnapshot"), "client reads bridge generation snapshots");
+assert(client.includes("activateClientWithMariBridge"), "client activates through the Mari Bridge SDK");
+assert(client.includes('"generation.lifecycle"'), "client requires bridge generation lifecycle capability");
+assert(client.includes("bridgeGeneration.subscribe"), "client subscribes to bridge generation snapshots");
+assert(client.includes("bridgeGeneration.getSnapshot"), "client reads bridge generation snapshots");
+assert(!client.includes("ensureGenerationLifecycleBridge"), "client does not embed the legacy bridge lifecycle");
 assert(!generationMonitorSource.includes("querySelector"), "PWA generation monitor does not query DOM buttons");
 assert(!generationMonitorSource.includes("MutationObserver"), "PWA generation monitor does not observe DOM mutations");
 assert(!generationMonitorSource.includes("mari-chat-send-btn"), "PWA generation monitor does not target Marinara send buttons");

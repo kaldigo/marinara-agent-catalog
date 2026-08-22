@@ -7,18 +7,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(projectRoot, "dist");
 const packageRoot = path.join(distRoot, "package");
-const bridgeRoot = path.resolve(projectRoot, "..", "_mari-bridge", "src");
+const sdkRoot = path.resolve(projectRoot, "..", "_mari-bridge", "sdk");
 
 const packageJson = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8"));
 const version = packageJson.version;
-
-const bridgeSources = [
-  "runtime.js",
-  "composer-dom.js",
-  "generation-stream.js",
-  "ui-slots.js",
-  "generation-lifecycle.js",
-];
 
 const clientSources = [
   "constants.js",
@@ -29,7 +21,7 @@ const clientSources = [
   "runtime.js",
 ];
 
-if (!existsSync(bridgeRoot)) {
+if (!existsSync(sdkRoot)) {
   throw new Error("Missing shared root: _mari-bridge");
 }
 
@@ -45,10 +37,10 @@ console.log(`Built PWA Helper prepared package: ${path.relative(projectRoot, pac
 
 async function buildClientSource() {
   const chunks = [];
-  for (const file of bridgeSources) {
-    const sourcePath = path.join(bridgeRoot, file);
+  for (const file of ["contracts.js", "client.js"]) {
+    const sourcePath = path.join(sdkRoot, file);
     const source = stripBrowserModuleSyntax(await fs.readFile(sourcePath, "utf8"));
-    chunks.push(`// bridge/${file}\n${source.trim()}\n`);
+    chunks.push(`// bridge-sdk/${file}\n${source.trim()}\n`);
   }
   for (const file of clientSources) {
     const sourcePath = path.join(projectRoot, "src", "client", file);
@@ -57,11 +49,18 @@ async function buildClientSource() {
   }
 
   return [
-    "(() => {",
-    "  \"use strict\";",
-    indent(chunks.join("\n")),
-    "  startPwaHelper();",
-    "})();",
+    chunks.join("\n"),
+    "const cleanupPwaHelperClient = await activateClientWithMariBridge(",
+    "  {",
+    '    consumerId: "pwa-helper",',
+    "    api: { major: 1, minMinor: 0 },",
+    '    require: ["client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health"],',
+    "  },",
+    "  async (bridgeSession) => {",
+    "    startPwaHelper(bridgeSession);",
+    "    return stopPwaHelper;",
+    "  },",
+    ");",
     "",
   ].join("\n");
 }
@@ -120,11 +119,4 @@ function agentDefinitions() {
       defaultPromptTemplate: "",
     },
   ];
-}
-
-function indent(content) {
-  return content
-    .split("\n")
-    .map((line) => (line ? `  ${line}` : line))
-    .join("\n");
 }

@@ -1,32 +1,15 @@
-import {
-  ensureGenerationLifecycleBridge,
-  GENERATING_AGENT_EVENT,
-  GENERATING_MAIN_EVENT,
-  GENERATION_STATE_EVENT,
-  getBridgeGenerationSnapshot,
-} from "../../../_mari-bridge/src/generation-lifecycle.js";
-
 function snapshotHasActiveGeneration(snapshot) {
   if (!snapshot || typeof snapshot !== "object") return false;
   if (snapshot.mainActive || snapshot.agentActive) return true;
   return Array.isArray(snapshot.active) && snapshot.active.length > 0;
 }
 
-function eventSnapshot(detail) {
-  if (detail?.snapshot && typeof detail.snapshot === "object") return detail.snapshot;
-  try {
-    return getBridgeGenerationSnapshot();
-  } catch {
-    return null;
-  }
-}
-
-function createGenerationMonitor({ wakeLock, setGenerationStatus, warn }) {
+function createGenerationMonitor({ bridgeGeneration, wakeLock, setGenerationStatus, warn }) {
   const state = {
     active: false,
     lease: null,
     cleanups: [],
-    bridgeStarted: false,
+    started: false,
   };
 
   function releaseGenerationLease() {
@@ -64,11 +47,7 @@ function createGenerationMonitor({ wakeLock, setGenerationStatus, warn }) {
   }
 
   function reconcileCurrentSnapshot() {
-    reconcileFromSnapshot(getBridgeGenerationSnapshot());
-  }
-
-  function onGenerationEvent(event) {
-    reconcileFromSnapshot(eventSnapshot(event.detail));
+    reconcileFromSnapshot(bridgeGeneration.getSnapshot());
   }
 
   function addListener(target, type, listener, options) {
@@ -77,20 +56,18 @@ function createGenerationMonitor({ wakeLock, setGenerationStatus, warn }) {
   }
 
   function start() {
-    if (state.bridgeStarted) return;
-    state.bridgeStarted = true;
+    if (state.started) return;
+    state.started = true;
 
     try {
-      ensureGenerationLifecycleBridge();
+      const unsubscribe = bridgeGeneration.subscribe(reconcileFromSnapshot);
+      state.cleanups.push(unsubscribe);
     } catch (error) {
       setGenerationStatus("bridge-error");
       warn("generation lifecycle bridge could not start", error);
       return;
     }
 
-    addListener(window, GENERATION_STATE_EVENT, onGenerationEvent);
-    addListener(window, GENERATING_MAIN_EVENT, onGenerationEvent);
-    addListener(window, GENERATING_AGENT_EVENT, onGenerationEvent);
     addListener(document, "visibilitychange", () => {
       void wakeLock.reconcile();
       reconcileCurrentSnapshot();
@@ -105,7 +82,7 @@ function createGenerationMonitor({ wakeLock, setGenerationStatus, warn }) {
     state.cleanups.splice(0).forEach((cleanup) => cleanup());
     setActive(false);
     setGenerationStatus("");
-    state.bridgeStarted = false;
+    state.started = false;
   }
 
   return {

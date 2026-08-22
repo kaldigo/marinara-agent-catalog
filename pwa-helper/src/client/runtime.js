@@ -41,13 +41,14 @@ function installPublicApi(api) {
   window.dispatchEvent(new CustomEvent("marinara:pwa-helper-ready", { detail: api }));
 }
 
-function createRuntime() {
+function createRuntime(bridgeSession) {
   const status = createStatusReporter();
   const wakeLock = createWakeLockController({
     setWakeLockStatus: status.setWakeLockStatus,
     warn,
   });
   const generationMonitor = createGenerationMonitor({
+    bridgeGeneration: bridgeSession.generation,
     wakeLock,
     setGenerationStatus: status.setGenerationStatus,
     warn,
@@ -88,15 +89,16 @@ function createRuntime() {
   return { api, start, destroy };
 }
 
-function startPwaHelper() {
+function startPwaHelper(bridgeSession) {
   defineCapabilityElement();
+  document.documentElement.dataset.mariBridgeConsumerPwa = "ready";
 
   if (window[RUNTIME_KEY]?.api) {
     installPublicApi(window[RUNTIME_KEY].api);
     return window[RUNTIME_KEY].api;
   }
 
-  const runtime = createRuntime();
+  const runtime = createRuntime(bridgeSession);
   window[RUNTIME_KEY] = runtime;
   installPublicApi(runtime.api);
 
@@ -107,4 +109,13 @@ function startPwaHelper() {
   }
 
   return runtime.api;
+}
+
+function stopPwaHelper() {
+  const runtime = window[RUNTIME_KEY];
+  if (!runtime) return;
+  runtime.destroy();
+  delete window[RUNTIME_KEY];
+  if (window[PUBLIC_API_KEY] === runtime.api) delete window[PUBLIC_API_KEY];
+  delete document.documentElement.dataset.mariBridgeConsumerPwa;
 }
