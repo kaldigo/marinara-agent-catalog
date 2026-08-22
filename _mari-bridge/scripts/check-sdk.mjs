@@ -21,11 +21,35 @@ await assert.rejects(
 );
 await assert.rejects(
   activateClientWithMariBridge(
-    { consumerId: "sdk-test", api: { major: 1, minMinor: 0 }, require: [] },
+    { consumerId: "sdk-test", api: { major: 1, minMinor: 0 }, require: [], waitForBridgeMs: 0 },
     async () => {},
   ),
   (error) => error instanceof MariBridgeUnavailableError && error.reason === "missing",
 );
+
+let clientSessionClosed = 0;
+const delayedClientActivation = activateClientWithMariBridge(
+  { consumerId: "sdk-test", api: { major: 1, minMinor: 0 }, require: [], waitForBridgeMs: 250 },
+  async () => () => {},
+);
+setTimeout(() => {
+  globalThis[MARI_BRIDGE_CLIENT_SYMBOL] = {
+    status: "ready",
+    registerConsumer() {
+      return {
+        addCleanup(cleanup) { this.cleanup = cleanup; },
+        async close() {
+          clientSessionClosed += 1;
+          await this.cleanup?.();
+        },
+      };
+    },
+  };
+}, 25);
+const delayedClientCleanup = await delayedClientActivation;
+await delayedClientCleanup();
+assert.equal(clientSessionClosed, 1);
+delete globalThis[MARI_BRIDGE_CLIENT_SYMBOL];
 
 let sessionClosed = 0;
 globalThis[MARI_BRIDGE_SERVER_SYMBOL] = {
