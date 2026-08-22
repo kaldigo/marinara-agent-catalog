@@ -7,15 +7,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 const distRoot = path.join(projectRoot, "dist");
 const packageRoot = path.join(distRoot, "package");
-const bridgeRoot = path.resolve(projectRoot, "..", "_mari-bridge", "src");
+const sdkRoot = path.resolve(projectRoot, "..", "_mari-bridge", "sdk");
 const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8")).version;
-const bridgeClientSources = [
-  "runtime.js",
-  "composer-dom.js",
-  "ui-slots.js"
-];
+const bridgeClientSources = ["contracts.js", "settings.js", "client.js"];
 
-if (!existsSync(bridgeRoot)) {
+if (!existsSync(sdkRoot)) {
   throw new Error("Missing shared root: _mari-bridge");
 }
 
@@ -25,7 +21,7 @@ await fs.mkdir(packageRoot, { recursive: true });
 await copyTree(path.join(projectRoot, "src/shared"), path.join(packageRoot, "src/shared"));
 await copyTree(path.join(projectRoot, "src/server"), path.join(packageRoot, "src/server"), rewriteSourceImports);
 await copyTree(path.join(projectRoot, "src/client"), path.join(packageRoot, "src/client"), rewriteSourceImports);
-await copyTree(bridgeRoot, path.join(packageRoot, "bridge"));
+await copyTree(sdkRoot, path.join(packageRoot, "bridge-sdk"));
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
 await writeFile(path.join(packageRoot, "server.mjs"), `export { activate, selfCheck } from "./src/server/index.js";\n`);
@@ -50,7 +46,7 @@ function manifest() {
       agents: "agents.json"
     },
     contributions: {
-      slots: ["chat-runtime"]
+      slots: ["chat-runtime", "chat-settings"]
     },
     files: [{ path: "server.mjs", sha256: "0".repeat(64), bytes: 0 }],
     permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
@@ -92,19 +88,19 @@ async function copyTree(from, to, transform = (content) => content) {
 }
 
 function rewriteSourceImports(content) {
-  return content.replaceAll("../../../_mari-bridge/src/", "../../bridge/");
+  return content.replaceAll("../../../_mari-bridge/sdk/", "../../bridge-sdk/");
 }
 
 async function buildClientEntrypoint() {
   const chunks = [];
   for (const file of bridgeClientSources) {
-    const source = await fs.readFile(path.join(bridgeRoot, file), "utf8");
+    const source = await fs.readFile(path.join(sdkRoot, file), "utf8");
     chunks.push(`// bridge/${file}\n${stripBrowserModuleSyntax(source).trim()}\n`);
   }
   const runtimeSource = await fs.readFile(path.join(projectRoot, "src/client/runtime.js"), "utf8");
   chunks.push(`// src/client/runtime.js\n${stripBrowserModuleSyntax(runtimeSource).trim()}\n`);
   return [
-    "(() => {",
+    "(async () => {",
     "  \"use strict\";",
     indent(chunks.join("\n")),
     "})();",

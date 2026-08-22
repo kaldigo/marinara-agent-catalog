@@ -1,22 +1,30 @@
-import { injectStyle } from "../../../_mari-bridge/src/composer-dom.js";
+import { activateClientWithMariBridge } from "../../../_mari-bridge/sdk/client.js";
 import {
-  COMPOSER_SLOT_ABOVE_INPUT,
-  registerComposerSlotContribution,
-  scheduleComposerSlotRender,
-} from "../../../_mari-bridge/src/ui-slots.js";
+  escapeMariBridgeSettingsHtml,
+  prepareMariBridgeSettingsRoot,
+  setMariBridgeSettingsHtml,
+} from "../../../_mari-bridge/sdk/settings.js";
 
-(function () {
+const cleanupGroupSortClient = await activateClientWithMariBridge(
+  {
+    consumerId: "group-sort-order",
+    api: { major: 1, minMinor: 0 },
+    require: ["chat.active", "client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health", "ui.chat-settings", "ui.composer.above-input"],
+  },
+  async (bridgeSession) => {
+return (function () {
   const PACKAGE_ID = "group-sort-order";
   const TAG_NAME = "marinara-capability-group-sort-order";
   const ROOT_ID = "marinara-group-sort-order-root";
   const STYLE_ID = "marinara-group-sort-order-style";
   const RUNTIME_KEY = "__marinaraGroupSortOrderRuntime";
-  const RUNTIME_VERSION = "1.0.27";
+  const RUNTIME_VERSION = "2.1.0";
 
   const previousState = window[RUNTIME_KEY];
   if (previousState && previousState.version !== RUNTIME_VERSION) {
     previousState.disposed = true;
     previousState.slotCleanup?.();
+    previousState.settingsCleanup?.();
     previousState.cleanups?.forEach?.((cleanup) => cleanup());
     window.clearTimeout(previousState.pollTimer);
     window.clearTimeout(previousState.renderTimer);
@@ -40,6 +48,8 @@ import {
     followupTimer: 0,
     refreshing: false,
     slotCleanup: null,
+    settingsCleanup: null,
+    settingsNodes: new Set(),
     cleanups: [],
     ensureInFlight: new Set(),
   };
@@ -60,19 +70,33 @@ import {
 
     class GroupSortOrderCapabilityElement extends HTMLElement {
       connectedCallback() {
-        this.setAttribute("aria-hidden", "true");
-        this.style.display = "contents";
         this.addEventListener("marinara-capability-props", this);
-        scheduleComposerSlotRender(0);
+        this.style.display = "block";
+        bindActiveChat(this.capabilityProps?.chatId || bridgeSession.chat.active.getSnapshot().chatId || "");
+        this.render();
       }
 
       disconnectedCallback() {
         this.removeEventListener("marinara-capability-props", this);
-        scheduleComposerSlotRender(0);
+        if (state.barNode === this) state.barNode = null;
+        state.settingsNodes.delete(this);
       }
 
       handleEvent(event) {
-        if (event.type === "marinara-capability-props") scheduleComposerSlotRender(0);
+        if (event.type === "marinara-capability-props") {
+          bindActiveChat(this.capabilityProps?.chatId || bridgeSession.chat.active.getSnapshot().chatId || "");
+          this.render();
+        }
+      }
+
+      render() {
+        if (this.getAttribute("view") === "settings") {
+          state.settingsNodes.add(this);
+          void renderSettings(this);
+          return;
+        }
+        state.settingsNodes.delete(this);
+        renderBar(this);
       }
     }
 
@@ -80,18 +104,19 @@ import {
   }
 
   function startRuntime() {
-    state.slotCleanup = registerComposerSlotContribution({
-      packageId: PACKAGE_ID,
+    state.slotCleanup = bridgeSession.ui.register({
       id: "next-speaker",
-      slot: COMPOSER_SLOT_ABOVE_INPUT,
+      slot: "composer.above-input",
+      view: "surface",
       priority: 40,
-      shouldShow: ({ chatId }) => Boolean(chatId),
-      render: ({ host }) => renderBar(host),
-      update: ({ chatId, node }) => {
-        bindActiveChat(chatId || "");
-        updateBar(node, state.lastView);
-      },
     });
+    state.settingsCleanup = bridgeSession.ui.register({
+      id: "settings",
+      slot: "chat.settings",
+      view: "settings",
+      priority: 40,
+    });
+    state.cleanups.push(bridgeSession.chat.active.subscribe(({ chatId }) => bindActiveChat(chatId || "")));
     on(document, "visibilitychange", scheduleRefreshFromEvent, true);
     on(window, "focus", scheduleRefreshFromEvent);
     on(window, "marinara:generation-complete", scheduleRefreshFromEvent);
@@ -116,6 +141,18 @@ import {
       state.lastRefreshAt = 0;
       scheduleViewRefresh(0);
     }, 1250);
+  }
+
+  function injectStyle(id, css) {
+    if (document.getElementById(id)) return;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  function scheduleComposerSlotRender(delay = 0) {
+    window.setTimeout(() => updateBar(state.barNode, state.lastView), Math.max(0, delay));
   }
 
   function scheduleViewRefresh(delay) {
@@ -243,6 +280,81 @@ import {
     }
   }
 
+  async function renderSettings(root) {
+    prepareMariBridgeSettingsRoot(root);
+    const chatId = root.capabilityProps?.chatId || state.activeChatId;
+    if (!chatId) {
+      setMariBridgeSettingsHtml(root, "no-chat", '<p class="mari-sdk-settings-status">Open a chat to configure Group Sort Order.</p>');
+      return;
+    }
+    root.setAttribute("aria-busy", "true");
+    try {
+      const [view, connections] = await Promise.all([
+        api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/state`),
+        api("/connections").catch(() => []),
+      ]);
+      if (!root.isConnected || (root.capabilityProps?.chatId || state.activeChatId) !== chatId) return;
+      const settings = normalizeObject(view.settings);
+      const options = (Array.isArray(connections) ? connections : []).map((connection) => {
+        const id = escapeMariBridgeSettingsHtml(connection?.id || "");
+        const label = escapeMariBridgeSettingsHtml(connection?.name || connection?.model || connection?.id || "Connection");
+        const model = connection?.model ? ` — ${escapeMariBridgeSettingsHtml(connection.model)}` : "";
+        return `<option value="${id}"${settings.selectorConnectionId === connection?.id ? " selected" : ""}>${label}${model}</option>`;
+      }).join("");
+      setMariBridgeSettingsHtml(root, `${chatId}:${JSON.stringify(settings)}:${options}`, `
+        <section class="mari-sdk-settings-group">
+          <div class="mari-sdk-settings-heading"><h3 class="mari-sdk-settings-title">Group Sort Order</h3></div>
+          <p class="mari-sdk-settings-description">Controls the terminal next-speaker marker and the optional hidden selector call for this chat.</p>
+          <label class="mari-sdk-settings-switch">
+            <span class="mari-sdk-settings-switch-copy"><span class="mari-sdk-settings-label">Include persona candidate</span><span class="mari-sdk-settings-help">Allow the current persona to be selected as the next participant.</span></span>
+            <input data-gso-setting="includePersonaCandidate" type="checkbox"${view.includePersonaCandidate ? " checked" : ""}>
+          </label>
+          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Selector connection / model</span><select class="mari-sdk-settings-select" data-gso-setting="selectorConnectionId"><option value="">Use Agent default</option><option value="random"${settings.selectorConnectionId === "random" ? " selected" : ""}>Random pool</option>${options}</select><span class="mari-sdk-settings-help">Used only by Refresh. Normal replies still use the chat model.</span></label>
+          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Terminal marker</span><input class="mari-sdk-settings-input" data-gso-setting="markerTemplate" value="${escapeMariBridgeSettingsHtml(settings.markerTemplate)}"><span class="mari-sdk-settings-help">Must contain exactly one <code>{{speaker_id}}</code>.</span></label>
+          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Main-response instruction</span><textarea rows="8" class="mari-sdk-settings-textarea" data-gso-setting="promptTemplate">${escapeMariBridgeSettingsHtml(settings.promptTemplate)}</textarea><span class="mari-sdk-settings-help">Macros: <code>{{candidates}}</code>, <code>{{marker}}</code>, <code>{{excluded_candidate_id}}</code>.</span></label>
+          <label class="mari-sdk-settings-field"><span class="mari-sdk-settings-label">Refresh selector prompt</span><textarea rows="7" class="mari-sdk-settings-textarea" data-gso-setting="selectorPrompt">${escapeMariBridgeSettingsHtml(settings.selectorPrompt)}</textarea></label>
+          <p class="mari-sdk-settings-status" data-gso-settings-status></p>
+          <div class="mari-sdk-settings-actions"><button type="button" class="mari-sdk-settings-button" data-gso-reset>Reset defaults</button><button type="button" class="mari-sdk-settings-button" data-variant="primary" data-gso-save>Save</button></div>
+        </section>
+      `);
+      root.querySelector("[data-gso-save]")?.addEventListener("click", () => saveGsoSettings(root, chatId, false));
+      root.querySelector("[data-gso-reset]")?.addEventListener("click", () => saveGsoSettings(root, chatId, true));
+    } catch (error) {
+      setMariBridgeSettingsHtml(root, `error:${chatId}:${error.message}`, `<p class="mari-sdk-settings-status">Group Sort Order settings could not load: ${escapeMariBridgeSettingsHtml(error.message)}</p>`);
+    } finally {
+      root.removeAttribute("aria-busy");
+    }
+  }
+
+  async function saveGsoSettings(root, chatId, reset) {
+    const status = root.querySelector("[data-gso-settings-status]");
+    root.setAttribute("aria-busy", "true");
+    if (status) status.textContent = "Saving…";
+    const read = (name) => root.querySelector(`[data-gso-setting="${name}"]`);
+    const body = reset ? {
+      markerTemplate: null,
+      promptTemplate: null,
+      selectorPrompt: null,
+      selectorConnectionId: null,
+    } : {
+      includePersonaCandidate: read("includePersonaCandidate")?.checked === true,
+      markerTemplate: read("markerTemplate")?.value || "",
+      promptTemplate: read("promptTemplate")?.value || "",
+      selectorPrompt: read("selectorPrompt")?.value || "",
+      selectorConnectionId: read("selectorConnectionId")?.value || null,
+    };
+    try {
+      const view = await api(`/group-sort-order/chat/${encodeURIComponent(chatId)}/settings`, { method: "PATCH", body: JSON.stringify(body) });
+      if (chatId === state.activeChatId) state.lastView = view;
+      root.dataset.mariBridgeSettingsRenderKey = "";
+      await renderSettings(root);
+    } catch (error) {
+      if (status) status.textContent = `Save failed: ${error.message}`;
+    } finally {
+      root.removeAttribute("aria-busy");
+    }
+  }
+
   function updateBar(root, view) {
     if (!root) return;
     const shouldHide = !state.activeChatId || view?.enabled === false || view?.hidden !== false;
@@ -319,15 +431,33 @@ import {
     dispose() {
       state.disposed = true;
       state.slotCleanup?.();
+      state.settingsCleanup?.();
       state.cleanups.forEach((cleanup) => cleanup());
       state.cleanups = [];
       window.clearTimeout(state.pollTimer);
       window.clearTimeout(state.renderTimer);
       window.clearTimeout(state.followupTimer);
       state.slotCleanup = null;
+      state.settingsCleanup = null;
       state.barNode = null;
       document.getElementById(ROOT_ID)?.remove();
       document.getElementById(STYLE_ID)?.remove();
     },
   };
+  return async () => {
+    state.disposed = true;
+    state.slotCleanup?.();
+    state.settingsCleanup?.();
+    state.slotCleanup = null;
+    state.settingsCleanup = null;
+    for (const cleanup of state.cleanups.splice(0)) cleanup();
+    window.clearTimeout(state.pollTimer);
+    window.clearTimeout(state.renderTimer);
+    window.clearTimeout(state.followupTimer);
+    state.initialized = false;
+  };
 })();
+  },
+);
+
+void cleanupGroupSortClient;

@@ -23,6 +23,31 @@ import {
 } from "../src/server/routes.js";
 import { activate, selfCheck } from "../src/server/index.js";
 
+const bridgeSymbol = Symbol.for("marinara.mari-bridge.v1");
+let registeredPromptInjection = null;
+globalThis[bridgeSymbol] = {
+  registerConsumer(requirements) {
+    assert(requirements.consumerId === "group-sort-order", "server activates through the Group Sort bridge identity");
+    assert(requirements.require.includes("prompt.inject"), "server requires prompt injection");
+    assert(requirements.require.includes("host.request"), "server requires host requests");
+    const cleanups = [];
+    return {
+      signal: new AbortController().signal,
+      prompts: {
+        inject(input) {
+          registeredPromptInjection = input;
+          const cleanup = () => { registeredPromptInjection = null; };
+          cleanups.push(cleanup);
+          return cleanup;
+        },
+      },
+      host: { request: async () => ({ content: "[]" }) },
+      addCleanup(cleanup) { cleanups.push(cleanup); },
+      async close() { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); },
+    };
+  },
+};
+
 const candidates = [
   { id: "bob", name: "Bob", kind: "character" },
   { id: "james", name: "James", kind: "character" },
@@ -71,6 +96,9 @@ assert(
   "escaped marker tags are stripped"
 );
 assert(parseTerminalNextSpeakerMarker("<next_speaker>bob</next_speaker>\nHello.") === null, "non-terminal marker rejected");
+assert(parseTerminalNextSpeakerMarker("Hello.\n[[next:bob]]", "[[next:{{speaker_id}}]]")?.speakerId === "bob", "custom terminal marker parsed");
+assert(stripTerminalNextSpeakerMarker("Hello.\n[[next:bob]]", "[[next:{{speaker_id}}]]") === "Hello.", "custom terminal marker stripped");
+assert(buildInstructionText(candidates, { markerTemplate: "[[next:{{speaker_id}}]]" }).includes("[[next:candidate-id]]"), "custom marker is rendered into the instruction");
 assert(parseSmartGroupSelectionIds('```json\n["james"]\n```', candidates)[0] === "james", "smart selector JSON array parsed");
 assert(parseSmartGroupSelectionIds('{"characters":["Alice"]}', candidates)[0] === "alice", "smart selector names parsed");
 
@@ -90,6 +118,8 @@ assert(
   "smart selector uses the capability request resolver"
 );
 assert(selectorRequest?.chatConnectionId === "chat-default", "chat connection is supplied only as resolver fallback");
+await resolveSmartSelectorConnectionId({ languageModels: { async resolveForRequest(request) { selectorRequest = request; return { connectionId: request.connectionId }; } } }, { connectionId: "chat-default" }, "selector-choice");
+assert(selectorRequest?.connectionId === "selector-choice", "explicit selector connection is supplied to the capability host");
 
 const state = normalizeGroupSortState({
   includePersonaCandidate: false,
@@ -328,10 +358,11 @@ assert(routes.includes("PUT /prompt-contributions/:chatId/:agentType"), "prompt 
 assert(routes.includes("DELETE /prompt-contributions/:chatId/:agentType"), "prompt contribution clear route registered");
 assert(hooks.some((hook) => hook.name === "preHandler"), "preHandler hook registered");
 assert(hooks.some((hook) => hook.name === "onResponse"), "onResponse hook registered");
+assert(registeredPromptInjection?.id === "next-speaker", "installed bridge owns next-speaker prompt injection");
 
 const routesSource = await fs.readFile(new URL("../src/server/routes.js", import.meta.url), "utf8");
 assert(routesSource.includes("/api/generate/raw"), "refresh uses raw generation selector route");
-assert(routesSource.includes("languageModels.resolveForRequest({ chatConnectionId })"), "refresh resolves the Agent connection through the capability host");
+assert(routesSource.includes("connectionId: readString(requestedConnectionId) || null"), "refresh supports an explicit selector connection through the capability host");
 assert(!routesSource.includes("temperature: 0.2"), "refresh does not override the connection temperature");
 assert(!routesSource.includes("maxTokens: 512"), "refresh does not impose the legacy 512-token limit");
 assert(!routesSource.includes("topP: 1"), "refresh does not override the connection top-p setting");
@@ -362,15 +393,18 @@ assert(!routesSource.includes("manualTrackerAgentTypes"), "misc feature does not
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientSource.includes("marinara-capability-group-sort-order"), "client registers package capability element");
 assert(clientSource.includes("marinara-capability-props"), "client responds to capability prop changes");
-assert(clientSource.includes("registerComposerSlotContribution"), "client uses bridge composer slot contribution");
-assert(clientSource.includes("COMPOSER_SLOT_ABOVE_INPUT"), "client targets the bridge above-input composer slot");
+assert(clientSource.includes('bridgeSession.ui.register'), "client uses the installed bridge composer slot");
+assert(clientSource.includes('slot: "composer.above-input"'), "client targets the native composer slot");
+assert(!clientSource.includes("_mari-bridge/src"), "client does not import legacy bridge implementation");
 assert(!clientSource.includes("declarePackageGeneration"), "refresh does not declare bridge generation activity");
 assert(!clientSource.includes("GENERATION_KIND_AGENT"), "refresh is not marked as agent generation activity");
-assert(clientSource.includes('RUNTIME_VERSION = "1.0.27"'), "client runtime version matches package version");
+assert(clientSource.includes('RUNTIME_VERSION = "2.1.0"'), "client runtime version identifies the settings-capable bridge rewrite");
+assert(clientSource.includes('slot: "chat.settings"'), "client contributes native chat settings");
+assert(clientSource.includes("data-gso-setting"), "client exposes editable prompt, marker, and selector settings");
 assert(!clientSource.includes("findInputContainer"), "client does not discover the composer locally");
 assert(!clientSource.includes("MutationObserver"), "client leaves composer remount observation to the bridge");
 assert(clientSource.includes('body: "{}"'), "refresh sends an explicit JSON body");
-assert(!clientSource.includes('type="checkbox"'), "persona control is not a checkbox");
+assert(clientSource.includes('class="gso-icon-button gso-persona"'), "composer persona control remains an icon button");
 assert(clientSource.includes('aria-label="Refresh next speaker"'), "refresh control is icon-labeled");
 assert(clientSource.includes("options.body !== undefined"), "client only sends JSON content-type when a body exists");
 assert(clientSource.includes("view?.hidden !== false"), "client hides the bar when only two candidates are available");
@@ -380,10 +414,11 @@ assert(clientSource.includes("bindActiveChat(chatId || \"\")"), "client binds ac
 assert(!clientSource.includes("readCapabilityChatId() || chatId"), "client does not prefer stale capability chat ids");
 assert(!clientSource.includes("propsChatIds"), "client does not cache stale capability chat ids");
 const buildSource = await fs.readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8");
-assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares chat-runtime slot");
-assert(buildSource.includes("stripBrowserModuleSyntax"), "client entrypoint bundles browser-safe bridge modules");
+assert(buildSource.includes('slots: ["chat-runtime", "chat-settings"]'), "manifest declares runtime and chat-settings slots");
+assert(buildSource.includes("stripBrowserModuleSyntax"), "client entrypoint bundles the browser-safe SDK");
 assert(buildSource.includes("runtimeDisabled: true"), "feature marker is runtime-disabled");
-assert(buildSource.includes('"ui-slots.js"'), "client entrypoint bundles bridge UI slot placement");
+assert(buildSource.includes('"client.js"'), "client entrypoint bundles the thin client SDK");
+assert(!buildSource.includes('"ui-slots.js"'), "client entrypoint does not bundle legacy UI placement");
 assert(!buildSource.includes('"generation-lifecycle.js"'), "client entrypoint does not bundle composer generation lock code");
 assert(!buildSource.includes('"generation-stream.js"'), "client entrypoint does not bundle unused generation streaming code");
 
@@ -438,3 +473,4 @@ function assert(condition, message) {
 }
 
 console.log("Group Sort Order checks passed.");
+delete globalThis[bridgeSymbol];
