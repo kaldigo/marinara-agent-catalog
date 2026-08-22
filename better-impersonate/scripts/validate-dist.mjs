@@ -13,11 +13,11 @@ assert(manifest.entrypoints?.client === "client.js", "client entrypoint must be 
 assert(client.includes('const PACKAGE_ID = "better-impersonate"'), "client uses the renamed bridge consumer identity");
 assert(client.includes('const TAG_NAME = "marinara-capability-better-impersonate"'), "client uses the renamed capability element");
 assert(client.includes("activateClientWithMariBridge"), "client must fail closed through the Mari Bridge SDK");
-assert(client.includes('commands: ["/impersonate-draft"]'), "client registers impersonate-draft");
-assert(client.includes('commands: ["/impersonate-continue"]'), "client registers impersonate-continue");
-assert(client.includes('commands: ["/impersonate-thinking"]'), "client registers impersonate-thinking");
-assert(client.includes('commands: ["/impersonate-last"]'), "client registers impersonate-last");
-assert(client.includes('aliases: ["/impersonate_draft"]'), "client registers the underscore draft alias");
+assert(client.includes('commands: ["/impersonate_draft"]'), "client registers impersonate_draft");
+assert(client.includes('commands: ["/impersonate_continue"]'), "client registers impersonate_continue");
+assert(client.includes('commands: ["/impersonate_thinking"]'), "client registers impersonate_thinking");
+assert(client.includes('commands: ["/impersonate_last"]'), "client registers impersonate_last");
+assert(client.includes('aliases: ["/impersonate-draft"]'), "client retains the hyphenated draft alias");
 assert(manifest.contributions?.agentDetail?.agentIds?.includes("better-impersonate"), "manifest contributes Better Impersonate agent detail");
 assert(client.includes('slot: "chat.settings"'), "client contributes editable native chat settings");
 assert(client.includes("data-bi-setting"), "client exposes command-specific prompt templates");

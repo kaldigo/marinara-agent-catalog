@@ -31,37 +31,37 @@ const cleanupImpersonateCommands = await activateClientWithMariBridge(
     const disposers = [
       bridgeSession.commands.register({
         id: "impersonate-draft",
-        commands: ["/impersonate-draft"],
-        aliases: ["/impersonate_draft"],
+        commands: ["/impersonate_draft"],
+        aliases: ["/impersonate-draft"],
         description: "Generate a persona response draft using optional guidance",
-        usage: "/impersonate-draft [guidance]",
+        usage: "/impersonate_draft [guidance]",
         modes: ["roleplay"],
         handler: ({ raw, context }) => generateDraft(bridgeSession, "impersonate", commandArgument(raw), context),
       }),
       bridgeSession.commands.register({
         id: "impersonate-continue",
-        commands: ["/impersonate-continue"],
-        aliases: ["/impersonate_continue"],
+        commands: ["/impersonate_continue"],
+        aliases: ["/impersonate-continue"],
         description: "Continue the current persona draft",
-        usage: "/impersonate-continue <current draft>",
+        usage: "/impersonate_continue <current draft>",
         modes: ["roleplay"],
         handler: ({ raw, context }) => generateDraft(bridgeSession, "continue", commandArgument(raw), context),
       }),
       bridgeSession.commands.register({
         id: "impersonate-thinking",
-        commands: ["/impersonate-thinking"],
-        aliases: ["/impersonate_thinking"],
+        commands: ["/impersonate_thinking"],
+        aliases: ["/impersonate-thinking"],
         description: "Generate a persona draft guided by private thoughts or feelings",
-        usage: "/impersonate-thinking <private guidance>",
+        usage: "/impersonate_thinking <private guidance>",
         modes: ["roleplay"],
         handler: ({ raw, context }) => generateDraft(bridgeSession, "inner_state", commandArgument(raw), context),
       }),
       bridgeSession.commands.register({
         id: "impersonate-last",
-        commands: ["/impersonate-last"],
-        aliases: ["/impersonate_last"],
+        commands: ["/impersonate_last"],
+        aliases: ["/impersonate-last"],
         description: "Restore the last persona guidance to the input",
-        usage: "/impersonate-last",
+        usage: "/impersonate_last",
         modes: ["roleplay"],
         handler: ({ context }) => restoreLastGuidance(context),
       }),
@@ -114,8 +114,8 @@ async function generateDraft(bridgeSession, mode, input, context) {
       handled: true,
       feedback:
         mode === "continue"
-          ? "Usage: /impersonate-continue <current persona draft>"
-          : "Usage: /impersonate-thinking <private thoughts or feelings>",
+          ? "Usage: /impersonate_continue <current persona draft>"
+          : "Usage: /impersonate_thinking <private thoughts or feelings>",
     };
   }
   if (!context?.chatId || typeof context.setDraft !== "function") {
