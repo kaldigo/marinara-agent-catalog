@@ -1,6 +1,10 @@
 import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+export function requiresBootstrapHandoff(kernel, bootstrapChanged, implementationVersion) {
+  return Boolean(kernel && (bootstrapChanged || kernel.version !== implementationVersion));
+}
+
 async function sameFileContents(source, target) {
   try {
     const [sourceBytes, targetBytes] = await Promise.all([readFile(source), readFile(target)]);

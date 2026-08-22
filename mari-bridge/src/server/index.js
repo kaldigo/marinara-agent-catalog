@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from "node:path";
 import {
+  MARI_BRIDGE_IMPLEMENTATION_VERSION,
   MARI_BRIDGE_KERNEL_SYMBOL,
   MARI_BRIDGE_SERVER_SYMBOL,
 } from "../shared/contracts.js";
@@ -10,7 +11,7 @@ import { createAgentResultRegistry } from "./result-registry.js";
 import { createTrackerContextRegistry } from "./tracker-context-registry.js";
 import { prepareClientOverlay } from "./client-overlay.js";
 import { schedulePackageBootstrapRestart } from "./bootstrap-restart.js";
-import { installBootstrapFile } from "./bootstrap-install.js";
+import { installBootstrapFile, requiresBootstrapHandoff } from "./bootstrap-install.js";
 
 let activeRuntime = null;
 
@@ -55,15 +56,21 @@ function createHostRequest(app) {
 async function installStableBootstrap(context) {
   const source = new URL("../../bootstrap/register.mjs", import.meta.url);
   const target = join(context.dataDir, "mari-bridge", "bootstrap", "register.mjs");
-  return (await installBootstrapFile(source, target)).path;
+  return installBootstrapFile(source, target);
 }
 
 export async function activate(context) {
   if (globalThis[MARI_BRIDGE_SERVER_SYMBOL]) {
     throw new Error("Another Mari Bridge server runtime already owns the global registry");
   }
-  const bootstrapPath = await installStableBootstrap(context);
+  const bootstrapInstall = await installStableBootstrap(context);
+  const bootstrapPath = bootstrapInstall.path;
   const kernel = globalThis[MARI_BRIDGE_KERNEL_SYMBOL] ?? null;
+  const bootstrapHandoffRequired = requiresBootstrapHandoff(
+    kernel,
+    bootstrapInstall.changed,
+    MARI_BRIDGE_IMPLEMENTATION_VERSION,
+  );
   const bridgeOperational = kernel?.active === true && kernel?.engineCompatibility?.compatible === true;
   let clientOverlay = null;
   const firstStartNativeClientRoot = process.argv[1]
@@ -82,7 +89,10 @@ export async function activate(context) {
     kernel.patches["client.bridge-first"] = "applied";
     for (const patchId of clientOverlay.patches ?? []) kernel.patches[patchId] = "applied";
   }
-  const bootstrapRestart = await schedulePackageBootstrapRestart(context, bootstrapPath);
+  const bootstrapRestart = await schedulePackageBootstrapRestart(context, bootstrapPath, {
+    force: bootstrapHandoffRequired,
+    reason: bootstrapHandoffRequired ? "version-handoff" : undefined,
+  });
   const promptRegistry = createPromptRegistry();
   const agentResultRegistry = createAgentResultRegistry();
   const trackerContextRegistry = createTrackerContextRegistry();
@@ -127,6 +137,13 @@ export async function activate(context) {
         detail: bridgeOperational
           ? null
           : kernel?.failures?.join("; ") || "Mari Bridge preload is not active; configure the stable bootstrap and restart",
+      },
+      {
+        id: "packages.client-only-updates",
+        status: kernel?.patches?.["packages.client-only-updates"] === "applied" ? "applied" : "unavailable",
+        detail: kernel?.patches?.["packages.client-only-updates"] === "applied"
+          ? null
+          : "Client-only package updates cannot be finalized during startup",
       },
       {
         id: "prompt.assembler",

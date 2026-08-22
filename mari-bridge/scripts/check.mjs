@@ -18,7 +18,7 @@ import {
   versionAssetReferences,
 } from "../src/server/client-overlay.js";
 import { schedulePackageBootstrapRestart } from "../src/server/bootstrap-restart.js";
-import { installBootstrapFile } from "../src/server/bootstrap-install.js";
+import { installBootstrapFile, requiresBootstrapHandoff } from "../src/server/bootstrap-install.js";
 import { MariBridgeUnavailableError } from "../src/shared/contracts.js";
 
 const runtime = createBridgeRuntime({ capabilities: ["runtime.health"] });
@@ -291,6 +291,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: false,
 });
 assert.equal((await fs.stat(bootstrapTarget)).mtimeMs, firstTargetStat.mtimeMs);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.4"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.4" }, false, "1.0.4"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.3" }, false, "1.0.4"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.4" }, true, "1.0.4"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
@@ -344,10 +348,23 @@ assert.match(bootstrapPatchSource, /agent\.result-apply-main/u);
 assert.match(bootstrapPatchSource, /agent\.result-apply-retry/u);
 assert.match(bootstrapPatchSource, /tracker\.context-committed/u);
 assert.match(bootstrapPatchSource, /tracker\.context-agent/u);
-const { decodeModuleSource, patchCommittedTrackerActiveGuard } = await import(
+const { decodeModuleSource, patchCommittedTrackerActiveGuard, patchServerModule } = await import(
   new URL(`../bootstrap/register.mjs?check=${Date.now()}`, import.meta.url)
 );
 assert.equal(decodeModuleSource(new TextEncoder().encode("export const value = 1;")), "export const value = 1;");
+const packageStartupFixture = `async start(app) {
+        for (const runtimePackage of await capabilityPackageManager.runtimePackages()) {
+            await this.activateOne(app, runtimePackage, true, false);
+        }
+    }`;
+const patchedPackageStartup = patchServerModule(
+  "file:///engine/capability-module-runtime.service.js",
+  packageStartupFixture,
+);
+assert.match(patchedPackageStartup, /left\.installed\.id === "mari-bridge"/u);
+assert.match(patchedPackageStartup, /installed\.status === "restart-required"/u);
+assert.match(patchedPackageStartup, /markRuntimeStatus\(installed\.id, "active"\)/u);
+assert.equal(globalThis[kernelSymbol].patches["packages.client-only-updates"], "applied");
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";
 const patchedLegacyCommittedGuard = patchCommittedTrackerActiveGuard(legacyCommittedGuard);

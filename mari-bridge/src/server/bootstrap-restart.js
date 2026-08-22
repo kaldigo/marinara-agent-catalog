@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 function sanitizedEnvironment(extra) {
   return Object.fromEntries(
@@ -39,7 +40,7 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
     const entry = process.argv[1];
     if (!entry) throw new Error("Mari Bridge cannot reconstruct the Marinara entrypoint");
     await context.app.close();
-    const args = [...inheritedExecArgs, `--import=${bootstrapPath}`, entry, ...process.argv.slice(2)];
+    const args = [...inheritedExecArgs, `--import=${pathToFileURL(bootstrapPath).href}`, entry, ...process.argv.slice(2)];
     const environment = sanitizedEnvironment({ MARI_BRIDGE_BOOTSTRAPPED: "1" });
     if (process.platform === "win32") {
       spawn(process.execPath, args, {
@@ -59,5 +60,5 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
     }, 100);
     timer.unref?.();
   });
-  return { scheduled: true, reason: "first-start" };
+  return { scheduled: true, reason: options.reason ?? "first-start" };
 }
