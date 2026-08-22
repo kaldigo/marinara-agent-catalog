@@ -83,6 +83,7 @@ export async function activate(context) {
     kernel?.patches?.["agent.result-apply-main"] === "applied" &&
     kernel?.patches?.["agent.result-apply-retry"] === "applied";
   const trackerContextPatchApplied =
+    kernel?.patches?.["tracker.context-committed-active"] === "applied" &&
     kernel?.patches?.["tracker.context-committed"] === "applied" &&
     kernel?.patches?.["tracker.context-agent"] === "applied";
   const runtime = createBridgeRuntime({
@@ -143,7 +144,7 @@ export async function activate(context) {
       {
         id: "tracker.context",
         status: trackerContextPatchApplied ? "applied" : "unavailable",
-        detail: trackerContextPatchApplied ? null : "Committed or agent tracker-context hooks are unavailable",
+        detail: trackerContextPatchApplied ? null : "Committed tracker activation, committed sections, or agent tracker-context hooks are unavailable",
       },
       {
         id: "client.active-chat",

@@ -208,6 +208,10 @@ assert.throws(() => patchActiveChatEvents("const nope = true"), /expected one st
 const generationFixture = "setAbortController:(t,a)=>e(o=>{const r=new Map(o.abortControllers);return a?r.set(t,a):r.delete(t),{abortControllers:r}})";
 const patchedGenerationFixture = patchGenerationControllerEvents(generationFixture);
 assert.match(patchedGenerationFixture, /marinara:generation-controller/u);
+const currentGenerationFixture = "setAbortController:(t,a)=>e(o=>{const r=new Map(o.abortControllers);if(!a)return r.delete(t),{abortControllers:r};r.set(t,a);const i=new Set(o.backgroundIllustrationChatIds);return i.delete(t),{abortControllers:r,backgroundIllustrationChatIds:i}})";
+const patchedCurrentGenerationFixture = patchGenerationControllerEvents(currentGenerationFixture);
+assert.match(patchedCurrentGenerationFixture, /marinara:generation-controller/u);
+assert.match(patchedCurrentGenerationFixture, /backgroundIllustrationChatIds/u);
 assert.throws(() => patchGenerationControllerEvents("const nope = true"), /expected one store action/u);
 const chatInputFixture = [
   'const first=match(raw,{mode:"roleplay",availableCapabilityIds:ids});if(first){const ctx=build();if(!ctx)return;const submitted=field.current?.value??"",height=field.current?.style.height??"auto",attachments=list,completions=items;field.current&&(field.current.value="",field.current.style.height="auto"),sync("");clear(chat);try{const result=await first.command.execute(first.args,ctx);result.feedback&&feedback(result.feedback)}catch(error){const active=store.getState().activeChatId,current=field.current?.value??"",restore=active===chat&&current.length===0;submitted&&(restore||active!==chat)&&setDraft(chat,submitted)}}',
@@ -322,4 +326,31 @@ assert.match(bootstrapPatchSource, /agent\.result-apply-main/u);
 assert.match(bootstrapPatchSource, /agent\.result-apply-retry/u);
 assert.match(bootstrapPatchSource, /tracker\.context-committed/u);
 assert.match(bootstrapPatchSource, /tracker\.context-agent/u);
+const { patchCommittedTrackerActiveGuard } = await import(
+  new URL(`../bootstrap/register.mjs?check=${Date.now()}`, import.meta.url)
+);
+const legacyCommittedGuard =
+  "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";
+const patchedLegacyCommittedGuard = patchCommittedTrackerActiveGuard(legacyCommittedGuard);
+assert.match(patchedLegacyCommittedGuard, /trackerContextHooks\?\.hasActive\(args\.activeAgentIds\)/u);
+const currentCommittedGuard = `if (
+    !hasWorldState &&
+    !hasCharTracker &&
+    !hasPersonaStats &&
+    !hasQuest &&
+    !hasCustomTracker &&
+    !hasInventoryTracker &&
+    !hasBeholder
+  )
+    return null;`;
+const patchedCurrentCommittedGuard = patchCommittedTrackerActiveGuard(currentCommittedGuard);
+assert.match(patchedCurrentCommittedGuard, /!hasInventoryTracker && !hasBeholder/u);
+assert.match(patchedCurrentCommittedGuard, /trackerContextHooks\?\.hasActive\(args\.activeAgentIds\)/u);
+const unsupportedCommittedGuard = "if (!hasUnknownTracker) return null;";
+assert.equal(
+  patchCommittedTrackerActiveGuard(unsupportedCommittedGuard),
+  unsupportedCommittedGuard,
+  "unsupported tracker guards retain native Engine behavior instead of crashing startup",
+);
+assert.equal(globalThis[kernelSymbol].patches["tracker.context-committed-active"], "failed");
 console.log("Mari Bridge runtime checks passed.");

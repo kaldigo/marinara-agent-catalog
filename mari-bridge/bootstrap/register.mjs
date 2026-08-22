@@ -6,24 +6,47 @@ const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
 const disabled = process.env.MARI_BRIDGE_DISABLE === "1";
 const kernel = globalThis[KERNEL_SYMBOL] ?? {
   active: !disabled,
-  version: "1.0.0",
+  version: "1.0.1",
   patches: {},
   failures: [],
 };
 globalThis[KERNEL_SYMBOL] = kernel;
 
+function recordPatchFailure(patchId, detail) {
+  kernel.patches[patchId] = "failed";
+  if (!kernel.failures.includes(detail)) kernel.failures.push(detail);
+}
+
+function replaceExact(source, anchor, replacement, patchId) {
+  const matches = source.split(anchor).length - 1;
+  if (matches !== 1) {
+    recordPatchFailure(patchId, `${patchId} expected one anchor, found ${matches}`);
+    return source;
+  }
+  kernel.patches[patchId] = "applied";
+  return source.replace(anchor, replacement);
+}
+
+const COMMITTED_TRACKER_ACTIVE_GUARD = /if\s*\(\s*!hasWorldState\s*&&\s*!hasCharTracker\s*&&\s*!hasPersonaStats\s*&&\s*!hasQuest\s*&&\s*!hasCustomTracker(?:\s*&&\s*!hasInventoryTracker\s*&&\s*!hasBeholder)?\s*\)/gu;
+
+export function patchCommittedTrackerActiveGuard(source) {
+  const matches = [...source.matchAll(COMMITTED_TRACKER_ACTIVE_GUARD)];
+  const patchId = "tracker.context-committed-active";
+  if (matches.length !== 1) {
+    recordPatchFailure(patchId, `${patchId} expected one supported guard, found ${matches.length}`);
+    return source;
+  }
+  const nativeGuard = matches[0][0].includes("hasInventoryTracker")
+    ? "!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker && !hasInventoryTracker && !hasBeholder"
+    : "!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker";
+  kernel.patches[patchId] = "applied";
+  return source.replace(
+    COMMITTED_TRACKER_ACTIVE_GUARD,
+    `if (${nativeGuard} && !globalThis[Symbol.for("marinara.mari-bridge.v1")]?.trackerContextHooks?.hasActive(args.activeAgentIds))`,
+  );
+}
+
 if (!disabled) {
-  const replaceExact = (source, anchor, replacement, patchId) => {
-    const matches = source.split(anchor).length - 1;
-    if (matches !== 1) {
-      const detail = `${patchId} expected one anchor, found ${matches}`;
-      kernel.patches[patchId] = "failed";
-      kernel.failures.push(detail);
-      throw new Error(`Mari Bridge refused unsupported Engine module: ${detail}`);
-    }
-    kernel.patches[patchId] = "applied";
-    return source.replace(anchor, replacement);
-  };
 
   registerHooks({
     load(url, context, nextLoad) {
@@ -125,12 +148,7 @@ if (!disabled) {
         return { ...result, source };
       }
       if (url.endsWith("/services/generation/committed-tracker-context.js")) {
-        source = replaceExact(
-          source,
-          "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker)",
-          "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker && !globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.trackerContextHooks?.hasActive(args.activeAgentIds))",
-          "tracker.context-committed-active",
-        );
+        source = patchCommittedTrackerActiveGuard(source);
         source = replaceExact(
           source,
           "const playerNotes =",
