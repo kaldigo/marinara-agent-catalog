@@ -1,7 +1,7 @@
 (async () => {
   "use strict";
   // bridge-sdk/contracts.js
-  const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 2 });
+  const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 3 });
   const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
   const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 
@@ -70,39 +70,26 @@
     }
   }
 
-  // src/client/prompts.js
-  const DEFAULT_IMPERSONATE_DRAFT_TEMPLATE = [
-    "{{base_prompt}}",
-    "",
-      "Guidance for {{user}}'s next in-character response:",
-      "{{impersonate_direction}}",
-      "",
-      "Use this as a suggestion for the generated response, not as dialogue or chat history.",
-      "Do not quote or rush to fulfill the suggestion; let it guide you naturally.",
-  ].join("\n").trim();
-
-  const DEFAULT_IMPERSONATE_THINKING_TEMPLATE = [
-    "{{base_prompt}}",
-    "",
-      "Private inner state for {{user}}:",
-      "{{impersonate_direction}}",
-      "",
-      "Use this as quiet context for {{user}}'s current thoughts and feelings. Do not treat it as dialogue, chat history, or an instruction for what must happen next.",
-      "Let this ground the response in {{user}}'s feelings rather than force an outcome.",
-  ].join("\n").trim();
-
-  const DEFAULT_IMPERSONATE_CONTINUE_TEMPLATE = [
-    "{{base_prompt}}",
-    "",
-      "Continue {{user}}'s current in-character draft.",
-      "The draft so far is:",
-      "{{impersonate_direction}}",
-      "",
-      "Return only the continuation text.",
-      "Do not restart the draft.",
-      "Do not repeat any part of the draft.",
-      "Do not explain.",
-  ].join("\n").trim();
+  // src/client/request.js
+  function buildImpersonateDraftRequest(mode, guidance) {
+    if (mode === "continue") {
+      return {
+        impersonate: true,
+        impersonateContinuation: guidance,
+      };
+    }
+    return {
+      impersonate: true,
+      ...(guidance
+        ? {
+            generationGuide: mode === "inner_state"
+              ? `Private inner state for {{user}}: ${guidance}\nUse this as quiet emotional context, not dialogue or a required outcome.`
+              : guidance,
+            generationGuideSource: "guide",
+          }
+        : {}),
+    };
+  }
 
   // src/client/runtime.js
   const PACKAGE_ID = "better-impersonate";
@@ -120,7 +107,7 @@
   const cleanupImpersonateCommands = await activateClientWithMariBridge(
     {
       consumerId: PACKAGE_ID,
-      api: { major: 1, minMinor: 0 },
+      api: { major: 1, minMinor: 3 },
       require: [
         "chat.active",
         "client.bridge-first",
@@ -203,11 +190,8 @@
       context.setDraftGenerating?.(true);
       const content = await bridgeSession.drafts.generate({
         chatId: context.chatId,
-        promptTemplate: resolvePromptTemplate(mode),
-        body: {
-          userMessage: guidance || null,
-          impersonate: true,
-        },
+        output: mode === "continue" ? "continuation" : "content",
+        body: buildImpersonateDraftRequest(mode, guidance),
         onUpdate: (next) => {
           if (!next) return;
           received = true;
@@ -256,12 +240,6 @@
     } catch {
       return "";
     }
-  }
-
-  function resolvePromptTemplate(mode) {
-    if (mode === "continue") return DEFAULT_IMPERSONATE_CONTINUE_TEMPLATE;
-    if (mode === "inner_state") return DEFAULT_IMPERSONATE_THINKING_TEMPLATE;
-    return DEFAULT_IMPERSONATE_DRAFT_TEMPLATE;
   }
 
   function renderDraft(mode, original, generated) {

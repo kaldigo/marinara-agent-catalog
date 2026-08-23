@@ -1,5 +1,5 @@
 // bridge-sdk/contracts.js
-const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 2 });
+const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 3 });
 const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
 const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 
@@ -73,7 +73,7 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
   {
     consumerId: "world-map-background",
     api: { major: 1, minMinor: 0 },
-    require: ["chat.active", "client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health", "ui.agent-settings"],
+    require: ["chat.active", "chat.background", "client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health", "ui.agent-settings"],
   },
   async (bridgeSession) => {
     const PACKAGE_ID = "world-map-background";
@@ -154,10 +154,20 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
 
     async function synchronize(chatId) {
       if (!chatId) return;
-      if (state.syncing.has(chatId)) return state.syncing.get(chatId);
-      const operation = runSynchronization(chatId).finally(() => state.syncing.delete(chatId));
-      state.syncing.set(chatId, operation);
-      return operation;
+      const existing = state.syncing.get(chatId);
+      if (existing) {
+        existing.pending = true;
+        return existing.promise;
+      }
+      const entry = { pending: false, promise: null };
+      entry.promise = (async () => {
+        do {
+          entry.pending = false;
+          await runSynchronization(chatId);
+        } while (entry.pending);
+      })().finally(() => state.syncing.delete(chatId));
+      state.syncing.set(chatId, entry);
+      return entry.promise;
     }
 
     async function runSynchronization(chatId) {
@@ -172,10 +182,12 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
 
       if (!image) {
         if (settings.currentUrl && metadata.background === settings.currentUrl) {
+          const restoredUrl = settings.previousBackground ?? null;
           await patchMetadata(chatId, {
-            background: settings.previousBackground ?? null,
+            background: restoredUrl,
             worldMapBackground: { blur: clampBlur(settings.blur) },
           });
+          bridgeSession.chat.background.set({ chatId, url: restoredUrl, blurPx: 0 });
         }
         return;
       }
@@ -183,16 +195,19 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
       const previousBackground = metadata.background && metadata.background !== settings.currentUrl
         ? metadata.background
         : settings.previousBackground ?? null;
-      if (metadata.background === image.url && settings.currentUrl === image.url) return;
-      await patchMetadata(chatId, {
-        background: image.url,
-        worldMapBackground: {
-          blur: clampBlur(settings.blur),
-          currentUrl: image.url,
-          previousBackground,
-          referenceImageId: image.referenceImageId,
-        },
-      });
+      const blur = clampBlur(settings.blur);
+      if (metadata.background !== image.url || settings.currentUrl !== image.url) {
+        await patchMetadata(chatId, {
+          background: image.url,
+          worldMapBackground: {
+            blur,
+            currentUrl: image.url,
+            previousBackground,
+            referenceImageId: image.referenceImageId,
+          },
+        });
+      }
+      bridgeSession.chat.background.set({ chatId, url: image.url, blurPx: blur });
     }
 
     async function resolveCurrentLocationImage(chatId) {
@@ -229,6 +244,10 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
       await patchMetadata(chatId, {
         worldMapBackground: { ...record(metadata.worldMapBackground), blur: clampBlur(blur) },
       });
+      const settings = record(metadata.worldMapBackground);
+      if (typeof settings.currentUrl === "string" && settings.currentUrl === metadata.background) {
+        bridgeSession.chat.background.set({ chatId, url: settings.currentUrl, blurPx: clampBlur(blur) });
+      }
       for (const element of state.elements) if (element.chatId === chatId) void element.render();
     }
 
