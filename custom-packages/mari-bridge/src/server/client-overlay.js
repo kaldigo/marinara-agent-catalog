@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v12";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v13";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
@@ -280,9 +280,13 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   if (matches.length !== 1) throw new Error(`Mari Bridge client overlay expected one main module, found ${matches.length}`);
   const mainModule = matches[0][1];
   const mainModulePath = join(temporary, mainModule.replace(/^\/+|[?#].*$/gu, ""));
-  const patchedMainModule = patchGenerationControllerEvents(
+  const patchedNativeMainModule = patchGenerationControllerEvents(
     patchActiveChatEvents(await readFile(mainModulePath, "utf8")),
   );
+  // The client runtime is part of Marinara's patched main module, not a
+  // separately loaded package or bootstrap dependency. Native capability
+  // loading therefore cannot begin until the bridge symbol is ready.
+  const patchedMainModule = ["{", bridgeClientRuntime, "}", patchedNativeMainModule, ""].join("\n");
   await writeFile(mainModulePath, patchedMainModule);
   const assetsRoot = join(temporary, "assets");
   const assetEntries = await readdir(assetsRoot, { withFileTypes: true });
@@ -354,23 +358,9 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
-  const bridgeBootstrapName = "mari-bridge-bootstrap.js";
-  const versionedMainModule = `${mainModule}?mariBridge=${fingerprint}`;
-  await writeFile(
-    join(temporary, bridgeBootstrapName),
-    [
-      bridgeClientRuntime,
-      `await import(${JSON.stringify(versionedMainModule)});`,
-      "",
-    ].join("\n"),
-  );
   await writeFile(
     copiedIndexPath,
-    versionAssetReferences(
-      copiedIndex.replace(matches[0][0], `<script type="module" crossorigin src="/${bridgeBootstrapName}"></script>`),
-      assetJavaScriptNames,
-      fingerprint,
-    ),
+    versionAssetReferences(copiedIndex, assetJavaScriptNames, fingerprint),
   );
   await writeFile(join(temporary, ".mari-bridge-ready"), `${fingerprint}\n`);
   await rm(target, { recursive: true, force: true });

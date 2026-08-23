@@ -48,7 +48,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.5";
+kernel.version = "1.0.13";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -152,8 +152,49 @@ export function patchServerModule(url, inputSource) {
           [
             "    timeZone: input.timeZone,",
             "    activeAgentIds: input.enableAgents === false ? [] : input.activeAgentIds ?? [],",
+            "    groupMode: input.groupMode,",
           ].join("\n"),
           "prompt.active-agents.assembler",
+        );
+        if (kernel.patches["prompt.active-agents.assembler"] === "applied") {
+          kernel.patches["prompt.group-macros.assembler-context"] = "applied";
+        }
+        source = replaceExact(
+          source,
+          "    let outletScanAttempted = false;",
+          [
+            "    let outletScanAttempted = false;",
+            "    const mariBridgeOutletMacroPattern = /\\{\\{\\s*outlet\\s*::/i;",
+            "    const mariBridgeFieldMacroPattern = /\\{\\{\\s*(?:description|personality|backstory|appearance|scenario|example|charSysInfo|charPostHistory|persona|personaDescription|personaPersonality|personaBackstory|personaAppearance|personaScenario|group_scenario_override)\\s*\\}\\}/i;",
+            "    const mariBridgeNestedOutletSources = [",
+            "      input.groupScenarioOverrideText,",
+            "      ...Object.values(macroCtx.characterFields ?? {}),",
+            "      ...Object.values(macroCtx.personaFields ?? {}),",
+            "      ...(macroCtx.characterProfiles ?? []).flatMap((profile) => Object.values(profile)),",
+            "    ];",
+            "    const mariBridgeHasNestedOutlet = mariBridgeNestedOutletSources.some((value) =>",
+            "      typeof value === \"string\" && mariBridgeOutletMacroPattern.test(value)",
+            "    );",
+            "    const mariBridgeSectionNeedsOutletScan = (section) => {",
+            "      if (mariBridgeOutletMacroPattern.test(section.content)) return true;",
+            "      if (!mariBridgeHasNestedOutlet) return false;",
+            "      if (mariBridgeFieldMacroPattern.test(section.content)) return true;",
+            "      if (section.isMarker !== \"true\" || !section.markerConfig) return false;",
+            "      try {",
+            "        const markerType = JSON.parse(section.markerConfig)?.type;",
+            "        return markerType === \"character\" || markerType === \"persona\";",
+            "      } catch {",
+            "        return false;",
+            "      }",
+            "    };",
+          ].join("\n"),
+          "prompt.outlet-nested-fields.scan-source",
+        );
+        source = replaceExact(
+          source,
+          "if (!outletScanAttempted && /\\{\\{\\s*outlet\\s*::/i.test(section.content)) {",
+          "if (!outletScanAttempted && mariBridgeSectionNeedsOutletScan(section)) {",
+          "prompt.outlet-nested-fields.scan-call",
         );
         kernel.patches["prompt.assembler"] = "applied";
         return source;
@@ -167,9 +208,14 @@ export function patchServerModule(url, inputSource) {
             "    activeAgents: Array.isArray(input.activeAgentIds)",
             "      ? [...new Set(input.activeAgentIds.map((agentId) => String(agentId ?? \"\").trim()).filter(Boolean))]",
             "      : [],",
+            "    groupScenarioOverride: typeof input.groupScenarioOverrideText === \"string\" ? input.groupScenarioOverrideText : \"\",",
+            "    groupMode: input.groupMode === \"individual\" ? \"INDIVIDUAL\" : input.groupMode === \"merged\" ? \"MERGED\" : \"SOLO\",",
           ].join("\n"),
           "prompt.active-agents.context",
         );
+        if (kernel.patches["prompt.active-agents.context"] === "applied") {
+          kernel.patches["prompt.group-macros.context"] = "applied";
+        }
         return source;
       }
       if (url.endsWith("/utils/macro-engine.js")) {
@@ -179,9 +225,14 @@ export function patchServerModule(url, inputSource) {
           [
             "  result = result.replace(/\\{\\{chatId\\}\\}/gi, ctx.chatId ?? \"\");",
             "  result = result.replace(/\\{\\{active-agents\\}\\}/gi, () => Array.isArray(ctx.activeAgents) ? ctx.activeAgents.join(\",\") : \"\");",
+            "  result = result.replace(/\\{\\{group_scenario_override\\}\\}/gi, () => ctx.groupScenarioOverride ?? \"\");",
+            "  result = result.replace(/\\{\\{group_mode\\}\\}/gi, () => ctx.groupMode ?? \"SOLO\");",
           ].join("\n"),
           "prompt.active-agents.macro",
         );
+        if (kernel.patches["prompt.active-agents.macro"] === "applied") {
+          kernel.patches["prompt.group-macros.resolve"] = "applied";
+        }
         return source;
       }
       if (url.endsWith("/services/agents/agent-executor.js")) {
@@ -227,6 +278,53 @@ export function patchServerModule(url, inputSource) {
         return source;
       }
       if (url.endsWith("/routes/generate.routes.js")) {
+        source = replaceExact(
+          source,
+          [
+            "                    timeZone: promptTimeZone,",
+            "                });",
+            "                const conversationMacroFieldsByCharacterId = new Map();",
+          ].join("\n"),
+          [
+            "                    timeZone: promptTimeZone,",
+            "                    groupMode: characterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+            "                });",
+            "                const conversationMacroFieldsByCharacterId = new Map();",
+          ].join("\n"),
+          "prompt.group-macros.main-context",
+        );
+        source = replaceExact(
+          source,
+          [
+            "                        timeZone: promptTimeZone,",
+            "                        impersonate: input.impersonate === true,",
+          ].join("\n"),
+          [
+            "                        timeZone: promptTimeZone,",
+            "                        groupMode: characterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+            "                        impersonate: input.impersonate === true,",
+          ].join("\n"),
+          "prompt.group-macros.main-assembler",
+        );
+        source = replaceExact(
+          source,
+          [
+            "                    promptMacroContext.agentData = {",
+            "                        ...promptMacroContext.agentData,",
+            "                        ...assembled.macroAgentData,",
+            "                    };",
+            "                    lorebookPromptScanResult = assembled.lorebookScanResult ?? null;",
+          ].join("\n"),
+          [
+            "                    promptMacroContext.agentData = {",
+            "                        ...promptMacroContext.agentData,",
+            "                        ...assembled.macroAgentData,",
+            "                    };",
+            "                    promptMacroContext.outlets = assembled.lorebookScanResult?.outlets ?? promptMacroContext.outlets;",
+            "                    lorebookPromptScanResult = assembled.lorebookScanResult ?? null;",
+          ].join("\n"),
+          "prompt.outlet-nested-fields.main-final",
+        );
         source = replaceExact(
           source,
           [
@@ -303,6 +401,56 @@ export function patchServerModule(url, inputSource) {
         );
         return source;
       }
+      if (url.endsWith("/routes/generate/dry-run-route.js")) {
+        source = replaceExact(
+          source,
+          [
+            "            idleDuration: promptIdleDuration,",
+            "        });",
+            "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+          ].join("\n"),
+          [
+            "            idleDuration: promptIdleDuration,",
+            "            groupMode: characterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+            "        });",
+            "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+          ].join("\n"),
+          "prompt.group-macros.dry-run-context",
+        );
+        source = replaceExact(
+          source,
+          [
+            "                idleDuration: promptIdleDuration,",
+            "                impersonate,",
+          ].join("\n"),
+          [
+            "                idleDuration: promptIdleDuration,",
+            "                groupMode: characterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+            "                impersonate,",
+          ].join("\n"),
+          "prompt.group-macros.dry-run-assembler",
+        );
+        source = replaceExact(
+          source,
+          [
+            "            promptMacroContext.agentData = {",
+            "                ...promptMacroContext.agentData,",
+            "                ...assembled.macroAgentData,",
+            "            };",
+            "            finalMessages = assembled.messages;",
+          ].join("\n"),
+          [
+            "            promptMacroContext.agentData = {",
+            "                ...promptMacroContext.agentData,",
+            "                ...assembled.macroAgentData,",
+            "            };",
+            "            promptMacroContext.outlets = assembled.lorebookScanResult?.outlets ?? promptMacroContext.outlets;",
+            "            finalMessages = assembled.messages;",
+          ].join("\n"),
+          "prompt.outlet-nested-fields.dry-run-final",
+        );
+        return source;
+      }
       if (url.endsWith("/routes/generate/retry-agents-route.js")) {
         source = replaceExact(
           source,
@@ -359,6 +507,7 @@ const SERVER_PATCH_TARGETS = Object.freeze([
   ["services/agents/agent-executor.js", ["packages", "server", "dist", "services", "agents", "agent-executor.js"]],
   ["services/generation/committed-tracker-context.js", ["packages", "server", "dist", "services", "generation", "committed-tracker-context.js"]],
   ["routes/generate.routes.js", ["packages", "server", "dist", "routes", "generate.routes.js"]],
+  ["routes/generate/dry-run-route.js", ["packages", "server", "dist", "routes", "generate", "dry-run-route.js"]],
   ["routes/generate/retry-agents-route.js", ["packages", "server", "dist", "routes", "generate", "retry-agents-route.js"]],
   ["app.js", ["packages", "server", "dist", "app.js"]],
 ]);
