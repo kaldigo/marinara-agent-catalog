@@ -1,9 +1,17 @@
 import { registerHooks } from "node:module";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, resolve } from "node:path";
+import { createBridgeRuntime } from "../src/server/runtime.js";
+import { createPromptRegistry } from "../src/server/prompt-registry.js";
+import { createAgentResultRegistry } from "../src/server/result-registry.js";
+import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
+import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
+import { createHostLifecycleRegistry } from "../src/server/host-lifecycle-registry.js";
+import { prepareClientOverlay } from "../src/server/client-overlay.js";
 
 const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
+const SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
 export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.3"]);
 const disabled = process.env.MARI_BRIDGE_DISABLE === "1";
 
@@ -25,22 +33,6 @@ export function detectMarinaraEngine(entry = process.argv[1], cwd = process.cwd(
   return Object.freeze({ root: null, version: null });
 }
 
-function detectPreparedClientRoot(engineVersion) {
-  const dataDir = process.env.DATA_DIR;
-  if (!dataDir) return null;
-  const clientBase = resolve(dataDir, "mari-bridge", "client");
-  try {
-    const pointer = JSON.parse(readFileSync(resolve(dataDir, "mari-bridge", "client-current.json"), "utf8"));
-    const root = resolve(String(pointer?.root ?? ""));
-    if (pointer?.engineVersion !== engineVersion) return null;
-    if (root !== clientBase && !root.startsWith(`${clientBase}${sep}`)) return null;
-    if (readFileSync(resolve(root, ".mari-bridge-ready"), "utf8").trim() !== pointer?.fingerprint) return null;
-    return root;
-  } catch {
-    return null;
-  }
-}
-
 const detectedEngine = detectMarinaraEngine();
 const engineCompatible = SUPPORTED_ENGINE_VERSIONS.includes(detectedEngine.version);
 const kernel = globalThis[KERNEL_SYMBOL] ?? {
@@ -48,7 +40,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.18";
+kernel.version = "1.0.19";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -59,6 +51,117 @@ globalThis[KERNEL_SYMBOL] = kernel;
 function recordPatchFailure(patchId, detail) {
   kernel.patches[patchId] = "failed";
   if (!kernel.failures.includes(detail)) kernel.failures.push(detail);
+}
+
+function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
+  const promptRegistry = createPromptRegistry();
+  const agentResultRegistry = createAgentResultRegistry();
+  const trackerContextRegistry = createTrackerContextRegistry();
+  const groupSelectorRegistry = createGroupSelectorRegistry();
+  const hostLifecycleRegistry = createHostLifecycleRegistry();
+  const host = { app: null, hooksInstalled: false, diagnosticsInstalled: false };
+  const promptPatchApplied =
+    kernel.patches["prompt.assembler"] === "applied" &&
+    kernel.patches["prompt.generate-fallback"] === "applied";
+  const agentResultPatchApplied =
+    kernel.patches["agent.result-types"] === "applied" &&
+    kernel.patches["agent.result-apply-main"] === "applied" &&
+    kernel.patches["agent.result-apply-retry"] === "applied";
+  const trackerContextPatchApplied =
+    kernel.patches["tracker.context-committed-active"] === "applied" &&
+    kernel.patches["tracker.context-committed"] === "applied" &&
+    kernel.patches["tracker.context-agent"] === "applied";
+  const groupSelectorPatchApplied =
+    kernel.patches["group.selector-policy"] === "applied" &&
+    kernel.patches["group.selector-call"] === "applied";
+  const hostRequest = async (consumerId, input = {}) => {
+    if (!host.app) throw new Error("Mari Bridge host is not bound to Marinara yet");
+    const method = String(input.method ?? "GET").toUpperCase();
+    const path = String(input.path ?? input.url ?? "");
+    if (!path.startsWith("/api/")) throw new TypeError("Mari Bridge host requests must target /api routes");
+    const response = await host.app.inject({
+      method,
+      url: path,
+      headers: {
+        accept: "application/json",
+        "x-mari-bridge-internal": "1",
+        "x-mari-bridge-consumer": consumerId,
+        ...(input.headers ?? {}),
+      },
+      ...(input.body === undefined ? {} : { payload: input.body }),
+    });
+    let data = null;
+    if (response.payload) {
+      try { data = JSON.parse(response.payload); }
+      catch { data = response.payload; }
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      const message = data && typeof data === "object" && typeof data.error === "string"
+        ? data.error
+        : `Host request failed with HTTP ${response.statusCode}`;
+      const error = new Error(message);
+      error.statusCode = response.statusCode;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  };
+  const runtime = createBridgeRuntime({
+    capabilities: [
+      "diagnostics",
+      "runtime.health",
+      "consumer.sessions",
+      "host.lifecycle",
+      "host.request",
+      ...(promptPatchApplied ? ["prompt.inject", "prompt.suppress", "prompt.transform-final", "prompt.transform-history"] : []),
+      ...(clientOverlay ? ["client.bridge-first"] : []),
+      ...(agentResultPatchApplied ? ["agent.result-types"] : []),
+      ...(trackerContextPatchApplied ? ["tracker.context"] : []),
+      ...(groupSelectorPatchApplied ? ["group.selector"] : []),
+    ],
+    promptRegistry,
+    agentResultRegistry,
+    trackerContextRegistry,
+    groupSelectorRegistry,
+    hostLifecycleRegistry,
+    hostRequest,
+    patches: Object.entries(kernel.patches).map(([id, status]) => ({ id, status })),
+  });
+  runtime.markReady();
+  kernel.bindHost = (app) => {
+    host.app = app;
+    if (host.hooksInstalled) return runtime;
+    host.hooksInstalled = true;
+    if (!host.diagnosticsInstalled) {
+      host.diagnosticsInstalled = true;
+      const onRequest = async (request, reply) => {
+        if (!requirePrivilegedAccess(request, reply, { feature: "Mari Bridge diagnostics" })) return reply;
+      };
+      app.get("/api/mari-bridge/health", { onRequest }, async () => runtime.getSnapshot());
+      app.get("/api/mari-bridge/consumers", { onRequest }, async () => ({
+        consumers: runtime.getSnapshot().consumers,
+      }));
+    }
+    app.addHook("preHandler", async (request, reply) => {
+      try { await hostLifecycleRegistry.dispatch("preHandler", request, reply); }
+      catch (error) { app.log.warn(error, "[Mari Bridge] Host preHandler contribution failed"); }
+    });
+    app.addHook("onSend", async (request, reply, payload) => {
+      try { return await hostLifecycleRegistry.dispatch("onSend", request, reply, payload); }
+      catch (error) {
+        app.log.warn(error, "[Mari Bridge] Host onSend contribution failed");
+        return payload;
+      }
+    });
+    app.addHook("onResponse", async (request, reply) => {
+      try { await hostLifecycleRegistry.dispatch("onResponse", request, reply); }
+      catch (error) { app.log.warn(error, "[Mari Bridge] Host onResponse contribution failed"); }
+    });
+    return runtime;
+  };
+  kernel.runtime = runtime;
+  globalThis[SERVER_SYMBOL] = runtime;
+  return runtime;
 }
 
 function replaceExact(source, anchor, replacement, patchId) {
@@ -101,11 +204,8 @@ export function patchServerModule(url, inputSource) {
             "        }",
           ].join("\n"),
           [
-            "for (const runtimePackage of (await capabilityPackageManager.runtimePackages()).sort((left, right) => {",
-            "      if (left.installed.id === \"mari-bridge\") return -1;",
-            "      if (right.installed.id === \"mari-bridge\") return 1;",
-            "      return 0;",
-            "    })) {",
+            "globalThis[Symbol.for(\"marinara.mari-bridge.kernel.v1\")]?.bindHost?.(app);",
+            "        for (const runtimePackage of await capabilityPackageManager.runtimePackages()) {",
             "            await this.activateOne(app, runtimePackage, true, false);",
             "        }",
             "        for (const installed of await capabilityPackageManager.installed()) {",
@@ -699,17 +799,44 @@ if (disabled) {
 } else if (!preflightServerPatches(detectedEngine.root)) {
   kernel.active = false;
 } else {
-  kernel.active = true;
-  kernel.patches["engine.version"] = "applied";
+  const serverRoot = resolve(detectedEngine.root, "packages", "server");
+  const dataDir = resolve(serverRoot, process.env.DATA_DIR || "data");
   kernel.nativeClientRoot = resolve(detectedEngine.root, "packages", "client", "dist");
-  kernel.clientRoot = detectPreparedClientRoot(detectedEngine.version) ?? undefined;
-  registerHooks({
-    load(url, context, nextLoad) {
-      const result = nextLoad(url, context);
-      if (result.format !== "module" || result.source == null) return result;
-      const inputSource = decodeModuleSource(result.source);
-      const source = patchServerModule(url, inputSource);
-      return source === inputSource ? result : { ...result, source };
-    },
-  });
+  try {
+    const clientOverlay = await prepareClientOverlay({
+      dataDir,
+      sourceRoot: kernel.nativeClientRoot,
+      engineVersion: detectedEngine.version,
+    });
+    kernel.clientRoot = clientOverlay.root;
+    kernel.clientOverlay = Object.freeze({ root: clientOverlay.root, fingerprint: clientOverlay.fingerprint });
+    kernel.patches["client.bridge-first"] = "applied";
+    for (const patchId of clientOverlay.patches ?? []) kernel.patches[patchId] = "applied";
+    kernel.active = true;
+    kernel.patches["engine.version"] = "applied";
+    registerHooks({
+      load(url, context, nextLoad) {
+        const result = nextLoad(url, context);
+        if (result.format !== "module" || result.source == null) return result;
+        const inputSource = decodeModuleSource(result.source);
+        const source = patchServerModule(url, inputSource);
+        return source === inputSource ? result : { ...result, source };
+      },
+    });
+    const { requirePrivilegedAccess } = await import(pathToFileURL(resolve(
+      detectedEngine.root,
+      "packages",
+      "server",
+      "dist",
+      "middleware",
+      "privileged-gate.js",
+    )).href);
+    createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess);
+  } catch (error) {
+    kernel.active = false;
+    recordPatchFailure(
+      "client.overlay",
+      `Could not prepare injected client overlay: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }

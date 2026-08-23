@@ -11,13 +11,13 @@
   "package": {
     "id": "mari-bridge",
     "name": "Mari Bridge",
-    "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
+    "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
     "engine": {
       "min": "2.4.3",
       "maxExclusive": "2.4.4"
     },
     "kind": ["agent"],
-    "permissions": ["agent-runtime", "prompt-context", "routes", "storage", "ui"],
+    "permissions": ["agent-runtime"],
     "restartRequired": true
   }
 }

@@ -9,9 +9,10 @@ awkward.
 Decision: create `mari-bridge` as a real capability package. Keep
 `_mari-bridge` as the thin shared source/SDK layer used by consumer builds.
 
-Reason: one installed runtime should own patch ordering, compatibility,
-diagnostics, and native client mounts. Bundling a patcher into every consumer
-would create conflicting transforms and version skew.
+Reason: one installed bundle should own patch ordering, compatibility, and
+native client mounts. The package installs that bundle; the preload creates the
+runtime before consumers. Bundling a patcher into every consumer would create
+conflicting transforms and version skew.
 
 Constraint: Marinara currently has no package dependency field, so consumers
 must detect and report a missing bridge until dependency installation exists.
@@ -38,9 +39,10 @@ bootstrap used when the Docker command did not preload the module hook.
 
 ## D-004: Package installation plus normal restart is the target UX
 
-Decision: the package prepares its own loader/overlay and transparently
-bootstraps after the package restart. Manual Compose environment changes are
-optional, not required.
+Decision: the package installs its loader/runtime bundle and transparently
+bootstraps after the package restart. The injected loader prepares the overlay;
+ordinary package activation does not own it. Manual Compose environment changes
+are optional, not required.
 
 Consequence: a zero-configuration Docker cold start may have one short internal
 graceful bootstrap bounce. An externally supplied `--import` avoids it.
@@ -206,16 +208,16 @@ status naming the missing runtime, version, patch, or capability.
 
 ## D-019: Mari Bridge starts before its consumers
 
-Decision: the early patch layer enforces bridge-first server package activation
-and client runtime initialization. Runtime package order cannot be left to
-installation order because consumers must not deadlock waiting for a bridge
-package scheduled later in the same sequential activation pass.
+Decision: the early patch layer owns server and client runtime initialization.
+Runtime package order cannot be part of the contract because consumers must not
+wait for a bridge package scheduled later in the same activation pass.
 
-The preload kernel exists before Engine imports; the installed server runtime
-is activated before consumers; and the client runtime is prepended directly to
-Marinara's fingerprinted patched main module. Consumer client entrypoints cannot
-execute first. The SDK check is therefore deterministic, not a timing race,
-polling loop, or separate bootstrap-module dependency.
+The preload kernel exists before Engine imports and creates the server runtime
+before the native package loop. The installed package only updates the stable
+preload and requests a guarded version handoff. The client runtime is a static
+dependency of Marinara's fingerprinted patched main module, so ESM dependency
+evaluation must complete before the native entry body can execute. Both SDK
+checks are therefore deterministic, not timing races or polling loops.
 
 ## D-020: Native Marinara owns the default workflow
 

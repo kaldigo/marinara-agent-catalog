@@ -8,6 +8,9 @@ const root = path.join(projectRoot, "dist", "package");
 const manifest = JSON.parse(await fs.readFile(path.join(root, "manifest.json"), "utf8"));
 assert.equal(manifest.id, "mari-bridge");
 assert.equal(manifest.restartRequired, true);
+assert.deepEqual(manifest.entrypoints, { server: "server.mjs" });
+assert.deepEqual(manifest.permissions, ["agent-runtime"]);
+assert.equal(manifest.contributions, undefined);
 for (const entrypoint of Object.values(manifest.entrypoints)) await fs.access(path.join(root, entrypoint));
 for (const required of [
   "bootstrap/register.mjs",

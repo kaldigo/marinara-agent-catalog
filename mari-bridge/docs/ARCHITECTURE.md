@@ -48,44 +48,35 @@ property:
 const PROMPT_CONTROL = Symbol.for("marinara.prompt-control.v1");
 ```
 
-Patched Engine code calls a small, synchronous adapter. The installed package
-later populates the registry with registered consumer contributions. If the
-registry is absent, every adapter call must return the unchanged native value.
+Patched Engine code calls a small, synchronous adapter. The preload constructs
+the registry before importing Engine code; consumer packages only add their
+scoped contributions later. If the registry is absent, every adapter call must
+return the unchanged native value.
 
 The loader is the patch mechanism. The bootstrap bounce described in
 `BOOTSTRAP.md` is only a way to ensure the loader runs early enough without
 requiring Docker configuration.
 
-### 2. Installed server runtime
+### 2. Installer package
 
-The normal `server.mjs` capability entrypoint should:
+The normal `server.mjs` capability entrypoint only:
 
-- materialize the stable loader and overlay assets under
+- materializes the stable loader and its runtime modules under
   `DATA_DIR/mari-bridge/`;
-- expose a versioned service such as `mari-bridge:v1` through
-  `registerService`;
-- publish the consumer-facing bridge registry through a versioned global symbol
-  in the shared Node realm;
-- register package routes for status, diagnostics, prompt previews, and
-  consumer configuration;
-- accept consumer prompt, lifecycle, command, UI, and generation
-  registrations;
-- provide normalized host-route/persistence access, native prompt macro
-  resolution, and configured Agent-category model execution;
-- report target fingerprints and patch results;
-- coordinate a guarded bootstrap when the loader was not active early enough;
-- leave bootstrap assets in place during the one-shot graceful restart.
+- coordinates a guarded version handoff when the loader is missing or changed;
+- verifies that the installed files exist;
+- otherwise performs no runtime, route, prompt, UI, SDK, or consumer work.
 
-Normal runtime cleanup must unregister services, routes, callbacks, timers, and
-client registrations. It must not delete persistent bootstrap files during an
-internal bootstrap restart.
+The injected preload owns the versioned server registry, scoped sessions,
+prompt/result/tracker hooks, host binding, client overlay preparation, and
+client registry. Those facilities remain available independently of installer
+package activation order.
 
 ### 3. Client overlay and native registry
 
-The existing client capability loader can load the Mari Bridge client
-entrypoint, but it cannot create mount points that the native React tree does
-not contain. A version-specific client overlay therefore patches small native
-call sites so they render bridge slots.
+Mari Bridge has no client package entrypoint. A version-specific client overlay
+patches small native call sites so they render bridge slots, and makes the
+client runtime a static dependency of Marinara's main entry module.
 
 Consumer client modules register contributions with a versioned external
 store. Patched React components create bridge-owned hosts at exact native call
@@ -140,7 +131,7 @@ runs no feature callback; later loss of a required capability revokes the
 session and runs cleanup once.
 
 Migration is package-by-package, but each surviving consumer is rewritten for
-the new API. The installed runtime's scoped capability elements are an explicit
+the new API. The injected runtime's scoped capability elements are an explicit
 native-slot transport, not compatibility with the old DOM-slot finder. The
 runtime does not restore DOM observers, global generation events, button
 probing, or fetch interceptors. Migrated packages have no old-bridge fallback.
@@ -156,21 +147,24 @@ The early loader must make activation order deterministic:
 ```text
 preload kernel and patch registry
   -> verify required Engine patches
-  -> activate installed mari-bridge server runtime first
-  -> mark server registry ready
+  -> prepare the verified client overlay
+  -> create and mark the injected server registry ready
+  -> bind it to the native Fastify host
   -> activate consumer server packages through SDK checks
 
 patched Marinara client main module
-  -> initialize the injected mari-bridge client registry/store first
+  -> evaluate its mari-bridge runtime dependency first
+  -> initialize the injected mari-bridge client registry/store
   -> mark client registry ready
   -> load consumer client entrypoints through SDK checks
 ```
 
 Waiting inside an arbitrarily ordered sequential package activation loop is not
-acceptable; it could deadlock when a consumer is encountered before Mari
-Bridge. The loader reorders server activation explicitly. On the client, the
-overlay prepends the complete bridge runtime to Marinara's fingerprinted main
-module, so native capability imports cannot begin before the registry is ready.
+acceptable. The server registry exists before that loop and is bound at its
+verified host call site; the installer package is not involved. On the client,
+the overlay makes the complete bridge runtime a static dependency of Marinara's
+fingerprinted main module, so dependency evaluation finishes before native
+capability loading can begin.
 
 Health is capability-specific. A client UI patch failure does not necessarily
 disable a server-only consumer, but any consumer requiring that UI capability

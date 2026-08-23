@@ -119,8 +119,8 @@ root registry. It includes only validated APIs/capabilities, an abort signal for
 revocation, cleanup registration, and current health. The session is bound to
 the declared consumer/package identity.
 
-Only one installed runtime owns each subsystem. Duplicate activation with the
-same implementation is idempotent; an incompatible duplicate fails explicitly.
+Only one injected runtime owns each subsystem. Duplicate initialization with
+the same implementation is idempotent; an incompatible duplicate fails explicitly.
 The old bundled-copy "newest wins" behavior is not a public compatibility API,
 because all consumers will be rewritten, but ownership and version negotiation
 remain required for safe activation and package updates.

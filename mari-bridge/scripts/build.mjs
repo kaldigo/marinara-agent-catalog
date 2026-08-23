@@ -12,22 +12,17 @@ await fs.cp(path.join(projectRoot, "src"), path.join(packageRoot, "src"), { recu
 await fs.cp(path.join(projectRoot, "bootstrap"), path.join(packageRoot, "bootstrap"), { recursive: true });
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 await fs.writeFile(path.join(packageRoot, "server.mjs"), 'export { activate, selfCheck } from "./src/server/index.js";\n');
-await fs.writeFile(
-  path.join(packageRoot, "client.js"),
-  await fs.readFile(path.join(projectRoot, "src", "client", "runtime.js"), "utf8"),
-);
 await fs.writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify({
   schemaVersion: 1,
   id: "mari-bridge",
   name: "Mari Bridge",
   version,
-  description: "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
+  description: "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
   engine: { min: "2.4.3", maxExclusive: "2.4.4" },
   kind: ["agent"],
-  entrypoints: { server: "server.mjs", client: "client.js" },
-  contributions: { slots: ["chat-runtime"] },
+  entrypoints: { server: "server.mjs" },
   files: [{ path: "server.mjs", sha256: "0".repeat(64), bytes: 0 }],
-  permissions: ["agent-runtime", "prompt-context", "routes", "storage", "ui"],
+  permissions: ["agent-runtime"],
   restartRequired: true,
 }, null, 2)}\n`);
 console.log(`Built Mari Bridge prepared package: ${path.relative(projectRoot, packageRoot)}`);

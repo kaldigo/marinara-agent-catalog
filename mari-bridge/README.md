@@ -7,10 +7,10 @@ This folder contains the published package implementation:
 
 - `includeInMain` is `true`.
 - `processing.kind` is `package-build`.
-- The prepared package emits server and client entrypoints plus a stable Node
-  preload.
-- The server/client runtime exposes health, diagnostics, version negotiation,
-  scoped consumer sessions, cleanup, and revocation.
+- The prepared package emits one installer server entrypoint plus a stable Node
+  preload and its self-contained runtime modules.
+- The injected server/client runtime exposes version negotiation, scoped
+  consumer sessions, cleanup, and revocation before packages are loaded.
 - The `_mari-bridge/sdk` wrappers fail closed before consumer code runs.
 
 The consumer SDK is stable at API major version 1. Engine source patches remain
@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.18` supports Marinara Engine 2.4.3 and adds package-owned structured
+Version `1.0.19` supports Marinara Engine 2.4.3 and adds package-owned structured
 agent result types, committed and agent-facing tracker-context sections, native
 Agent Suite tracker-data registrations, and native tracker-section contributions
 and Roleplay HUD mount points. Agent Suite tracker-data registrations receive a
@@ -54,11 +54,12 @@ contributions are inserted inside Marinara's ordered section list and receive
 the native section header, collapse behavior, edit mode, active-agent state,
 and rerun callback; consumers provide only descriptors and feature-specific
 body content. It also
-retains the package-owned loader, SDK dependency gate, prompt kernel, and first
-client lifecycle patches. Count-checked
-transforms make `mari-bridge` activate first, serve its client before the Engine
-client, patch both preset assembly and no-preset provider preparation, and emit
-native active-chat and generation-controller events. It also owns per-chat streamed dry runs through
+retains the injected loader, SDK dependency gate, prompt kernel, and first
+client lifecycle patches. Count-checked transforms build the complete runtime
+inside the preload, patch both preset assembly and no-preset provider
+preparation, and emit native active-chat and generation-controller events. The
+installed package is only the versioned installer and restart handoff; consumer
+ordering no longer depends on its activation. The injected runtime also owns per-chat streamed dry runs through
 `generation.draft`; patched Roleplay commands receive `context.setDraft(text)`,
 which writes through Marinara's persisted draft store after the originating
 screen unmounts. The isolated test instance verifies the bridge and its current
@@ -89,9 +90,12 @@ background store at its native selector and lets an active-chat consumer apply
 an already-persisted URL and blur immediately. Consumers do not render a second
 background or own a competing cache.
 
-The client runtime is prepended directly to Marinara's patched main module. It
-is ready before Marinara can import any capability client, with no package-load
-ordering, polling delay, or separate bootstrap-module dependency.
+The client runtime is emitted inside the patched client overlay and imported as
+a static dependency of Marinara's main module. ESM dependency evaluation and
+runtime initialization finish before Marinara's entry body can start any
+capability client. It does not fetch package health or wait for the
+`mari-bridge` client package, and there is no package-load ordering or polling
+delay.
 
 Before registering Node loader hooks, the preload requires an exact supported
 Engine version and preflights every target module and anchor. A version mismatch,
@@ -141,11 +145,11 @@ or legacy compatibility layer.
 
 The intended split is:
 
-- `mari-bridge`: one installed runtime that owns host patching and shared
-  registries.
+- `mari-bridge`: the installer that versions the stable preload/runtime bundle
+  and performs guarded restart handoffs.
 - `_mari-bridge`: the mandatory thin build-time SDK bundled into every consumer.
   It is the sole supported consumer integration surface: it verifies that the
-  installed runtime is healthy and compatible, acquires a scoped consumer
+  injected runtime is healthy and compatible, acquires a scoped consumer
   session, registers/cleans up behavior, and exposes the typed client/server
   session contracts.
 
@@ -153,7 +157,7 @@ Marinara's current package manifest does not declare package-to-package
 dependencies, so every migrated consumer uses the SDK as a deterministic
 runtime dependency gate; see `docs/IMPLEMENTATION-PLAN.md`.
 
-Every active consumer will be rewritten for the new contracts. The installed
+Every active consumer will be rewritten for the new contracts. The injected
 runtime will not emulate the old custom elements, DOM slots, global events, or
 fetch interception. Response Keeper is retired, Persona Reapply is archived,
 and Memory Core remains out of scope while it is a WIP.

@@ -196,7 +196,7 @@ globalThis.document = {
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.18");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.19");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -204,7 +204,7 @@ assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), 
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.tracker-section"), true);
 assert.equal(typeof globalThis[clientSymbol].renderNativeTrackerSections, "function");
-assert.equal(typeof customElements.get("marinara-capability-mari-bridge"), "function");
+assert.equal(customElements.get("marinara-capability-mari-bridge"), undefined);
 assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
 const hudRoot = new HTMLElement();
 const mobileHudGroup = new HTMLElement(["md:hidden"]);
@@ -520,15 +520,20 @@ const preparedClientOverlay = await prepareClientOverlay({
 });
 const preparedOverlayIndex = await fs.readFile(path.join(preparedClientOverlay.root, "index.html"), "utf8");
 const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.root, "assets", "index-main.js"), "utf8");
+const preparedOverlayAssets = await fs.readdir(path.join(preparedClientOverlay.root, "assets"));
+const preparedRuntimeName = preparedOverlayAssets.find((name) => /^mari-bridge-runtime-[a-f0-9]{16}\.js$/u.test(name));
+assert.ok(preparedRuntimeName);
+const preparedOverlayRuntime = await fs.readFile(
+  path.join(preparedClientOverlay.root, "assets", preparedRuntimeName),
+  "utf8",
+);
 assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
-assert.equal(preparedOverlayMain.startsWith("{\nconst API_VERSION = Object.freeze"), true);
-assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.18"/u);
-assert.equal(
-  preparedOverlayMain.indexOf("const API_VERSION") <
-    preparedOverlayMain.indexOf('window.dispatchEvent(new CustomEvent("marinara:active-chat"'),
-  true,
-);
+assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
+assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.19"/u);
+assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
+assert.match(preparedOverlayMain, /window\.dispatchEvent\(new CustomEvent\("marinara:active-chat"/u);
 
 const bootstrapFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-check-"));
 const bootstrapSource = path.join(bootstrapFixtureRoot, "source.mjs");
@@ -551,11 +556,30 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.18"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.18" }, false, "1.0.18"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.17" }, false, "1.0.18"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.18" }, true, "1.0.18"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.19"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.19" }, false, "1.0.19"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.18" }, false, "1.0.19"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.19" }, true, "1.0.19"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
+globalThis[kernelSymbol] = { active: true, version: "1.0.19", failures: [] };
+const installerHooks = [];
+const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
+await installer.activate({
+  dataDir: bootstrapFixtureRoot,
+  app: { addHook(name, callback) { installerHooks.push({ name, callback }); } },
+  api: { runtime: { logger: { info() {} } } },
+});
+await installer.selfCheck();
+for (const relativePath of [
+  "bootstrap/register.mjs",
+  "src/shared/contracts.js",
+  "src/server/runtime.js",
+  "src/server/client-overlay.js",
+  "src/client/runtime.js",
+]) {
+  await fs.access(path.join(bootstrapFixtureRoot, "mari-bridge", relativePath));
+}
+assert.equal(installerHooks.some((hook) => hook.name === "onReady"), true);
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
 assert.deepEqual(bootstrapResult, { scheduled: false, reason: "preload-active" });
@@ -596,6 +620,14 @@ const finalized = await prompts.finalizeAssemblerMessages(prepared, prepared.cha
 assert.equal(finalized[0].content, "Package state");
 assert.equal(finalized[1].contextKind, "history");
 const bootstrapPatchSource = await fs.readFile(new URL("../bootstrap/register.mjs", import.meta.url), "utf8");
+const installerSource = await fs.readFile(new URL("../src/server/index.js", import.meta.url), "utf8");
+assert.match(bootstrapPatchSource, /createInjectedServerRuntime/u);
+assert.match(bootstrapPatchSource, /prepareClientOverlay/u);
+assert.match(bootstrapPatchSource, /bindHost/u);
+assert.match(bootstrapPatchSource, /requirePrivilegedAccess/u);
+assert.match(bootstrapPatchSource, /\/api\/mari-bridge\/health/u);
+assert.match(installerSource, /STABLE_RUNTIME_FILES/u);
+assert.doesNotMatch(installerSource, /createBridgeRuntime|prepareClientOverlay|createDiagnosticsRoutes/u);
 assert.match(bootstrapPatchSource, /prompt\.generate-fallback/u);
 assert.match(bootstrapPatchSource, /prompt\.active-agents\.assembler/u);
 assert.match(bootstrapPatchSource, /prompt\.active-agents\.context/u);
@@ -628,7 +660,8 @@ const patchedPackageStartup = patchServerModule(
   "file:///engine/capability-module-runtime.service.js",
   packageStartupFixture,
 );
-assert.match(patchedPackageStartup, /left\.installed\.id === "mari-bridge"/u);
+assert.match(patchedPackageStartup, /bindHost\?\.\(app\)/u);
+assert.doesNotMatch(patchedPackageStartup, /left\.installed\.id === "mari-bridge"/u);
 assert.match(patchedPackageStartup, /installed\.status === "restart-required"/u);
 assert.match(patchedPackageStartup, /markRuntimeStatus\(installed\.id, "active"\)/u);
 assert.match(patchedPackageStartup, /bridgeStartupError/u);
