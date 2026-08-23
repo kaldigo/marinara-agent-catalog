@@ -348,6 +348,18 @@ package variables, conditionals, and date/time. Unknown macros should remain
 visible unless the native resolver defines different behavior; never silently
 delete arbitrary tokens.
 
+The injected preset context currently adds three native-style read macros:
+
+- `{{active-agents}}` resolves to the comma-separated active agent IDs;
+- `{{group_scenario_override}}` resolves to the trimmed shared group scenario
+  or an empty string;
+- `{{group_mode}}` resolves to exactly `SOLO`, `MERGED`, or `INDIVIDUAL`, using
+  the full chat roster to distinguish a group from a solo chat.
+
+They must remain usable anywhere a native read macro is usable, including bare
+conditional operands, comparisons and `contains`, variable write values,
+nested character fields, and bracketed per-character expansion.
+
 ## Native generation lifecycle
 
 Normal prompt agents must use Marinara's native agent runner. Commands that are
@@ -383,6 +395,7 @@ Replace active-chat polling with events from exact native call sites:
 ```ts
 bridgeSession.chat.active.getSnapshot();
 bridgeSession.chat.active.subscribe(listener);
+bridgeSession.chat.background.set({ chatId, url, blurPx });
 bridgeSession.lifecycle.register(listener);
 ```
 
@@ -390,6 +403,14 @@ Chat events include the active chat ID and workflow. Host lifecycle events are
 added only for an active consumer and carry structured native state. Presence
 uses these events for roster/message reconciliation and writes Marinara's native
 message visibility fields. Presence does not observe or alter summaries.
+
+`chat.background` is active-chat scoped. Mari Bridge binds Marinara's existing
+Roleplay background store at its native selector, and `set` delegates to the
+store's native `setChatBackground` action after the consumer has persisted its
+metadata. It returns `false` for a non-active chat or before the native store is
+available. The Bridge retains only the live blur associated with that owner and
+URL; it does not render a second background, persist metadata, or introduce a
+parallel background cache.
 
 ## Slash commands and native composer actions
 
@@ -416,6 +437,18 @@ Roleplay command contexts expose `setDraft(text)` when the consumer requires
 stream independently of the mounted chat surface, while `setDraft` commits each
 update through Marinara's native per-chat draft store. Consumers stop their own
 run with `bridgeSession.drafts.abort(chatId)`.
+
+Draft requests use Marinara's native request fields. `generationGuide` carries
+guidance without replacing the impersonation prompt. An impersonation draft may
+send `impersonateContinuation` to place an existing draft in the provider's
+assistant-prefill position; the dry-run result then includes the generated
+`continuation` separately. Non-impersonation dry runs may opt into reasoning
+with `includeReasoning: true`, producing `thinking` stream events and a final
+`reasoning` value. Impersonation runs always suppress reasoning exposure.
+
+The compatibility return remains the generated string. Callers that need the
+structured fields may set `returnDetails: true`; `output: "continuation"`
+selects the continuation for ordinary string updates and return values.
 
 ## Client registration
 

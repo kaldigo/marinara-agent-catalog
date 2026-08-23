@@ -2,10 +2,13 @@ import fs from "node:fs/promises";
 
 const runtimeSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(runtimeSource.includes("bridgeSession.chat.active.subscribe"), "client follows the native active-chat event");
+assert(runtimeSource.includes('"chat.background"'), "client requires the native live-background service");
+assert(runtimeSource.includes("bridgeSession.chat.background.set"), "client updates Marinara's native background store after persistence");
 assert(runtimeSource.includes("bridgeSession.generation.subscribe"), "client refreshes after the native generation lifecycle settles");
 assert(runtimeSource.includes("marinara-capability-server-event"), "client listens for committed World Maps changes");
 assert(runtimeSource.includes("spatial_transition_committed"), "client reacts to committed spatial transitions");
 assert(runtimeSource.includes("spatial_context_refresh"), "client reacts to reconciled spatial context");
+assert(runtimeSource.includes("existing.pending = true"), "location events arriving during synchronization receive a trailing reconciliation");
 assert(runtimeSource.includes("/spatial-context"), "client reads the native World Maps spatial context");
 assert(runtimeSource.includes("/global-gallery"), "client resolves native World Maps gallery references");
 assert(runtimeSource.includes("useReferenceImage"), "client respects the location reference-image flag");

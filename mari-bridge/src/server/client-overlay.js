@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v15";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v16";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
@@ -347,17 +347,27 @@ export function patchRoleplayHudBridge(source) {
 
 export function patchRoleplayBackgroundBridge(source) {
   if (!source.includes('"rpg-chat-area mari-chat-area')) return null;
+  const storePattern = /(?<background>[A-Za-z_$][\w$]*)=(?<store>[A-Za-z_$][\w$]*)\((?<selector>[A-Za-z_$][\w$]*)=>\k<selector>\.chatBackground\)/gu;
+  const storeMatches = [...source.matchAll(storePattern)];
+  if (storeMatches.length !== 1) {
+    throw new Error(`Mari Bridge Roleplay background patch expected one native background store selector, found ${storeMatches.length}`);
+  }
+  const storeMatch = storeMatches[0];
+  let patched = source.replace(
+    storePattern,
+    `${storeMatch.groups.background}=(${CLIENT_SYMBOL_EXPRESSION}?.bindRoleplayBackgroundStore(${storeMatch.groups.store}),${storeMatch.groups.store}(${storeMatch.groups.selector}=>${storeMatch.groups.selector}.chatBackground))`,
+  );
   const pattern = /(?<jsx>[A-Za-z_$][\w$]*)\.jsx\((?<component>[A-Za-z_$][\w$]*),\{url:(?<url>[A-Za-z_$][\w$]*),blurPx:(?<blur>[A-Za-z_$][\w$]*)\}\)/gu;
-  const matches = [...source.matchAll(pattern)];
+  const matches = [...patched.matchAll(pattern)];
   if (matches.length !== 1) {
     throw new Error(`Mari Bridge Roleplay background patch expected one native background render, found ${matches.length}`);
   }
   const match = matches[0];
-  const after = source.slice(match.index + match[0].length, match.index + match[0].length + 6_000);
+  const after = patched.slice(match.index + match[0].length, match.index + match[0].length + 6_000);
   const metadata = after.match(/[A-Za-z_$][\w$]*&&(?<metadata>[A-Za-z_$][\w$]*)\.enableAgents&&/u)?.groups?.metadata;
   if (!metadata) throw new Error("Mari Bridge Roleplay background patch could not identify chat metadata");
   const { jsx, component, url, blur } = match.groups;
-  return source.replace(
+  return patched.replace(
     pattern,
     `${jsx}.jsx(${component},{...(${CLIENT_SYMBOL_EXPRESSION}?.resolveBackgroundProps(${metadata},${url},${blur})??{url:${url},blurPx:${blur}})})`,
   );

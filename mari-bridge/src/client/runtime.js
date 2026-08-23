@@ -1,4 +1,4 @@
-const API_VERSION = Object.freeze({ major: 1, minor: 2 });
+const API_VERSION = Object.freeze({ major: 1, minor: 3 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
@@ -110,6 +110,8 @@ function createDraftGenerationService() {
         runId: run.runId,
         status: run.status,
         content: run.content,
+        continuation: run.continuation,
+        reasoning: run.reasoning,
       }));
     return Object.freeze({ active: Object.freeze(runs), activeCount: runs.length });
   }
@@ -124,7 +126,16 @@ function createDraftGenerationService() {
     if (!chatId) throw new TypeError("Mari Bridge draft generation requires chatId");
     if (activeByChat.has(chatId)) throw new Error("A draft generation is already running for this chat");
     const controller = new AbortController();
-    const run = { ownerId, chatId, runId: "", status: "starting", content: "", controller };
+    const run = {
+      ownerId,
+      chatId,
+      runId: "",
+      status: "starting",
+      content: "",
+      continuation: "",
+      reasoning: "",
+      controller,
+    };
     activeByChat.set(chatId, run);
     publish(run);
     try {
@@ -150,20 +161,45 @@ function createDraftGenerationService() {
       publish(run);
       await readDraftEventStream(response.body, (event) => {
         if (event.type === "dryrun_started") run.runId = String(event.data?.runId ?? "");
-        else if (event.type === "token") run.content += String(event.data ?? "");
-        else if (event.type === "result") run.content = String(event.data?.content ?? run.content);
-        else if (event.type === "content_replace") run.content = String(event.data ?? "");
-        else if (event.type === "text_rewrite" && event.data?.editedText != null) {
+        else if (event.type === "token") {
+          const chunk = String(event.data ?? "");
+          run.content += chunk;
+          run.continuation += chunk;
+        } else if (event.type === "thinking") {
+          run.reasoning += String(event.data ?? "");
+          input.onReasoning?.(run.reasoning, Object.freeze({ type: event.type, runId: run.runId }));
+        } else if (event.type === "result") {
+          run.content = String(event.data?.content ?? run.content);
+          run.continuation = String(event.data?.continuation ?? run.content);
+          run.reasoning = String(event.data?.reasoning ?? run.reasoning);
+        } else if (event.type === "content_replace") {
+          run.content = String(event.data ?? "");
+          run.continuation = run.content;
+        } else if (event.type === "text_rewrite" && event.data?.editedText != null) {
           run.content = String(event.data.editedText);
+          run.continuation = run.content;
         } else if (event.type === "error") {
           throw new Error(String(event.data?.error ?? event.data ?? "Draft generation failed"));
         }
-        input.onUpdate?.(run.content, Object.freeze({ type: event.type, runId: run.runId }));
+        const output = input.output === "continuation" ? run.continuation : run.content;
+        input.onUpdate?.(output, Object.freeze({
+          type: event.type,
+          runId: run.runId,
+          reasoning: run.reasoning,
+        }));
         publish(run);
       });
       run.status = "complete";
-      input.onUpdate?.(run.content, Object.freeze({ type: "complete", runId: run.runId }));
-      return run.content;
+      const output = input.output === "continuation" ? run.continuation : run.content;
+      input.onUpdate?.(output, Object.freeze({ type: "complete", runId: run.runId, reasoning: run.reasoning }));
+      return input.returnDetails === true
+        ? Object.freeze({
+            content: run.content,
+            continuation: run.continuation,
+            reasoning: run.reasoning,
+            runId: run.runId,
+          })
+        : output;
     } finally {
       if (activeByChat.get(chatId) === run) activeByChat.delete(chatId);
       publish(run);
@@ -749,10 +785,59 @@ function createActiveChatLifecycle() {
   });
 }
 
+function createRoleplayBackgroundService(activeChat) {
+  let nativeStore = null;
+  let live = null;
+
+  function bindStore(store) {
+    if (typeof store !== "function" || typeof store.getState !== "function") return false;
+    nativeStore = store;
+    return true;
+  }
+
+  function set(ownerId, input) {
+    const chatId = String(input?.chatId ?? "").trim();
+    if (!chatId || activeChat.getSnapshot().chatId !== chatId) return false;
+    const url = typeof input?.url === "string" && input.url.trim() ? input.url.trim() : null;
+    const blurPx = Math.max(0, Math.min(24, Math.round(Number(input?.blurPx) || 0)));
+    const state = nativeStore?.getState?.();
+    if (typeof state?.setChatBackground !== "function") return false;
+    live = Object.freeze({ ownerId, chatId, url, blurPx });
+    state.setChatBackground(url);
+    return true;
+  }
+
+  function release(ownerId) {
+    if (live?.ownerId === ownerId) live = null;
+  }
+
+  function resolve(metadataValue, url, blurPx) {
+    const activeChatId = activeChat.getSnapshot().chatId;
+    if (live?.chatId === activeChatId && live.url === url) {
+      return Object.freeze({ url, blurPx: live.blurPx });
+    }
+    let metadata = metadataValue;
+    if (typeof metadata === "string") {
+      try { metadata = JSON.parse(metadata || "{}"); } catch { metadata = {}; }
+    }
+    const settings = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? metadata.worldMapBackground
+      : null;
+    const owned = settings && typeof settings === "object" && settings.currentUrl === url;
+    return Object.freeze({
+      url,
+      blurPx: owned ? Math.max(0, Math.min(24, Math.round(Number(settings.blur) || 0))) : blurPx,
+    });
+  }
+
+  return Object.freeze({ bindStore, set, release, resolve });
+}
+
 function createClientRuntime(serverHealth) {
   const consumers = new Map();
   const generation = createGenerationLifecycle();
   const activeChat = createActiveChatLifecycle();
+  const roleplayBackground = createRoleplayBackgroundService(activeChat);
   const commands = createCommandRegistry();
   const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
@@ -761,6 +846,7 @@ function createClientRuntime(serverHealth) {
   const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui);
   const capabilities = new Set([
     "chat.active",
+    "chat.background",
     "agent-suite.tracker-data",
     "client.bridge-first",
     "commands",
@@ -778,7 +864,7 @@ function createClientRuntime(serverHealth) {
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.16",
+    implementationVersion: "1.0.18",
     status: "ready",
     capabilities,
     serverHealth,
@@ -818,6 +904,12 @@ function createClientRuntime(serverHealth) {
               const unsubscribe = activeChat.subscribe(listener, options);
               cleanups.push(unsubscribe);
               return unsubscribe;
+            },
+          }),
+          background: Object.freeze({
+            set(input) {
+              if (!required.includes("chat.background")) throw new Error(`${consumerId} did not require chat.background`);
+              return roleplayBackground.set(consumerId, input);
             },
           }),
         }),
@@ -886,6 +978,7 @@ function createClientRuntime(serverHealth) {
           consumers.delete(consumerId);
           controller.abort(reason);
           drafts.abortOwner(consumerId);
+          roleplayBackground.release(consumerId);
           for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
         },
       });
@@ -909,18 +1002,10 @@ function createClientRuntime(serverHealth) {
       return String(template).replaceAll("{{input}}", String(input ?? ""));
     },
     resolveBackgroundProps(metadataValue, url, blurPx) {
-      let metadata = metadataValue;
-      if (typeof metadata === "string") {
-        try { metadata = JSON.parse(metadata || "{}"); } catch { metadata = {}; }
-      }
-      const settings = metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        ? metadata.worldMapBackground
-        : null;
-      const owned = settings && typeof settings === "object" && settings.currentUrl === url;
-      return Object.freeze({
-        url,
-        blurPx: owned ? Math.max(0, Math.min(24, Math.round(Number(settings.blur) || 0))) : blurPx,
-      });
+      return roleplayBackground.resolve(metadataValue, url, blurPx);
+    },
+    bindRoleplayBackgroundStore(store) {
+      return roleplayBackground.bindStore(store);
     },
     resolveAgentSuiteTrackerSlice(agentId) {
       return agentSuiteTrackerData.resolve(agentId);

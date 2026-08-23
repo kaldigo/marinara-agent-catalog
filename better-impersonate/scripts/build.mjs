@@ -11,7 +11,7 @@ const sdkRoot = path.resolve(projectRoot, "..", "_mari-bridge", "sdk");
 const pkg = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8"));
 
 const sdkSources = ["contracts.js", "client.js"];
-const clientSources = ["prompts.js", "runtime.js"];
+const clientSources = ["request.js", "runtime.js"];
 
 if (!existsSync(sdkRoot)) {
   throw new Error("Missing shared root: _mari-bridge");

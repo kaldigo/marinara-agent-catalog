@@ -1,11 +1,11 @@
 {
   "name": "marinara-better-impersonate-package",
-  "version": "2.3.6",
+  "version": "2.3.7",
   "private": true,
   "type": "module",
   "description": "Bridge command helpers for persona draft generation.",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "npm run build && node --check dist/package/client.js && node scripts/validate-dist.mjs"
+    "check": "node scripts/check.mjs && npm run build && node --check dist/package/client.js && node scripts/validate-dist.mjs"
   }
 }

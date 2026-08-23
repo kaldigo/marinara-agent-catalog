@@ -1,4 +1,5 @@
 import { activateClientWithMariBridge } from "../../../_mari-bridge/sdk/client.js";
+import { buildImpersonateDraftRequest } from "./request.js";
 
 const PACKAGE_ID = "better-impersonate";
 const LAST_GUIDANCE_PREFIX = "mari-si-guidance:";
@@ -15,7 +16,7 @@ if (!customElements.get("marinara-capability-better-impersonate")) {
 const cleanupImpersonateCommands = await activateClientWithMariBridge(
   {
     consumerId: PACKAGE_ID,
-    api: { major: 1, minMinor: 0 },
+    api: { major: 1, minMinor: 3 },
     require: [
       "chat.active",
       "client.bridge-first",
@@ -98,11 +99,8 @@ async function generateDraft(bridgeSession, mode, input, context) {
     context.setDraftGenerating?.(true);
     const content = await bridgeSession.drafts.generate({
       chatId: context.chatId,
-      promptTemplate: resolvePromptTemplate(mode),
-      body: {
-        userMessage: guidance || null,
-        impersonate: true,
-      },
+      output: mode === "continue" ? "continuation" : "content",
+      body: buildImpersonateDraftRequest(mode, guidance),
       onUpdate: (next) => {
         if (!next) return;
         received = true;
@@ -151,12 +149,6 @@ function readLastGuidance(chatId) {
   } catch {
     return "";
   }
-}
-
-function resolvePromptTemplate(mode) {
-  if (mode === "continue") return DEFAULT_IMPERSONATE_CONTINUE_TEMPLATE;
-  if (mode === "inner_state") return DEFAULT_IMPERSONATE_THINKING_TEMPLATE;
-  return DEFAULT_IMPERSONATE_DRAFT_TEMPLATE;
 }
 
 function renderDraft(mode, original, generated) {

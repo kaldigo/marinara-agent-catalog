@@ -196,8 +196,9 @@ globalThis.document = {
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.16");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.18");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
@@ -214,6 +215,27 @@ assert.equal(mobileHudGroup.children.length, 1);
 assert.equal(desktopHudGroup.children.length, 1);
 assert.equal(mobileHudGroup.children[0].style.display, "contents");
 assert.equal(desktopHudGroup.children[0].style.display, "contents");
+const nativeBackgroundState = {
+  chatBackground: null,
+  setChatBackground(url) { this.chatBackground = url; },
+};
+function nativeBackgroundStore(selector) { return selector(nativeBackgroundState); }
+nativeBackgroundStore.getState = () => nativeBackgroundState;
+assert.equal(globalThis[clientSymbol].bindRoleplayBackgroundStore(nativeBackgroundStore), true);
+dispatchClientEvent("marinara:active-chat", { chatId: "chat-1" });
+const backgroundSession = globalThis[clientSymbol].registerConsumer({
+  consumerId: "background-test",
+  api: { major: 1, minMinor: 0 },
+  require: ["chat.background"],
+});
+assert.equal(backgroundSession.chat.background.set({ chatId: "chat-other", url: "/other.png", blurPx: 3 }), false);
+assert.equal(backgroundSession.chat.background.set({ chatId: "chat-1", url: "/location.png", blurPx: 7 }), true);
+assert.equal(nativeBackgroundState.chatBackground, "/location.png");
+assert.deepEqual(globalThis[clientSymbol].resolveBackgroundProps({}, "/location.png", 0), {
+  url: "/location.png",
+  blurPx: 7,
+});
+await backgroundSession.close();
 const clientSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "client-test",
   api: { major: 1, minMinor: 0 },
@@ -315,16 +337,33 @@ await featureSession.close();
 assert.equal(trackerUiPublishes, 3);
 assert.equal(globalThis[clientSymbol].resolveAgentSuiteTrackerSlice("feature-test"), undefined);
 unsubscribeTrackerUi();
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, options) => {
   assert.equal(url, "/api/generate/dryRun");
+  const requestBody = JSON.parse(String(options?.body ?? "{}"));
+  const events = requestBody.includeReasoning === true
+    ? [
+        'data: {"type":"dryrun_started","data":{"runId":"run-reasoning"}}\n\n',
+        'data: {"type":"thinking","data":"Because"}\n\n',
+        'data: {"type":"token","data":"Answer"}\n\n',
+        'data: {"type":"result","data":{"content":"Answer","reasoning":"Because"}}\n\n',
+        'data: {"type":"done"}\n\n',
+      ]
+    : requestBody.impersonateContinuation
+      ? [
+          'data: {"type":"dryrun_started","data":{"runId":"run-continuation"}}\n\n',
+          'data: {"type":"token","data":" world"}\n\n',
+          'data: {"type":"result","data":{"content":" world","continuation":" world"}}\n\n',
+          'data: {"type":"done"}\n\n',
+        ]
+      : [
+          'data: {"type":"dryrun_started","data":{"runId":"run-1"}}\n\n',
+          'data: {"type":"token","data":"Hello"}\n\n',
+          'data: {"type":"token","data":" world"}\n\n',
+          'data: {"type":"result","data":{"content":"Hello world"}}\n\n',
+          'data: {"type":"done"}\n\n',
+        ];
   return new Response(
-    [
-      'data: {"type":"dryrun_started","data":{"runId":"run-1"}}\n\n',
-      'data: {"type":"token","data":"Hello"}\n\n',
-      'data: {"type":"token","data":" world"}\n\n',
-      'data: {"type":"result","data":{"content":"Hello world"}}\n\n',
-      'data: {"type":"done"}\n\n',
-    ].join(""),
+    events.join(""),
     { status: 200, headers: { "Content-Type": "text/event-stream" } },
   );
 };
@@ -343,6 +382,26 @@ assert.equal(
   "Hello world",
 );
 assert.equal(draftUpdates.at(-1), "Hello world");
+assert.deepEqual(
+  await draftSession.drafts.generate({
+    chatId: "chat-1",
+    body: { impersonate: true, impersonateContinuation: "Hello" },
+    output: "continuation",
+    returnDetails: true,
+  }),
+  { content: " world", continuation: " world", reasoning: "", runId: "run-continuation" },
+);
+const reasoningUpdates = [];
+assert.deepEqual(
+  await draftSession.drafts.generate({
+    chatId: "chat-1",
+    body: { includeReasoning: true },
+    returnDetails: true,
+    onReasoning: (reasoning) => reasoningUpdates.push(reasoning),
+  }),
+  { content: "Answer", continuation: "Answer", reasoning: "Because", runId: "run-reasoning" },
+);
+assert.equal(reasoningUpdates.at(-1), "Because");
 assert.equal(draftSession.drafts.getSnapshot("chat-1").activeCount, 0);
 await draftSession.close();
 delete globalThis[clientSymbol];
@@ -428,8 +487,9 @@ assert.equal(
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
-const roleplayBackgroundFixture = 'react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
+const roleplayBackgroundFixture = 'const bg=uiStore(state=>state.chatBackground);react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
 const patchedRoleplayBackground = patchRoleplayBackgroundBridge(roleplayBackgroundFixture);
+assert.match(patchedRoleplayBackground, /bindRoleplayBackgroundStore\(uiStore\)/u);
 assert.match(patchedRoleplayBackground, /resolveBackgroundProps\(metadata,bg,blur\)/u);
 const clientOverlaySource = await fs.readFile(new URL("../src/server/client-overlay.js", import.meta.url), "utf8");
 assert.match(clientOverlaySource, /bridgeClientRuntime/u);
@@ -463,7 +523,7 @@ const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.ro
 assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.equal(preparedOverlayMain.startsWith("{\nconst API_VERSION = Object.freeze"), true);
-assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.16"/u);
+assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.18"/u);
 assert.equal(
   preparedOverlayMain.indexOf("const API_VERSION") <
     preparedOverlayMain.indexOf('window.dispatchEvent(new CustomEvent("marinara:active-chat"'),
@@ -491,10 +551,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.16"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.16" }, false, "1.0.16"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.15" }, false, "1.0.16"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.16" }, true, "1.0.16"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.18"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.18" }, false, "1.0.18"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.17" }, false, "1.0.18"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.18" }, true, "1.0.18"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
@@ -580,9 +640,38 @@ const macroEngineFixture = `
 function replaceBalancedMacros(input, replacer) {
   return input.replace(/\\{\\{([^{}]+)\\}\\}/g, (original, body) => replacer(body, original) ?? original);
 }
+function resolveConditionalOperand(raw, ctx) {
+  const token = raw.trim();
+  const quoted = token.match(/^["']([\\s\\S]*)["']$/);
+  if (quoted) return quoted[1];
+  const braced = \`{{\${token}}}\`;
+  const resolved = resolveMacros(braced, ctx);
+  return resolved === braced ? token : resolved;
+}
+function resolveConditionalBlocks(input, ctx) {
+  return input.replace(/\\{\\{#if\\s+([\\s\\S]*?)\\}\\}([\\s\\S]*?)(?:\\{\\{else\\}\\}([\\s\\S]*?))?\\{\\{\\/if\\}\\}/gi, (_match, condition, truthy, falsy = "") => {
+    const comparison = condition.match(/^([\\s\\S]*?)\\s+(==|contains)\\s+([\\s\\S]*?)$/i);
+    if (!comparison) return resolveConditionalOperand(condition, ctx).trim() ? truthy : falsy;
+    const left = resolveConditionalOperand(comparison[1], ctx);
+    const right = resolveConditionalOperand(comparison[3], ctx);
+    const matches = comparison[2].toLowerCase() === "contains" ? left.includes(right) : left === right;
+    return matches ? truthy : falsy;
+  });
+}
+function macroContextForCharacterProfile(profile, base) {
+  return {
+    variables: base?.variables ?? {},
+    agentData: base?.agentData,
+    characterFields: { description: profile.description ?? "" },
+  };
+}
+export function resolveScopedMacros(template, profile, base) {
+  return resolveMacros(template, macroContextForCharacterProfile(profile, base));
+}
 export function resolveMacros(template, ctx) {
   let result = template;
   const resolveNestedFieldMacros = (value) => resolveMacros(value, ctx);
+  result = resolveConditionalBlocks(result, ctx);
   result = result.replace(/\\{\\{description\\}\\}/gi, () => resolveNestedFieldMacros(ctx.characterFields?.description ?? ""));
   result = result.replace(/\\{\\{chatId\\}\\}/gi, ctx.chatId ?? "");
   result = replaceBalancedMacros(result, (body) => {
@@ -604,15 +693,44 @@ assert.equal(
       groupMode: "INDIVIDUAL",
       groupScenarioOverride: "At {{outlet::place}}",
       activeAgents: ["gm-notes", "presence"],
-      characterFields: { description: "Clue: {{outlet::clue}}" },
+      characterFields: { description: "Clue: {{outlet::clue}} ({{group_mode}})" },
       outlets: { place: "the inn", clue: "the key is missing" },
     },
   ),
-  "INDIVIDUAL|At the inn|gm-notes,presence|Clue: the key is missing",
+  "INDIVIDUAL|At the inn|gm-notes,presence|Clue: the key is missing (INDIVIDUAL)",
 );
 assert.equal(
   patchedMacroEngine.resolveMacros("{{group_mode}}|{{group_scenario_override}}", {}),
   "SOLO|",
+);
+for (const mode of ["SOLO", "MERGED", "INDIVIDUAL"]) {
+  assert.equal(
+    patchedMacroEngine.resolveMacros(
+      `{{group_mode}}|{{#if group_mode == "${mode}"}}MATCH{{else}}MISS{{/if}}`,
+      { groupMode: mode },
+    ),
+    `${mode}|MATCH`,
+  );
+}
+assert.equal(
+  patchedMacroEngine.resolveMacros(
+    '{{#if active-agents contains "gm-notes"}}ACTIVE{{else}}INACTIVE{{/if}}|{{#if group_scenario_override}}SCENARIO{{else}}NONE{{/if}}',
+    { activeAgents: ["gm-notes", "presence"], groupScenarioOverride: "Shared scenario" },
+  ),
+  "ACTIVE|SCENARIO",
+);
+assert.equal(
+  patchedMacroEngine.resolveScopedMacros(
+    "{{group_mode}}|{{group_scenario_override}}|{{active-agents}}|{{description}}",
+    { description: "Nested {{group_mode}}" },
+    {
+      groupMode: "MERGED",
+      groupScenarioOverride: "Shared scenario",
+      activeAgents: ["gm-notes"],
+      variables: {},
+    },
+  ),
+  "MERGED|Shared scenario|gm-notes|Nested MERGED",
 );
 
 const macroContextFixture = `export function build(input) {
@@ -637,6 +755,8 @@ assert.deepEqual(patchedMacroContext.build({
   groupScenarioOverride: "Shared scenario",
   groupMode: "MERGED",
 });
+assert.equal(patchedMacroContext.build({ groupMode: "INDIVIDUAL" }).groupMode, "INDIVIDUAL");
+assert.equal(patchedMacroContext.build({ groupMode: "SOLO" }).groupMode, "SOLO");
 
 const assemblerPatchFixture = [
   "export async function assemblePrompt(input) {",
@@ -664,6 +784,28 @@ assert.match(patchedAssemblerFixture, /mariBridgeSectionNeedsOutletScan\(section
 assert.match(patchedAssemblerFixture, /group_scenario_override/u);
 
 const dryRunRouteFixture = [
+  "        const returnPrompt = body.returnPrompt === true;",
+  "        const wrapLastMessage = body.wrapLastMessage === true;",
+  "            finalMessages.push({ role: \"assistant\", content: assistantPrefill.trimEnd() });",
+  "        }",
+  "        finalMessages = injectOwnerSpatialPrompt(finalMessages, promptSpatialProjection);",
+  "            let full = \"\";",
+  "            const onToken = async (chunk) => {",
+  "                full += chunk;",
+  "                await sendTokenTextChunked(chunk);",
+  "            };",
+  "                    suppressModelParameters,",
+  "                    onToken,",
+  "                    signal: abortController.signal,",
+  "                sendSseEvent(reply, { type: \"result\", data: { content: full || result.content || \"\" } });",
+  "        try {",
+  "            const result = await provider.chatComplete(providerMessages, {",
+  "                suppressModelParameters,",
+  "                signal: abortController.signal,",
+  "            return reply.send({",
+  "                content: (result.content ?? \"\").trimEnd(),",
+  "                runId,",
+  "            });",
   "            idleDuration: promptIdleDuration,",
   "        });",
   "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
@@ -680,7 +822,12 @@ const patchedDryRunRouteFixture = patchServerModule(
   dryRunRouteFixture,
 );
 assert.equal((patchedDryRunRouteFixture.match(/dryRunGroupChatMode/gu) ?? []).length, 2);
+assert.equal((patchedDryRunRouteFixture.match(/allCharacterIds\.length > 1 \? dryRunGroupChatMode/gu) ?? []).length, 2);
 assert.match(patchedDryRunRouteFixture, /promptMacroContext\.outlets = assembled\.lorebookScanResult\?\.outlets/u);
+assert.match(patchedDryRunRouteFixture, /impersonateContinuation/u);
+assert.match(patchedDryRunRouteFixture, /captureReasoning: includeReasoning/u);
+assert.match(patchedDryRunRouteFixture, /type: "thinking"/u);
+assert.match(patchedDryRunRouteFixture, /continuation: impersonateContinuation \? content : undefined/u);
 
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";

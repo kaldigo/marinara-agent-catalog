@@ -48,7 +48,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.16";
+kernel.version = "1.0.18";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -209,7 +209,7 @@ export function patchServerModule(url, inputSource) {
             "      ? [...new Set(input.activeAgentIds.map((agentId) => String(agentId ?? \"\").trim()).filter(Boolean))]",
             "      : [],",
             "    groupScenarioOverride: typeof input.groupScenarioOverrideText === \"string\" ? input.groupScenarioOverrideText : \"\",",
-            "    groupMode: input.groupMode === \"individual\" ? \"INDIVIDUAL\" : input.groupMode === \"merged\" ? \"MERGED\" : \"SOLO\",",
+            "    groupMode: String(input.groupMode ?? \"\").toLowerCase() === \"individual\" ? \"INDIVIDUAL\" : String(input.groupMode ?? \"\").toLowerCase() === \"merged\" ? \"MERGED\" : \"SOLO\",",
           ].join("\n"),
           "prompt.active-agents.context",
         );
@@ -219,6 +219,17 @@ export function patchServerModule(url, inputSource) {
         return source;
       }
       if (url.endsWith("/utils/macro-engine.js")) {
+        source = replaceExact(
+          source,
+          "    agentData: base?.agentData,",
+          [
+            "    agentData: base?.agentData,",
+            "    activeAgents: base?.activeAgents,",
+            "    groupScenarioOverride: base?.groupScenarioOverride,",
+            "    groupMode: base?.groupMode,",
+          ].join("\n"),
+          "prompt.bridge-macros.character-scope",
+        );
         source = replaceExact(
           source,
           "  result = result.replace(/\\{\\{chatId\\}\\}/gi, ctx.chatId ?? \"\");",
@@ -287,7 +298,7 @@ export function patchServerModule(url, inputSource) {
           ].join("\n"),
           [
             "                    timeZone: promptTimeZone,",
-            "                    groupMode: characterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+            "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
             "                });",
             "                const conversationMacroFieldsByCharacterId = new Map();",
           ].join("\n"),
@@ -301,7 +312,7 @@ export function patchServerModule(url, inputSource) {
           ].join("\n"),
           [
             "                        timeZone: promptTimeZone,",
-            "                        groupMode: characterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+            "                        groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
             "                        impersonate: input.impersonate === true,",
           ].join("\n"),
           "prompt.group-macros.main-assembler",
@@ -405,13 +416,156 @@ export function patchServerModule(url, inputSource) {
         source = replaceExact(
           source,
           [
+            "        const returnPrompt = body.returnPrompt === true;",
+            "        const wrapLastMessage = body.wrapLastMessage === true;",
+          ].join("\n"),
+          [
+            "        const returnPrompt = body.returnPrompt === true;",
+            "        const includeReasoning = body.includeReasoning === true && body.impersonate !== true;",
+            "        const impersonateContinuation = body.impersonate === true && typeof body.impersonateContinuation === \"string\"",
+            "            ? body.impersonateContinuation.trimEnd()",
+            "            : \"\";",
+            "        const wrapLastMessage = body.wrapLastMessage === true;",
+          ].join("\n"),
+          "dry-run.structured-options",
+        );
+        source = replaceExact(
+          source,
+          [
+            "            finalMessages.push({ role: \"assistant\", content: assistantPrefill.trimEnd() });",
+            "        }",
+            "        finalMessages = injectOwnerSpatialPrompt(finalMessages, promptSpatialProjection);",
+          ].join("\n"),
+          [
+            "            finalMessages.push({ role: \"assistant\", content: assistantPrefill.trimEnd() });",
+            "        }",
+            "        if (impersonateContinuation) {",
+            "            finalMessages.push({ role: \"assistant\", content: impersonateContinuation });",
+            "        }",
+            "        finalMessages = injectOwnerSpatialPrompt(finalMessages, promptSpatialProjection);",
+          ].join("\n"),
+          "dry-run.impersonate-continuation",
+        );
+        source = replaceExact(
+          source,
+          "            let full = \"\";",
+          [
+            "            let full = \"\";",
+            "            let reasoning = \"\";",
+          ].join("\n"),
+          "dry-run.streaming-reasoning-state",
+        );
+        source = replaceExact(
+          source,
+          [
+            "            const onToken = async (chunk) => {",
+            "                full += chunk;",
+            "                await sendTokenTextChunked(chunk);",
+            "            };",
+          ].join("\n"),
+          [
+            "            const onToken = async (chunk) => {",
+            "                full += chunk;",
+            "                await sendTokenTextChunked(chunk);",
+            "            };",
+            "            const onThinking = (chunk) => {",
+            "                reasoning += chunk;",
+            "                sendSseEvent(reply, { type: \"thinking\", data: chunk });",
+            "            };",
+          ].join("\n"),
+          "dry-run.streaming-reasoning-callback",
+        );
+        source = replaceExact(
+          source,
+          [
+            "                    suppressModelParameters,",
+            "                    onToken,",
+            "                    signal: abortController.signal,",
+          ].join("\n"),
+          [
+            "                    suppressModelParameters,",
+            "                    captureReasoning: includeReasoning,",
+            "                    onThinking: includeReasoning ? onThinking : undefined,",
+            "                    onToken,",
+            "                    signal: abortController.signal,",
+          ].join("\n"),
+          "dry-run.streaming-reasoning-provider",
+        );
+        source = replaceExact(
+          source,
+          "                sendSseEvent(reply, { type: \"result\", data: { content: full || result.content || \"\" } });",
+          [
+            "                const content = full || result.content || \"\";",
+            "                sendSseEvent(reply, {",
+            "                    type: \"result\",",
+            "                    data: {",
+            "                        content,",
+            "                        continuation: impersonateContinuation ? content : undefined,",
+            "                        reasoning: includeReasoning ? reasoning : undefined,",
+            "                    },",
+            "                });",
+          ].join("\n"),
+          "dry-run.streaming-structured-result",
+        );
+        source = replaceExact(
+          source,
+          [
+            "        try {",
+            "            const result = await provider.chatComplete(providerMessages, {",
+          ].join("\n"),
+          [
+            "        let reasoning = \"\";",
+            "        const onThinking = (chunk) => {",
+            "            reasoning += chunk;",
+            "        };",
+            "        try {",
+            "            const result = await provider.chatComplete(providerMessages, {",
+          ].join("\n"),
+          "dry-run.nonstream-reasoning-state",
+        );
+        source = replaceExact(
+          source,
+          [
+            "                suppressModelParameters,",
+            "                signal: abortController.signal,",
+          ].join("\n"),
+          [
+            "                suppressModelParameters,",
+            "                captureReasoning: includeReasoning,",
+            "                onThinking: includeReasoning ? onThinking : undefined,",
+            "                signal: abortController.signal,",
+          ].join("\n"),
+          "dry-run.nonstream-reasoning-provider",
+        );
+        source = replaceExact(
+          source,
+          [
+            "            return reply.send({",
+            "                content: (result.content ?? \"\").trimEnd(),",
+            "                runId,",
+            "            });",
+          ].join("\n"),
+          [
+            "            const content = (result.content ?? \"\").trimEnd();",
+            "            return reply.send({",
+            "                content,",
+            "                continuation: impersonateContinuation ? content : undefined,",
+            "                reasoning: includeReasoning ? reasoning : undefined,",
+            "                runId,",
+            "            });",
+          ].join("\n"),
+          "dry-run.nonstream-structured-result",
+        );
+        source = replaceExact(
+          source,
+          [
             "            idleDuration: promptIdleDuration,",
             "        });",
             "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
           ].join("\n"),
           [
             "            idleDuration: promptIdleDuration,",
-            "            groupMode: characterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+            "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
             "        });",
             "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
           ].join("\n"),
@@ -425,7 +579,7 @@ export function patchServerModule(url, inputSource) {
           ].join("\n"),
           [
             "                idleDuration: promptIdleDuration,",
-            "                groupMode: characterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+            "                groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
             "                impersonate,",
           ].join("\n"),
           "prompt.group-macros.dry-run-assembler",

@@ -41,12 +41,15 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.16` supports Marinara Engine 2.4.3 and adds package-owned structured
+Version `1.0.18` supports Marinara Engine 2.4.3 and adds package-owned structured
 agent result types, committed and agent-facing tracker-context sections, native
 Agent Suite tracker-data registrations, and native tracker-section contributions
 and Roleplay HUD mount points. Agent Suite tracker-data registrations receive a
 post-save callback after Marinara's native GameState refresh, allowing their
-package-owned surfaces to invalidate cached display data immediately. Tracker
+package-owned surfaces to invalidate cached display data immediately. Dry-run
+generation now accepts native generation guidance, supports provider-level
+impersonation continuation prefills with an explicit continuation result, and
+can expose reasoning on non-impersonation runs when the caller opts in. Tracker
 contributions are inserted inside Marinara's ordered section list and receive
 the native section header, collapse behavior, edit mode, active-agent state,
 and rerun callback; consumers provide only descriptors and feature-specific
@@ -70,13 +73,21 @@ The version-bound preset-assembly patch extends Marinara's native macro context
 with `{{active-agents}}`, `{{group_scenario_override}}`, and `{{group_mode}}`.
 The scenario override resolves to the chat's trimmed Group Scenario Override or
 an empty string. Group mode resolves to exactly `SOLO`, `MERGED`, or
-`INDIVIDUAL`. Card fields remain owned by Marinara's native macro resolver; the
-bridge only makes preset assembly trigger the native lorebook scan when an
+`INDIVIDUAL`, based on the chat's full character roster rather than only the
+currently active responders. These Bridge reads work through the native macro
+engine in direct output, conditional operands, variable writes, nested card
+fields, and bracketed per-character expansion. Card fields remain owned by
+Marinara's native macro resolver; the bridge only makes preset assembly trigger
+the native lorebook scan when an
 Outlet macro is nested inside a character/persona field, then carries the
 native Outlet map into the deferred per-character resolution pass.
 
 Roleplay HUD hosts use a layout-transparent wrapper, so contributed widgets are
 native flex items and inherit the HUD's exact alignment and `gap-0.5` spacing.
+The `chat.background` client capability binds Marinara's existing Roleplay
+background store at its native selector and lets an active-chat consumer apply
+an already-persisted URL and blur immediately. Consumers do not render a second
+background or own a competing cache.
 
 The client runtime is prepended directly to Marinara's patched main module. It
 is ready before Marinara can import any capability client, with no package-load
