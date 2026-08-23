@@ -2,6 +2,7 @@ const API_VERSION = Object.freeze({ major: 1, minor: 3 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
+const NATIVE_PATCHES = new Set(["__MARI_BRIDGE_NATIVE_PATCHES__"]);
 
 function setClientDiagnostic(name, value) {
   const root = globalThis.document?.documentElement;
@@ -845,26 +846,28 @@ function createClientRuntime(serverHealth) {
   const mountNativeSlot = createNativeSlotMounter();
   const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui);
   const capabilities = new Set([
-    "chat.active",
-    "chat.background",
-    "agent-suite.tracker-data",
     "client.bridge-first",
-    "commands",
-    "commands.draft-write",
     "consumer.sessions",
     "diagnostics",
-    "generation.draft",
-    "generation.lifecycle",
-    "quick-replies.input-macro",
     "runtime.health",
-    "ui.agent-settings",
-    "ui.composer.above-input",
-    "ui.tracker-section",
-    "ui.roleplay-hud",
   ]);
+  if (NATIVE_PATCHES.has("client.active-chat")) capabilities.add("chat.active");
+  if (NATIVE_PATCHES.has("client.roleplay-background")) capabilities.add("chat.background");
+  if (NATIVE_PATCHES.has("client.agent-suite-tracker-data")) capabilities.add("agent-suite.tracker-data");
+  if (NATIVE_PATCHES.has("client.command-drafts")) {
+    capabilities.add("commands.draft-write");
+    capabilities.add("generation.draft");
+    capabilities.add("ui.composer.above-input");
+  }
+  if (NATIVE_PATCHES.has("client.commands") && NATIVE_PATCHES.has("client.command-drafts")) capabilities.add("commands");
+  if (NATIVE_PATCHES.has("client.generation-lifecycle")) capabilities.add("generation.lifecycle");
+  if (NATIVE_PATCHES.has("client.quick-replies")) capabilities.add("quick-replies.input-macro");
+  if (NATIVE_PATCHES.has("client.native-agent-settings")) capabilities.add("ui.agent-settings");
+  if (NATIVE_PATCHES.has("client.tracker-sections")) capabilities.add("ui.tracker-section");
+  if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.19",
+    implementationVersion: "1.0.20",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1031,7 +1034,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.3",
-    implementationVersion: "1.0.19",
+    implementationVersion: "1.0.20",
   }));
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui);
   defineAgentSettingsElement(globalThis[CLIENT_SYMBOL].ui);

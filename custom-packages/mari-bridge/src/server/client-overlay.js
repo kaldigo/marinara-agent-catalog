@@ -4,8 +4,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v17";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v18";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
+const CLIENT_RUNTIME_PATCH_TOKEN = '["__MARI_BRIDGE_NATIVE_PATCHES__"]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
   return assetNames.reduce(
@@ -345,32 +346,43 @@ export function patchRoleplayHudBridge(source) {
   );
 }
 
-export function patchRoleplayBackgroundBridge(source) {
-  if (!source.includes('"rpg-chat-area mari-chat-area')) return null;
+export function patchRoleplayBackgroundStoreBridge(source) {
+  if (!source.includes('"chat-area"')) return null;
   const storePattern = /(?<background>[A-Za-z_$][\w$]*)=(?<store>[A-Za-z_$][\w$]*)\((?<selector>[A-Za-z_$][\w$]*)=>\k<selector>\.chatBackground\)/gu;
   const storeMatches = [...source.matchAll(storePattern)];
+  if (storeMatches.length === 0) return null;
   if (storeMatches.length !== 1) {
     throw new Error(`Mari Bridge Roleplay background patch expected one native background store selector, found ${storeMatches.length}`);
   }
   const storeMatch = storeMatches[0];
-  let patched = source.replace(
+  return source.replace(
     storePattern,
     `${storeMatch.groups.background}=(${CLIENT_SYMBOL_EXPRESSION}?.bindRoleplayBackgroundStore(${storeMatch.groups.store}),${storeMatch.groups.store}(${storeMatch.groups.selector}=>${storeMatch.groups.selector}.chatBackground))`,
   );
+}
+
+export function patchRoleplayBackgroundBridge(source) {
+  if (!source.includes('"rpg-chat-area mari-chat-area')) return null;
   const pattern = /(?<jsx>[A-Za-z_$][\w$]*)\.jsx\((?<component>[A-Za-z_$][\w$]*),\{url:(?<url>[A-Za-z_$][\w$]*),blurPx:(?<blur>[A-Za-z_$][\w$]*)\}\)/gu;
-  const matches = [...patched.matchAll(pattern)];
+  const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) {
     throw new Error(`Mari Bridge Roleplay background patch expected one native background render, found ${matches.length}`);
   }
   const match = matches[0];
-  const after = patched.slice(match.index + match[0].length, match.index + match[0].length + 6_000);
+  const after = source.slice(match.index + match[0].length, match.index + match[0].length + 6_000);
   const metadata = after.match(/[A-Za-z_$][\w$]*&&(?<metadata>[A-Za-z_$][\w$]*)\.enableAgents&&/u)?.groups?.metadata;
   if (!metadata) throw new Error("Mari Bridge Roleplay background patch could not identify chat metadata");
   const { jsx, component, url, blur } = match.groups;
-  return patched.replace(
+  return source.replace(
     pattern,
     `${jsx}.jsx(${component},{...(${CLIENT_SYMBOL_EXPRESSION}?.resolveBackgroundProps(${metadata},${url},${blur})??{url:${url},blurPx:${blur}})})`,
   );
+}
+
+function injectClientRuntimePatches(source, patches) {
+  const matches = source.split(CLIENT_RUNTIME_PATCH_TOKEN).length - 1;
+  if (matches !== 1) throw new Error(`Mari Bridge client runtime expected one native patch token, found ${matches}`);
+  return source.replace(CLIENT_RUNTIME_PATCH_TOKEN, JSON.stringify([...patches].sort()));
 }
 
 export function patchActiveChatEvents(source) {
@@ -439,9 +451,12 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   const target = join(overlaysRoot, fingerprint);
   const readyFile = join(target, ".mari-bridge-ready");
   try {
-    await readFile(readyFile, "utf8");
+    const ready = JSON.parse(await readFile(readyFile, "utf8"));
+    if (ready?.fingerprint !== fingerprint || !Array.isArray(ready.patches) || !Array.isArray(ready.failedPatches)) {
+      throw new Error("Mari Bridge cached client overlay metadata is invalid");
+    }
     await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-    return { root: target, fingerprint, patches: ["client.active-chat", "client.agent-suite-tracker-data", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
+    return { root: target, fingerprint, patches: ready.patches, failedPatches: ready.failedPatches };
   } catch {
     // Build below.
   }
@@ -455,16 +470,32 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   if (matches.length !== 1) throw new Error(`Mari Bridge client overlay expected one main module, found ${matches.length}`);
   const mainModule = matches[0][1];
   const mainModulePath = join(temporary, mainModule.replace(/^\/+|[?#].*$/gu, ""));
-  const patchedNativeMainModule = patchGenerationControllerEvents(
-    patchActiveChatEvents(await readFile(mainModulePath, "utf8")),
-  );
+  const appliedPatches = new Set();
+  const failedPatches = new Map();
+  const recordFailure = (patchId, error) => {
+    if (!failedPatches.has(patchId)) {
+      failedPatches.set(patchId, error instanceof Error ? error.message : String(error));
+    }
+  };
+  let patchedNativeMainModule = await readFile(mainModulePath, "utf8");
+  try {
+    patchedNativeMainModule = patchActiveChatEvents(patchedNativeMainModule);
+    appliedPatches.add("client.active-chat");
+  } catch (error) {
+    recordFailure("client.active-chat", error);
+  }
+  try {
+    patchedNativeMainModule = patchGenerationControllerEvents(patchedNativeMainModule);
+    appliedPatches.add("client.generation-lifecycle");
+  } catch (error) {
+    recordFailure("client.generation-lifecycle", error);
+  }
   // Make the bridge a static dependency of Marinara's entry module. Text
   // prepended to the entry body still runs after all of its ESM dependencies,
   // which lets imported application code start capability loading first.
   // Dependency evaluation must finish before any of the native entry body can
   // execute, so the injected registry exists before capability discovery.
   const bridgeRuntimeName = `mari-bridge-runtime-${fingerprint}.js`;
-  await writeFile(join(dirname(mainModulePath), bridgeRuntimeName), bridgeClientRuntime);
   const patchedMainModule = [`import "./${bridgeRuntimeName}";`, patchedNativeMainModule, ""].join("\n");
   await writeFile(mainModulePath, patchedMainModule);
   const assetsRoot = join(temporary, "assets");
@@ -478,49 +509,65 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   let slashCommandListPatchCount = 0;
   let trackerPanelPatchCount = 0;
   let roleplayHudPatchCount = 0;
+  let roleplayBackgroundStorePatchCount = 0;
   let roleplayBackgroundPatchCount = 0;
+  const attemptAssetPatch = (patchId, patcher, source) => {
+    if (failedPatches.has(patchId)) return null;
+    try {
+      return patcher(source);
+    } catch (error) {
+      recordFailure(patchId, error);
+      return null;
+    }
+  };
   for (const entry of assetEntries) {
     if (!entry.isFile() || !entry.name.endsWith(".js")) continue;
     const assetPath = join(assetsRoot, entry.name);
     let assetSource = await readFile(assetPath, "utf8");
     let changed = false;
-    const chatInputPatched = patchChatInputBridge(assetSource);
+    const chatInputPatched = attemptAssetPatch("client.command-drafts", patchChatInputBridge, assetSource);
     if (chatInputPatched !== null) {
       assetSource = chatInputPatched;
       chatInputPatchCount += 1;
       changed = true;
     }
-    const chatSettingsPatched = patchChatSettingsBridge(assetSource);
+    const chatSettingsPatched = attemptAssetPatch("client.native-agent-settings", patchChatSettingsBridge, assetSource);
     if (chatSettingsPatched !== null) {
       assetSource = chatSettingsPatched;
       chatSettingsPatchCount += 1;
       changed = true;
     }
-    const agentSuitePatched = patchAgentSuiteBridge(assetSource);
+    const agentSuitePatched = attemptAssetPatch("client.agent-suite-tracker-data", patchAgentSuiteBridge, assetSource);
     if (agentSuitePatched !== null) {
       assetSource = agentSuitePatched;
       agentSuitePatchCount += 1;
       changed = true;
     }
-    const slashCommandListPatched = patchSlashCommandListBridge(assetSource);
+    const slashCommandListPatched = attemptAssetPatch("client.commands", patchSlashCommandListBridge, assetSource);
     if (slashCommandListPatched !== null) {
       assetSource = slashCommandListPatched;
       slashCommandListPatchCount += 1;
       changed = true;
     }
-    const trackerPanelPatched = patchTrackerPanelBridge(assetSource);
+    const trackerPanelPatched = attemptAssetPatch("client.tracker-sections", patchTrackerPanelBridge, assetSource);
     if (trackerPanelPatched !== null) {
       assetSource = trackerPanelPatched;
       trackerPanelPatchCount += 1;
       changed = true;
     }
-    const roleplayHudPatched = patchRoleplayHudBridge(assetSource);
+    const roleplayHudPatched = attemptAssetPatch("client.roleplay-hud", patchRoleplayHudBridge, assetSource);
     if (roleplayHudPatched !== null) {
       assetSource = roleplayHudPatched;
       roleplayHudPatchCount += 1;
       changed = true;
     }
-    const roleplayBackgroundPatched = patchRoleplayBackgroundBridge(assetSource);
+    const roleplayBackgroundStorePatched = attemptAssetPatch("client.roleplay-background", patchRoleplayBackgroundStoreBridge, assetSource);
+    if (roleplayBackgroundStorePatched !== null) {
+      assetSource = roleplayBackgroundStorePatched;
+      roleplayBackgroundStorePatchCount += 1;
+      changed = true;
+    }
+    const roleplayBackgroundPatched = attemptAssetPatch("client.roleplay-background", patchRoleplayBackgroundBridge, assetSource);
     if (roleplayBackgroundPatched !== null) {
       assetSource = roleplayBackgroundPatched;
       roleplayBackgroundPatchCount += 1;
@@ -528,13 +575,30 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     }
     if (changed) await writeFile(assetPath, assetSource);
   }
-  if (chatInputPatchCount !== 2) throw new Error(`Mari Bridge expected two chat input assets, found ${chatInputPatchCount}`);
-  if (chatSettingsPatchCount !== 1) throw new Error(`Mari Bridge expected one chat settings asset, found ${chatSettingsPatchCount}`);
-  if (agentSuitePatchCount !== 1) throw new Error(`Mari Bridge expected one Agent Suite asset, found ${agentSuitePatchCount}`);
-  if (slashCommandListPatchCount !== 1) throw new Error(`Mari Bridge expected one slash command list asset, found ${slashCommandListPatchCount}`);
-  if (trackerPanelPatchCount !== 1) throw new Error(`Mari Bridge expected one Tracker panel asset, found ${trackerPanelPatchCount}`);
-  if (roleplayHudPatchCount !== 1) throw new Error(`Mari Bridge expected one Roleplay HUD asset, found ${roleplayHudPatchCount}`);
-  if (roleplayBackgroundPatchCount !== 1) throw new Error(`Mari Bridge expected one Roleplay background asset, found ${roleplayBackgroundPatchCount}`);
+  const patchExpectations = [
+    ["client.command-drafts", chatInputPatchCount, 2, "chat input assets"],
+    ["client.native-agent-settings", chatSettingsPatchCount, 1, "chat settings asset"],
+    ["client.agent-suite-tracker-data", agentSuitePatchCount, 1, "Agent Suite asset"],
+    ["client.commands", slashCommandListPatchCount, 1, "slash command list asset"],
+    ["client.tracker-sections", trackerPanelPatchCount, 1, "Tracker panel asset"],
+    ["client.roleplay-hud", roleplayHudPatchCount, 1, "Roleplay HUD asset"],
+    ["client.roleplay-background", roleplayBackgroundStorePatchCount, 1, "Roleplay background store asset"],
+    ["client.roleplay-background", roleplayBackgroundPatchCount, 1, "Roleplay background render asset"],
+  ];
+  for (const [patchId, actual, expected, label] of patchExpectations) {
+    if (actual !== expected) recordFailure(patchId, new Error(`Mari Bridge expected ${expected} ${label}, found ${actual}`));
+  }
+  for (const [patchId] of patchExpectations) {
+    if (!failedPatches.has(patchId)) appliedPatches.add(patchId);
+  }
+  if (appliedPatches.has("client.command-drafts") && appliedPatches.has("client.commands")) {
+    appliedPatches.add("client.quick-replies");
+  }
+  await writeFile(
+    join(dirname(mainModulePath), bridgeRuntimeName),
+    injectClientRuntimePatches(bridgeClientRuntime, appliedPatches),
+  );
+  assetJavaScriptNames.push(bridgeRuntimeName);
   for (const name of assetJavaScriptNames) {
     const assetPath = join(assetsRoot, name);
     await writeFile(assetPath, versionAssetReferences(await readFile(assetPath, "utf8"), assetJavaScriptNames, fingerprint));
@@ -549,9 +613,13 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     copiedIndexPath,
     versionAssetReferences(copiedIndex, assetJavaScriptNames, fingerprint),
   );
-  await writeFile(join(temporary, ".mari-bridge-ready"), `${fingerprint}\n`);
+  const failedPatchRecords = [...failedPatches].map(([id, detail]) => ({ id, detail }));
+  await writeFile(
+    join(temporary, ".mari-bridge-ready"),
+    `${JSON.stringify({ fingerprint, patches: [...appliedPatches].sort(), failedPatches: failedPatchRecords }, null, 2)}\n`,
+  );
   await rm(target, { recursive: true, force: true });
   await rename(temporary, target);
   await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-  return { root: target, fingerprint, patches: ["client.active-chat", "client.agent-suite-tracker-data", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
+  return { root: target, fingerprint, patches: [...appliedPatches].sort(), failedPatches: failedPatchRecords };
 }

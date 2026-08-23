@@ -40,7 +40,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.19";
+kernel.version = "1.0.20";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -812,6 +812,13 @@ if (disabled) {
     kernel.clientOverlay = Object.freeze({ root: clientOverlay.root, fingerprint: clientOverlay.fingerprint });
     kernel.patches["client.bridge-first"] = "applied";
     for (const patchId of clientOverlay.patches ?? []) kernel.patches[patchId] = "applied";
+    for (const failure of clientOverlay.failedPatches ?? []) {
+      const patchId = String(failure?.id ?? "client.unknown");
+      const detail = String(failure?.detail ?? "Native client hook did not apply");
+      kernel.patches[patchId] = "failed";
+      const diagnostic = `${patchId}: ${detail}`;
+      if (!kernel.failures.includes(diagnostic)) kernel.failures.push(diagnostic);
+    }
     kernel.active = true;
     kernel.patches["engine.version"] = "applied";
     registerHooks({
