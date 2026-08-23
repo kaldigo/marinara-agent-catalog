@@ -1,6 +1,7 @@
-const API_VERSION = Object.freeze({ major: 1, minor: 1 });
+const API_VERSION = Object.freeze({ major: 1, minor: 2 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
+const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
 
 function setClientDiagnostic(name, value) {
   const root = globalThis.document?.documentElement;
@@ -127,11 +128,17 @@ function createDraftGenerationService() {
     activeByChat.set(chatId, run);
     publish(run);
     try {
+      const body = { ...(input.body ?? {}), chatId, streaming: true };
+      if (body.impersonate === true) Object.assign(body, readNativeImpersonateOptions(), input.body ?? {});
+      if (body.impersonate === true && typeof input.promptTemplate === "string") {
+        const basePrompt = String(body.impersonatePromptTemplate || await readChatImpersonatePrompt(chatId)).trim();
+        body.impersonatePromptTemplate = applyDraftPromptTemplate(input.promptTemplate, basePrompt);
+      }
       const response = await fetch("/api/generate/dryRun", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         credentials: "same-origin",
-        body: JSON.stringify({ ...(input.body ?? {}), chatId, streaming: true }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -192,6 +199,52 @@ function createDraftGenerationService() {
   });
 }
 
+function readNativeImpersonateOptions() {
+  try {
+    const raw = globalThis.localStorage?.getItem("marinara-engine-ui");
+    const parsed = raw ? JSON.parse(raw) : {};
+    const state = parsed?.state && typeof parsed.state === "object" ? parsed.state : parsed;
+    const prompt = typeof state?.impersonatePromptTemplate === "string" ? state.impersonatePromptTemplate.trim() : "";
+    const presetId = typeof state?.impersonatePresetId === "string" && state.impersonatePresetId.trim()
+      ? state.impersonatePresetId.trim()
+      : null;
+    const connectionId = typeof state?.impersonateConnectionId === "string" && state.impersonateConnectionId.trim()
+      ? state.impersonateConnectionId.trim()
+      : null;
+    return {
+      ...(prompt ? { impersonatePromptTemplate: prompt } : {}),
+      ...(presetId ? { impersonatePresetId: presetId } : {}),
+      ...(connectionId ? { impersonateConnectionId: connectionId } : {}),
+      impersonateBlockAgents: state?.impersonateBlockAgents === true,
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function readChatImpersonatePrompt(chatId) {
+  try {
+    const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
+      headers: { Accept: "application/json" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) return "";
+    const chat = await response.json();
+    const metadata = typeof chat?.metadata === "string" ? JSON.parse(chat.metadata || "{}") : chat?.metadata || {};
+    return typeof metadata.impersonatePrompt === "string" ? metadata.impersonatePrompt.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function applyDraftPromptTemplate(template, basePrompt) {
+  const source = String(template ?? "").trim();
+  const base = String(basePrompt ?? "").trim();
+  return source.includes("{{base_prompt}}")
+    ? source.replaceAll("{{base_prompt}}", base).trim()
+    : [base, source].filter(Boolean).join("\n\n");
+}
+
 async function readDraftEventStream(body, onEvent) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -226,7 +279,7 @@ function createUiRegistry(activeChat) {
     register(ownerId, input = {}) {
       const id = String(input.id ?? "").trim();
       const slot = String(input.slot ?? "").trim();
-      if (!id || !["chat.settings", "composer.above-input", "tracker.panel", "roleplay.hud"].includes(slot)) {
+      if (!id || !["agent.settings", "composer.above-input", "tracker.panel", "roleplay.hud"].includes(slot)) {
         throw new TypeError("Mari Bridge UI registration requires a supported slot and stable id");
       }
       const key = `${ownerId}:${id}`;
@@ -236,7 +289,10 @@ function createUiRegistry(activeChat) {
         id,
         slot,
         priority: Number.isFinite(input.priority) ? Number(input.priority) : 0,
-        view: String(input.view ?? (slot === "chat.settings" ? "settings" : "surface")),
+        view: String(input.view ?? (slot === "agent.settings" ? "settings" : "surface")),
+        agentIds: Object.freeze(
+          [...new Set((input.agentIds ?? []).map((value) => String(value).trim()).filter(Boolean))],
+        ),
         props: typeof input.props === "function" ? input.props : null,
       }));
       publish();
@@ -244,10 +300,11 @@ function createUiRegistry(activeChat) {
         if (registrations.delete(key)) publish();
       };
     },
-    list(slot) {
+    list(slot, options = {}) {
       const chat = activeChat.getSnapshot();
+      const agentId = String(options.agentId ?? "").trim();
       return [...registrations.values()]
-        .filter((item) => item.slot === slot)
+        .filter((item) => item.slot === slot && (!agentId || item.agentIds.includes(agentId)))
         .sort((left, right) => right.priority - left.priority || left.ownerId.localeCompare(right.ownerId))
         .map((item) => Object.freeze({ ...item, capabilityProps: Object.freeze({ chatId: chat.chatId, ...(item.props?.(chat) ?? {}) }) }));
     },
@@ -255,6 +312,33 @@ function createUiRegistry(activeChat) {
       subscribers.add(listener);
       return () => subscribers.delete(listener);
     },
+  });
+}
+
+function defineAgentSettingsElement(ui) {
+  if (!globalThis.customElements || customElements.get(AGENT_SETTINGS_TAG)) return;
+  customElements.define(AGENT_SETTINGS_TAG, class MariBridgeAgentSettings extends HTMLElement {
+    connectedCallback() {
+      this.unsubscribe = ui.subscribe(() => this.render());
+      this.render();
+    }
+    disconnectedCallback() {
+      this.unsubscribe?.();
+      this.unsubscribe = null;
+    }
+    static get observedAttributes() { return ["agent-id"]; }
+    attributeChangedCallback() { if (this.isConnected) this.render(); }
+    render() {
+      const agentId = this.getAttribute("agent-id") ?? "";
+      const nodes = ui.list("agent.settings", { agentId }).map((item) => {
+        const node = document.createElement(`marinara-capability-${item.ownerId}`);
+        node.setAttribute("view", item.view);
+        node.capabilityProps = Object.freeze({ ...item.capabilityProps, agentId });
+        queueMicrotask(() => node.dispatchEvent(new CustomEvent("marinara-capability-props")));
+        return node;
+      });
+      this.replaceChildren(...nodes);
+    }
   });
 }
 
@@ -273,6 +357,9 @@ function createNativeSlotMounter() {
         host.dataset.mariBridgeNativeSlot = key;
         current.set(key, host);
       }
+      // Let HUD contributions participate as native flex items so the existing
+      // alignment and gap-0.5 spacing apply across package and native widgets.
+      if (slot === "roleplay.hud") host.style.display = "contents";
       if (host.parentElement !== target) target.appendChild(host);
     };
     if (slot === "roleplay.hud") {
@@ -436,14 +523,14 @@ function createClientRuntime(serverHealth) {
     "generation.lifecycle",
     "quick-replies.input-macro",
     "runtime.health",
-    "ui.chat-settings",
+    "ui.agent-settings",
     "ui.composer.above-input",
     "ui.tracker-panel",
     "ui.roleplay-hud",
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.10",
+    implementationVersion: "1.0.12",
     status: "ready",
     capabilities,
     serverHealth,
@@ -523,7 +610,7 @@ function createClientRuntime(serverHealth) {
         ui: Object.freeze({
           register(input) {
             const capability = ({
-              "chat.settings": "ui.chat-settings",
+              "agent.settings": "ui.agent-settings",
               "composer.above-input": "ui.composer.above-input",
               "tracker.panel": "ui.tracker-panel",
               "roleplay.hud": "ui.roleplay-hud",
@@ -563,6 +650,20 @@ function createClientRuntime(serverHealth) {
     resolveQuickReply(template, input) {
       return String(template).replaceAll("{{input}}", String(input ?? ""));
     },
+    resolveBackgroundProps(metadataValue, url, blurPx) {
+      let metadata = metadataValue;
+      if (typeof metadata === "string") {
+        try { metadata = JSON.parse(metadata || "{}"); } catch { metadata = {}; }
+      }
+      const settings = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+        ? metadata.worldMapBackground
+        : null;
+      const owned = settings && typeof settings === "object" && settings.currentUrl === url;
+      return Object.freeze({
+        url,
+        blurPx: owned ? Math.max(0, Math.min(24, Math.round(Number(settings.blur) || 0))) : blurPx,
+      });
+    },
     ui,
     mountNativeSlot,
   });
@@ -590,6 +691,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   const serverHealth = await readServerHealth();
   globalThis[CLIENT_SYMBOL] = createClientRuntime(serverHealth);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui);
+  defineAgentSettingsElement(globalThis[CLIENT_SYMBOL].ui);
 }
 document.documentElement.dataset.mariBridgeClient = "ready";
 

@@ -8,7 +8,6 @@ import {
   mergeGmNotesIntoPlayerStats,
   readGmNotesFromPlayerStats,
 } from "../shared/state.js";
-import { createGmNotesRoutes } from "./routes.js";
 
 function playerStatsFromSnapshot(snapshot) {
   return snapshot?.playerStats ?? null;
@@ -20,7 +19,7 @@ export async function activate(context) {
     {
       consumerId: "gm-notes",
       api: { major: 1, minMinor: 1 },
-      require: ["agent.result-types", "consumer.sessions", "host.request", "runtime.health", "tracker.context"],
+      require: ["agent.result-types", "consumer.sessions", "runtime.health", "tracker.context"],
     },
     async (bridgeSession) => {
       bridgeSession.agentResults.register({
@@ -56,7 +55,6 @@ export async function activate(context) {
         },
       });
 
-      await context.app.register(createGmNotesRoutes(bridgeSession), { prefix: "/api/gm-notes" });
       context.api.runtime.logger.info("GM Notes activated through Mari Bridge.");
     },
   );

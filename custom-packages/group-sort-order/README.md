@@ -2,14 +2,27 @@
 
 Group Sort Order is a package-era replacement for the legacy Group Smart Order extension.
 
-It injects an inspectable prompt marker instruction through Marinara's generation-time agent injection override path, asks the main response model to append a terminal `<next_speaker>id</next_speaker>` tag, records the parsed next speaker per message/swipe, then strips the tag from saved message content.
+It replaces only Marinara's native smart group-speaker selection decision. Marinara
+continues to own the response queue, generation request, saved messages, retries,
+and normal fallback behavior.
 
-The package only directs `/api/generate` when a valid next speaker is already known. It does not call a selector model automatically; the Refresh button uses the per-chat selector connection selected in Chat Settings, or Marinara's default Agent connection with the chat connection as fallback. It calls `/api/generate/raw` without parameter overrides so the selected connection's saved generation settings apply. If the selector returns no valid speaker, the preview becomes Unknown.
+Add Group Sort Order to a Roleplay chat and select Smart or Individual response
+order. When Marinara needs the next character, Mari Bridge delegates that one
+choice to the package. If the package is unavailable, disabled for the chat, or
+returns no valid character, Marinara's native selector runs unchanged.
 
-Chat Settings exposes the selector connection/model, terminal marker, main-response instruction, selector prompt, and persona-candidate toggle. The marker must contain exactly one `{{speaker_id}}`. Main-response instructions can use `{{candidates}}`, `{{marker}}`, and `{{excluded_candidate_id}}`. Every field can be reset to the packaged default.
+The package is a normal native agent definition. Marinara's standard agent editor
+owns its connection/model selection, generation settings, and editable selector
+prompt. The selector returns a JSON array of character IDs; it does not add
+markers to the main model's prompt or response.
 
-Marinara's package runtime does not yet expose Agent-category fallback execution. The raw generation route therefore retains its native Main fallback behavior if the selected Agent connection fails.
+Mari Bridge is required because Marinara 2.4.3 does not expose the native selector
+decision as a public package hook.
 
-Until Marinara exposes a first-class package prompt-contribution API with durable chat scope and depth controls, the package uses `_mari-bridge` to append a request-time agent injection override.
+## Native boundary
 
-The package exposes bridge-cache inspection routes under `/api/group-sort-order/prompt-contributions/:chatId`. A cached contribution can be set or cleared for any `agentType`; cached entries are applied on the next generation unless a live contributor replaces or clears that same `agentType`.
+The bridge patches only the missing group-selector decision point. The package
+does not own group response execution, chat persistence, a separate connection
+configuration, or a replacement agent settings page. Any future selector
+options should be represented through the normal agent definition and native
+agent editor unless Marinara lacks a specific field.

@@ -9,11 +9,39 @@ import { createDiagnosticsRoutes } from "./routes.js";
 import { createPromptRegistry } from "./prompt-registry.js";
 import { createAgentResultRegistry } from "./result-registry.js";
 import { createTrackerContextRegistry } from "./tracker-context-registry.js";
+import { createGroupSelectorRegistry } from "./group-selector-registry.js";
+import { createHostLifecycleRegistry } from "./host-lifecycle-registry.js";
 import { prepareClientOverlay } from "./client-overlay.js";
 import { schedulePackageBootstrapRestart } from "./bootstrap-restart.js";
 import { installBootstrapFile, requiresBootstrapHandoff } from "./bootstrap-install.js";
 
 let activeRuntime = null;
+const HOST_LIFECYCLE_HOOKS = Symbol.for("marinara.mari-bridge.hostLifecycleHooks.v1");
+
+function installHostLifecycleHooks(app, runtime, registry) {
+  let host = app[HOST_LIFECYCLE_HOOKS];
+  if (!host) {
+    host = { registry };
+    app[HOST_LIFECYCLE_HOOKS] = host;
+    app.addHook("preHandler", async (request, reply) => {
+      try { await host.registry.dispatch("preHandler", request, reply); }
+      catch (error) { runtime.logger.warn(error, "[Mari Bridge] Host preHandler contribution failed"); }
+    });
+    app.addHook("onSend", async (request, reply, payload) => {
+      try { return await host.registry.dispatch("onSend", request, reply, payload); }
+      catch (error) {
+        runtime.logger.warn(error, "[Mari Bridge] Host onSend contribution failed");
+        return payload;
+      }
+    });
+    app.addHook("onResponse", async (request, reply) => {
+      try { await host.registry.dispatch("onResponse", request, reply); }
+      catch (error) { runtime.logger.warn(error, "[Mari Bridge] Host onResponse contribution failed"); }
+    });
+  } else {
+    host.registry = registry;
+  }
+}
 
 function createHostRequest(app) {
   return async (consumerId, input = {}) => {
@@ -96,6 +124,9 @@ export async function activate(context) {
   const promptRegistry = createPromptRegistry();
   const agentResultRegistry = createAgentResultRegistry();
   const trackerContextRegistry = createTrackerContextRegistry();
+  const groupSelectorRegistry = createGroupSelectorRegistry();
+  const hostLifecycleRegistry = createHostLifecycleRegistry();
+  installHostLifecycleHooks(context.app, context.api.runtime, hostLifecycleRegistry);
   const promptPatchApplied =
     kernel?.patches?.["prompt.assembler"] === "applied" &&
     kernel?.patches?.["prompt.generate-fallback"] === "applied";
@@ -107,21 +138,27 @@ export async function activate(context) {
     kernel?.patches?.["tracker.context-committed-active"] === "applied" &&
     kernel?.patches?.["tracker.context-committed"] === "applied" &&
     kernel?.patches?.["tracker.context-agent"] === "applied";
+  const groupSelectorPatchApplied =
+    kernel?.patches?.["group.selector-policy"] === "applied" &&
+    kernel?.patches?.["group.selector-call"] === "applied";
   const runtime = createBridgeRuntime({
     capabilities: [
       "diagnostics",
       "runtime.health",
-      ...(bridgeOperational ? ["consumer.sessions", "host.request"] : []),
+      ...(bridgeOperational ? ["consumer.sessions", "host.lifecycle", "host.request"] : []),
       ...(bridgeOperational && promptPatchApplied
         ? ["prompt.inject", "prompt.suppress", "prompt.transform-final", "prompt.transform-history"]
         : []),
       ...(clientOverlay ? ["client.bridge-first"] : []),
       ...(agentResultPatchApplied ? ["agent.result-types"] : []),
       ...(trackerContextPatchApplied ? ["tracker.context"] : []),
+      ...(bridgeOperational && groupSelectorPatchApplied ? ["group.selector"] : []),
     ],
     promptRegistry,
     agentResultRegistry,
     trackerContextRegistry,
+    groupSelectorRegistry,
+    hostLifecycleRegistry,
     hostRequest: createHostRequest(context.app),
     patches: [
       {
@@ -183,6 +220,11 @@ export async function activate(context) {
         detail: trackerContextPatchApplied ? null : "Committed tracker activation, committed sections, or agent tracker-context hooks are unavailable",
       },
       {
+        id: "group.selector",
+        status: groupSelectorPatchApplied ? "applied" : "unavailable",
+        detail: groupSelectorPatchApplied ? null : "Native smart group policy or selector callback hook is unavailable",
+      },
+      {
         id: "client.active-chat",
         status: clientOverlay?.patches?.includes("client.active-chat") ? "applied" : "unavailable",
         detail: clientOverlay ? null : "Native active-chat events require the client overlay",
@@ -192,7 +234,7 @@ export async function activate(context) {
         status: clientOverlay?.patches?.includes("client.generation-lifecycle") ? "applied" : "unavailable",
         detail: clientOverlay ? null : "Native generation events require the client overlay",
       },
-      ...["client.command-drafts", "client.commands", "client.native-ui", "client.quick-replies"].map((id) => ({
+      ...["client.command-drafts", "client.commands", "client.native-agent-settings", "client.quick-replies", "client.roleplay-background"].map((id) => ({
         id,
         status: clientOverlay?.patches?.includes(id) ? "applied" : "unavailable",
         detail: clientOverlay ? null : `${id} requires the client overlay`,

@@ -1,5 +1,5 @@
 // bridge-sdk/contracts.js
-const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 1 });
+const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 2 });
 const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
 const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 
@@ -45,21 +45,10 @@ function readyClientRuntime() {
   return runtime?.status === "ready" && typeof runtime.registerConsumer === "function" ? runtime : null;
 }
 
-async function waitForClientRuntime(timeoutMs) {
-  const timeout = Math.max(0, Math.min(30_000, Number(timeoutMs) || 0));
-  const deadline = Date.now() + timeout;
-  let runtime = readyClientRuntime();
-  while (!runtime && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))));
-    runtime = readyClientRuntime();
-  }
-  return runtime;
-}
-
 async function activateClientWithMariBridge(input, activateConsumer) {
   if (typeof activateConsumer !== "function") throw new TypeError("Mari Bridge consumer activation must be a function");
   const requirements = normalizeBridgeRequirements(input);
-  const runtime = readyClientRuntime() ?? await waitForClientRuntime(input?.waitForBridgeMs ?? 5_000);
+  const runtime = readyClientRuntime();
   if (!runtime) {
     throw missingBridgeError(requirements.consumerId, "client");
   }
@@ -82,7 +71,7 @@ async function activateClientWithMariBridge(input, activateConsumer) {
 // src/client/constants.js
 const PACKAGE_ID = "pwa-helper";
 const PACKAGE_NAME = "PWA Helper";
-const PACKAGE_VERSION = "1.0.6";
+const PACKAGE_VERSION = "1.0.7";
 const ELEMENT_TAG = "marinara-capability-pwa-helper";
 const RUNTIME_KEY = "__marinaraPwaHelperRuntime";
 const PUBLIC_API_KEY = "marinaraPwaHelper";

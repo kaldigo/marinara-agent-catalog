@@ -23,6 +23,8 @@ export function createBridgeRuntime(options = {}) {
   const promptRegistry = options.promptRegistry ?? null;
   const agentResultRegistry = options.agentResultRegistry ?? null;
   const trackerContextRegistry = options.trackerContextRegistry ?? null;
+  const groupSelectorRegistry = options.groupSelectorRegistry ?? null;
+  const hostLifecycleRegistry = options.hostLifecycleRegistry ?? null;
   const hostRequest = typeof options.hostRequest === "function" ? options.hostRequest : null;
 
   function snapshot() {
@@ -43,6 +45,8 @@ export function createBridgeRuntime(options = {}) {
       promptRegistrations: promptRegistry?.snapshot?.() ?? null,
       agentResultRegistrations: agentResultRegistry?.snapshot?.() ?? null,
       trackerContextRegistrations: trackerContextRegistry?.snapshot?.() ?? null,
+      groupSelectorRegistrations: groupSelectorRegistry?.snapshot?.() ?? null,
+      hostLifecycleRegistrations: hostLifecycleRegistry?.snapshot?.() ?? null,
     });
   }
 
@@ -171,6 +175,26 @@ export function createBridgeRuntime(options = {}) {
           },
         })
       : null;
+    const groupSelectors = groupSelectorRegistry
+      ? Object.freeze({
+          register(input) {
+            if (!ownsCapability("group.selector")) {
+              throw new Error(`${requirements.consumerId} did not require group.selector`);
+            }
+            return registerOwnedCleanup(groupSelectorRegistry.register(requirements.consumerId, input));
+          },
+        })
+      : null;
+    const lifecycle = hostLifecycleRegistry
+      ? Object.freeze({
+          register(input) {
+            if (!ownsCapability("host.lifecycle")) {
+              throw new Error(`${requirements.consumerId} did not require host.lifecycle`);
+            }
+            return registerOwnedCleanup(hostLifecycleRegistry.register(requirements.consumerId, input));
+          },
+        })
+      : null;
     const session = Object.freeze({
       consumerId: requirements.consumerId,
       apiVersion: MARI_BRIDGE_API_VERSION,
@@ -180,6 +204,8 @@ export function createBridgeRuntime(options = {}) {
       prompts,
       agentResults,
       trackerContext,
+      groupSelectors,
+      lifecycle,
       host,
       addCleanup(cleanup) {
         if (typeof cleanup !== "function") throw new TypeError("Mari Bridge cleanup must be a function");
@@ -234,6 +260,12 @@ export function createBridgeRuntime(options = {}) {
           appendAgentState: trackerContextRegistry.appendAgentState,
         })
       : null,
+    groupSelectorHooks: groupSelectorRegistry
+      ? Object.freeze({
+          resolvePolicy: groupSelectorRegistry.resolvePolicy,
+          select: groupSelectorRegistry.select,
+        })
+      : null,
     getSnapshot: snapshot,
     markReady() {
       if (disposed) throw new Error("Cannot ready a disposed Mari Bridge runtime");
@@ -255,6 +287,8 @@ export function createBridgeRuntime(options = {}) {
       promptRegistry?.clear?.();
       agentResultRegistry?.clear?.();
       trackerContextRegistry?.clear?.();
+      groupSelectorRegistry?.clear?.();
+      hostLifecycleRegistry?.clear?.();
     },
   });
 }

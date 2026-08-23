@@ -1,6 +1,6 @@
 export function parseMessageRange(tokens, messages) {
   const list = Array.isArray(messages) ? messages : [];
-  const parts = Array.isArray(tokens) ? tokens.map(String) : tokenizeCommandTail(String(tokens || ""));
+  const parts = Array.isArray(tokens) ? tokens.map(String) : String(tokens ?? "").trim().split(/\s+/u);
   const joined = parts.join(" ").trim().toLowerCase();
   if (!joined) throw new Error("Range is required.");
   if (joined === "all") return list;
@@ -19,30 +19,23 @@ export function parseMessageRange(tokens, messages) {
   throw new Error(`Unsupported range: ${parts.join(" ")}`);
 }
 
-export function selectIndexRange(messages, start, end) {
-  const list = Array.isArray(messages) ? messages : [];
+function selectIndexRange(messages, start, end) {
   const left = Math.max(1, Math.min(start, end));
-  const right = Math.min(list.length, Math.max(start, end));
-  if (!Number.isFinite(left) || !Number.isFinite(right) || left > list.length) {
+  const right = Math.min(messages.length, Math.max(start, end));
+  if (!Number.isFinite(left) || !Number.isFinite(right) || left > messages.length) {
     throw new Error("Range is outside the loaded chat.");
   }
-  return list.slice(left - 1, right);
-}
-
-export function tokenizeCommandTail(text) {
-  const tokens = [];
-  const pattern = /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|(\S+)/gu;
-  for (const match of String(text || "").matchAll(pattern)) {
-    tokens.push((match[1] ?? match[2] ?? match[3] ?? "").replace(/\\(["'\\])/gu, "$1"));
-  }
-  return tokens;
-}
-
-export function looksLikeNativeMessageRange(value) {
-  const text = String(value || "").trim().toLowerCase();
-  return text === "all" || /^last\s+\d+$/u.test(text) || /^from\s+\d+\s+to\s+\d+$/u.test(text) || /^\d+(?:\s*-\s*\d+)?$/u.test(text);
+  return messages.slice(left - 1, right);
 }
 
 export function createHideCommandOwner() {
-  return ({ tokens }) => Boolean(tokens?.[0]) && !looksLikeNativeMessageRange(tokens[0]);
+  return ({ tokens }) => {
+    const value = String(tokens?.[0] ?? "").trim().toLowerCase();
+    return Boolean(value) && !(
+      value === "all" ||
+      /^last\s+\d+$/u.test(value) ||
+      /^from\s+\d+\s+to\s+\d+$/u.test(value) ||
+      /^\d+(?:\s*-\s*\d+)?$/u.test(value)
+    );
+  };
 }

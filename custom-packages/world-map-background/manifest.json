@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "world-map-background",
   "name": "World Map Background",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
   "engine": {
-    "min": "2.4.2",
-    "maxExclusive": "3.0.0"
+    "min": "2.4.3",
+    "maxExclusive": "2.4.4"
   },
   "kind": [
     "agent"
@@ -17,8 +17,7 @@
   },
   "contributions": {
     "slots": [
-      "chat-runtime",
-      "chat-settings"
+      "chat-runtime"
     ]
   },
   "files": [
@@ -29,17 +28,16 @@
     },
     {
       "path": "client.js",
-      "sha256": "4ddac87aa922e163c6daba1fb549d14a242417d9497a1a60539d3fcff64de4c1",
-      "bytes": 40813
+      "sha256": "cfd078549e8c59b499a495d27cb1639fa030ce82f66cdc63e5248270dfd245ec",
+      "bytes": 12164
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "c3c9646f37280ec1ac33307e7f62ce3ca9b933d28d6d2bbc5bc07503fbf9a2b4",
-      "bytes": 20021
+      "sha256": "5e5636147c2e7fc5b087cf653c66c46cf061f6eda9196951c2f91db69024567d",
+      "bytes": 9169
     }
   ],
   "permissions": [
-    "agent-runtime",
     "chat-read",
     "chat-write",
     "ui"

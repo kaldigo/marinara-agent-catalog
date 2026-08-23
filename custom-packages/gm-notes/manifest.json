@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "gm-notes",
   "name": "GM Notes",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
   "engine": {
-    "min": "2.4.2",
-    "maxExclusive": "3.0.0"
+    "min": "2.4.3",
+    "maxExclusive": "2.4.4"
   },
   "kind": [
     "agent"
@@ -28,24 +28,9 @@
       "bytes": 2538
     },
     {
-      "path": "bridge-sdk/client.js",
-      "sha256": "a018c45b0bf03c42e99b2b878f62396801e7fb690e989ae2e62b57ec4f532442",
-      "bytes": 1812
-    },
-    {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "a13155182bb2a3400911b8fc1bb91d4bf535e3c6cc8745408784179cd33f6b86",
+      "sha256": "77755c4f41de4d7d456fac781cc5294af5263699395348e48e4b59bab752fe91",
       "bytes": 1748
-    },
-    {
-      "path": "bridge-sdk/index.js",
-      "sha256": "d15eefdb57f7a7f5812dfa5dc2834c471c607d47f4a522c0d96cbd670fae4dd6",
-      "bytes": 150
-    },
-    {
-      "path": "bridge-sdk/ranges.js",
-      "sha256": "7030e2af96817bc82d256367e920ec37d90d729b5ef9575a003673ac468eb155",
-      "bytes": 2128
     },
     {
       "path": "bridge-sdk/server.js",
@@ -53,14 +38,9 @@
       "bytes": 1180
     },
     {
-      "path": "bridge-sdk/settings.js",
-      "sha256": "db40d865807c30a11f4d334f68ca2f1da147fa78cdd796fe6e42631c6a7fd615",
-      "bytes": 17348
-    },
-    {
       "path": "client.js",
-      "sha256": "db2de5f36c3cff2520dbb8a062338839b1c1fb2729980c7119b4e15fd9169e13",
-      "bytes": 24842
+      "sha256": "f4a32566e131d619c777953c98af4a41224b4cc0bee8a9704a56f3d8cb4a87d5",
+      "bytes": 38277
     },
     {
       "path": "server.mjs",
@@ -69,27 +49,18 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "1223fe46922c7ec227e0ee6b7971c7abe46be12bd1b65bacd42cd62818685ae1",
-      "bytes": 2510
-    },
-    {
-      "path": "src/server/routes.js",
-      "sha256": "69514c1309287e75ceceda45447f716cbd967a617f0ec7574a30b41d48bbd55d",
-      "bytes": 2679
+      "sha256": "36a9b6d9b414a89f2b1c5d3cc7663e16345d9ed70ffd000c6a89dbc955ce3517",
+      "bytes": 2344
     },
     {
       "path": "src/shared/state.js",
-      "sha256": "6b4e8d6d0df077a49392eee0344c5ad52635e5713a352af948505bf9f86412bf",
-      "bytes": 5982
+      "sha256": "afab46b9809ad9f7048af2eaa3fad0abaf1bb35b46ca66a3892d04b1c3e4b445",
+      "bytes": 6029
     }
   ],
   "permissions": [
     "agent-runtime",
     "chat-read",
-    "chat-write",
-    "prompt-context",
-    "routes",
-    "storage",
     "ui"
   ],
   "restartRequired": true

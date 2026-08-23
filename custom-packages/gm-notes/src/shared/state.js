@@ -1,7 +1,6 @@
 export const GM_NOTES_AGENT_ID = "gm-notes";
 export const GM_NOTES_RESULT_TYPE = "gm_notes_update";
 export const GM_NOTES_NAMESPACE = "gm-notes";
-export const GM_NOTES_MAX = 20;
 export const GM_NOTE_KINDS = Object.freeze(["reminder", "thread", "debug"]);
 
 const KIND_SET = new Set(GM_NOTE_KINDS);
@@ -53,6 +52,7 @@ export function normalizeGmNote(value, fallbackSource = {}, index = 0) {
     id: text(value.id, 160) || noteId(kind, noteText, createdSource, index),
     kind,
     text: noteText,
+    locked: value.locked === true,
     createdSource,
     updatedSource,
   });
@@ -68,7 +68,7 @@ export function normalizeGmNotesState(value, fallbackSource = {}) {
     ids.add(note.id);
     notes.push(note);
   }
-  return Object.freeze({ schemaVersion: 1, notes: Object.freeze(notes.slice(-GM_NOTES_MAX)) });
+  return Object.freeze({ schemaVersion: 1, notes: Object.freeze(notes) });
 }
 
 export function readGmNotesFromPlayerStats(playerStats) {
@@ -111,7 +111,7 @@ export function applyGmNoteUpdates(currentState, rawUpdates, source = {}) {
     if (["remove", "delete", "resolve"].includes(action)) {
       if (!id) continue;
       const index = notes.findIndex((note) => note.id === id);
-      if (index >= 0) notes.splice(index, 1);
+      if (index >= 0 && notes[index].locked !== true) notes.splice(index, 1);
       continue;
     }
     const kind = KIND_SET.has(update.kind) ? update.kind : null;
@@ -121,6 +121,7 @@ export function applyGmNoteUpdates(currentState, rawUpdates, source = {}) {
       const index = notes.findIndex((note) => note.id === id);
       if (index < 0) continue;
       const previous = notes[index];
+      if (previous.locked === true) continue;
       notes[index] = {
         ...previous,
         ...(kind ? { kind } : {}),
@@ -134,10 +135,10 @@ export function applyGmNoteUpdates(currentState, rawUpdates, source = {}) {
     if (duplicate) continue;
     const nextId = id || noteId(kind, noteText, stamp, createIndex++);
     if (notes.some((note) => note.id === nextId)) continue;
-    notes.push({ id: nextId, kind, text: noteText, createdSource: stamp, updatedSource: stamp });
+    notes.push({ id: nextId, kind, text: noteText, locked: false, createdSource: stamp, updatedSource: stamp });
   }
 
-  const state = normalizeGmNotesState({ schemaVersion: 1, notes: notes.slice(-GM_NOTES_MAX) }, stamp);
+  const state = normalizeGmNotesState({ schemaVersion: 1, notes }, stamp);
   return Object.freeze({
     changed: JSON.stringify(before) !== JSON.stringify(state),
     state,

@@ -2,7 +2,7 @@
   {
     "id": "presence",
     "name": "Presence",
-    "description": "Feature runtime for per-message character presence.",
+    "description": "Controls which group characters can see each Roleplay message and keeps per-message attendance in native visibility metadata.",
     "category": "tracker",
     "phase": "pre_generation",
     "execution": "feature",

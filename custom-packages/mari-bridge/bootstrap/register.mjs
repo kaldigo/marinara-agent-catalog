@@ -229,6 +229,36 @@ export function patchServerModule(url, inputSource) {
       if (url.endsWith("/routes/generate.routes.js")) {
         source = replaceExact(
           source,
+          [
+            'const groupResponseOrder = chatMeta.groupResponseOrder ?? "sequential";',
+            "                const groupChatMode = resolveGroupGenerationMode(chatMode, chatMeta.groupChatMode);",
+          ].join("\n"),
+          [
+            'const nativeGroupPolicy = { groupResponseOrder: chatMeta.groupResponseOrder ?? "sequential", groupChatMode: resolveGroupGenerationMode(chatMode, chatMeta.groupChatMode) };',
+            "                const bridgedGroupPolicy = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.groupSelectorHooks?.resolvePolicy({ chatId: input.chatId, chatMetadata: chatMeta, chatMode }, nativeGroupPolicy) ?? nativeGroupPolicy;",
+            "                const groupResponseOrder = bridgedGroupPolicy.groupResponseOrder;",
+            "                const groupChatMode = bridgedGroupPolicy.groupChatMode;",
+          ].join("\n"),
+          "group.selector-policy",
+        );
+        source = replaceExact(
+          source,
+          "                        : await selectSmartGroupResponders()",
+          [
+            "                        : await (globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.groupSelectorHooks?.select({",
+            "                            chatId: input.chatId,",
+            "                            chatMetadata: chatMeta,",
+            "                            chatMode,",
+            "                            chatConnectionId: chat.connectionId,",
+            "                            personaName,",
+            "                            messages: chatMessages,",
+            "                            candidates: availableGroupCharacters,",
+            "                          }, selectSmartGroupResponders) ?? selectSmartGroupResponders())",
+          ].join("\n"),
+          "group.selector-call",
+        );
+        source = replaceExact(
+          source,
           "const preparedMessagesForGen = resolvePromptMessageMacros(macroScopedMessagesForGen, providerMacroContext, historyMacroProfilesById);",
           [
             "const bridgedMessagesForGen = presetOwnsAgentPlacement",

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.10",
+  "version": "1.0.12",
   "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
   "engine": {
     "min": "2.4.3",
@@ -23,13 +23,13 @@
   "files": [
     {
       "path": "bootstrap/register.mjs",
-      "sha256": "aa097f0c172f29359fc02b55649a575801d2b8c4c8e08323a60013c3aca40233",
-      "bytes": 17588
+      "sha256": "5f628e05f372d8f8b2449ea21487af271aa4ee6f4830c0f1e25d37c1b8400fa4",
+      "bytes": 19481
     },
     {
       "path": "client.js",
-      "sha256": "585bf7907892060da3794b8af08235ea870527a63115d1ffaf179b932f8a98e7",
-      "bytes": 24028
+      "sha256": "b721ee731d79b9f97ffa3717aaecb3b577350e616b7546147b861e616a8c2a7c",
+      "bytes": 28722
     },
     {
       "path": "server.mjs",
@@ -38,8 +38,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "585bf7907892060da3794b8af08235ea870527a63115d1ffaf179b932f8a98e7",
-      "bytes": 24028
+      "sha256": "b721ee731d79b9f97ffa3717aaecb3b577350e616b7546147b861e616a8c2a7c",
+      "bytes": 28722
     },
     {
       "path": "src/server/bootstrap-install.js",
@@ -53,13 +53,23 @@
     },
     {
       "path": "src/server/client-overlay.js",
-      "sha256": "44134b4d1c01a9895422f144a15a863495c8f41d91477b8ac57f33ad4574237c",
-      "bytes": 18524
+      "sha256": "084ca7f8537d206faac128ed9163ff48da4f6803545c32ce993fc2ec97100214",
+      "bytes": 21209
+    },
+    {
+      "path": "src/server/group-selector-registry.js",
+      "sha256": "93778e6bd0f121263239e722d5dfb4953aadb5ee03abd18a59e7f24c42b4ee45",
+      "bytes": 2334
+    },
+    {
+      "path": "src/server/host-lifecycle-registry.js",
+      "sha256": "44a8cac17ec98c5a7b4a98b94a17ebe87015cd77f62754f0a5ff28020227e1cb",
+      "bytes": 2326
     },
     {
       "path": "src/server/index.js",
-      "sha256": "a57f87102647430fcf0860ebb938d4028fd539f42da403f8d6fc5fa1187ea1e7",
-      "bytes": 10314
+      "sha256": "b40053dc7f27f9c7ba367b41ea43b80440a86c67b74422859866edc34d40a194",
+      "bytes": 12376
     },
     {
       "path": "src/server/prompt-registry.js",
@@ -78,8 +88,8 @@
     },
     {
       "path": "src/server/runtime.js",
-      "sha256": "8d9f316ea0ad5d4bcb82be11329ee8af5a9da537256ab9363d0f67f3a0c03c15",
-      "bytes": 9763
+      "sha256": "39b6a51b06167a4088ddba1192bfb28e7d98ac55ff79cd6fd5ca017e8839b767",
+      "bytes": 11188
     },
     {
       "path": "src/server/tracker-context-registry.js",
@@ -88,8 +98,8 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "ddf6a42cdf8f562e9318b05a528be0d0e5a0b2e2f3ff817a21f85b4a64fd0a69",
-      "bytes": 1840
+      "sha256": "6cc63c4b1e70236bf5d9eab1c73dcae04e0e5b673a92d8ffc8508e7ae452990d",
+      "bytes": 1841
     }
   ],
   "permissions": [
