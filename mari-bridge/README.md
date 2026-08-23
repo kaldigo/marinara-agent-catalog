@@ -41,10 +41,12 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.15` supports Marinara Engine 2.4.3 and adds package-owned structured
+Version `1.0.16` supports Marinara Engine 2.4.3 and adds package-owned structured
 agent result types, committed and agent-facing tracker-context sections, native
 Agent Suite tracker-data registrations, and native tracker-section contributions
-and Roleplay HUD mount points. Tracker
+and Roleplay HUD mount points. Agent Suite tracker-data registrations receive a
+post-save callback after Marinara's native GameState refresh, allowing their
+package-owned surfaces to invalidate cached display data immediately. Tracker
 contributions are inserted inside Marinara's ordered section list and receive
 the native section header, collapse behavior, edit mode, active-agent state,
 and rerun callback; consumers provide only descriptors and feature-specific

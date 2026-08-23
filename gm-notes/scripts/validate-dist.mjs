@@ -34,6 +34,8 @@ assert.doesNotMatch(client, /^import\s/mu);
 assert.match(client, /tracker\.section/u);
 assert.match(client, /agent-suite\.tracker-data/u);
 assert.match(client, /registerTrackerData/u);
+assert.match(client, /onSaved/u);
+assert.match(client, /loadState\(chatId, true\)/u);
 assert.match(client, /buildGmNotesAgentSuitePatch/u);
 assert.match(client, /roleplay\.hud/u);
 assert.match(client, /tracker-section-body/u);

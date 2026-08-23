@@ -196,7 +196,7 @@ globalThis.document = {
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.15");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.16");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
@@ -219,6 +219,21 @@ const clientSession = globalThis[clientSymbol].registerConsumer({
   api: { major: 1, minMinor: 0 },
   require: ["generation.lifecycle"],
 });
+let agentSuiteSaveDetail = null;
+const agentSuiteSession = globalThis[clientSymbol].registerConsumer({
+  consumerId: "agent-suite-test",
+  api: { major: 1, minMinor: 0 },
+  require: ["agent-suite.tracker-data"],
+});
+agentSuiteSession.agentSuite.registerTrackerData({
+  agentId: "agent-suite-test",
+  label: "Agent Suite Test",
+  getValue() { return []; },
+  buildPatch() { return {}; },
+  async onSaved(detail) { agentSuiteSaveDetail = detail; },
+});
+await globalThis[clientSymbol].notifyAgentSuiteTrackerSaved("agent-suite-test", { chatId: "chat-1" });
+assert.deepEqual(agentSuiteSaveDetail, { agentId: "agent-suite-test", chatId: "chat-1" });
 const generationSnapshots = [];
 clientSession.generation.subscribe((snapshot) => generationSnapshots.push(snapshot));
 dispatchClientEvent("marinara:mari-phase", { chatId: "chat-1", phase: "thinking" });
@@ -385,11 +400,12 @@ assert.match(patchedChatSettings, /"agent-id":agent\.id/u);
 const agentSuiteFixture = [
   'import{r as react}from"./vendor-react-test.js";',
   'const slices={};',
-  'function AgentSuite({chat:chat,open:open,onClose:close,onCloseGuardChange:guard,agents:agents}){const selected=agents[0]??null,isTracker=!!selected&&!!slices[selected.id],query=["agent-suite","game-state",chat.id],save=react.useCallback(async(agentId,text)=>{const slice=slices[agentId];if(!slice)throw new Error("No tracker snapshot to update");return slice.buildPatch({},JSON.parse(text))},[]),trackerSlice=selected?slices[selected.id]:void 0;return "ui.chat.agentsuitemodal.trackerData"}',
+  'function AgentSuite({chat:chat,open:open,onClose:close,onCloseGuardChange:guard,agents:agents}){const selected=agents[0]??null,isTracker=!!selected&&!!slices[selected.id],query=["agent-suite","game-state",chat.id],refresh=async()=>{},save=react.useCallback(async(agentId,text)=>{const slice=slices[agentId];if(!slice)throw new Error("No tracker snapshot to update");slice.buildPatch({},JSON.parse(text));await refresh()},[]),trackerSlice=selected?slices[selected.id]:void 0;return "ui.chat.agentsuitemodal.trackerData"}',
 ].join("");
 const patchedAgentSuite = patchAgentSuiteBridge(agentSuiteFixture);
 assert.equal((patchedAgentSuite.match(/useAgentSuiteTrackerData/gu) ?? []).length, 1);
 assert.equal((patchedAgentSuite.match(/resolveAgentSuiteTrackerSlice/gu) ?? []).length, 3);
+assert.equal((patchedAgentSuite.match(/notifyAgentSuiteTrackerSaved/gu) ?? []).length, 1);
 assert.throws(() => patchAgentSuiteBridge('const value=["agent-suite","game-state"];const error="No tracker snapshot to update";const label="ui.chat.agentsuitemodal.trackerData";'), /expected one modal component/u);
 const trackerPanelFixture = [
   'import{r as react,j as jsx}from"./vendor-react-test.js";',
@@ -447,7 +463,7 @@ const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.ro
 assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.equal(preparedOverlayMain.startsWith("{\nconst API_VERSION = Object.freeze"), true);
-assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.15"/u);
+assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.16"/u);
 assert.equal(
   preparedOverlayMain.indexOf("const API_VERSION") <
     preparedOverlayMain.indexOf('window.dispatchEvent(new CustomEvent("marinara:active-chat"'),
@@ -475,10 +491,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.15"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.15" }, false, "1.0.15"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.14" }, false, "1.0.15"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.15" }, true, "1.0.15"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.16"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.16" }, false, "1.0.16"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.15" }, false, "1.0.16"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.16" }, true, "1.0.16"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");

@@ -290,6 +290,13 @@ export function patchAgentSuiteBridge(source) {
   if (saveMatches.length !== 1) {
     throw new Error(`Mari Bridge Agent Suite patch expected one tracker save lookup, found ${saveMatches.length}`);
   }
+  const saveTail = body.slice(saveMatches[0].index + saveMatches[0][0].length, saveMatches[0].index + 2_500);
+  const saveSuccessPattern = new RegExp(`await (?<refresh>${identifier})\\(\\)\\}`, "gu");
+  const saveSuccessMatches = [...saveTail.matchAll(saveSuccessPattern)];
+  if (saveSuccessMatches.length !== 1) {
+    throw new Error(`Mari Bridge Agent Suite patch expected one tracker save success point, found ${saveSuccessMatches.length}`);
+  }
+  const saveSuccess = saveSuccessMatches[0];
   const react = findNamedImportAlias(source, "vendor-react-", "r");
   let patchedBody = body;
   patchedBody = patchedBody.replace(
@@ -303,6 +310,10 @@ export function patchAgentSuiteBridge(source) {
   patchedBody = patchedBody.replace(
     saveMatches[0][0],
     `const ${saveMatches[0].groups.savedSlice}=${CLIENT_SYMBOL_EXPRESSION}?.resolveAgentSuiteTrackerSlice(${saveMatches[0].groups.agentId})??${tracker.groups.registry}[${saveMatches[0].groups.agentId}];if(!${saveMatches[0].groups.savedSlice})throw new Error("No tracker snapshot to update")`,
+  );
+  patchedBody = patchedBody.replace(
+    saveSuccess[0],
+    `await ${saveSuccess.groups.refresh}(),await ${CLIENT_SYMBOL_EXPRESSION}?.notifyAgentSuiteTrackerSaved(${saveMatches[0].groups.agentId},{chatId:${component.groups.chat}.id})}`,
   );
   patchedBody = `{${CLIENT_SYMBOL_EXPRESSION}?.useAgentSuiteTrackerData(${react});${patchedBody.slice(1)}`;
   return `${source.slice(0, bodyStart)}${patchedBody}${source.slice(bodyEnd + 1)}`;

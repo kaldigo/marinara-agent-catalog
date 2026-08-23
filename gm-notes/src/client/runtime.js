@@ -405,6 +405,9 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
         return readGmNotesFromPlayerStats(gameState?.playerStats).notes;
       },
       buildPatch: buildGmNotesAgentSuitePatch,
+      onSaved({ chatId }) {
+        if (chatId) return loadState(chatId, true);
+      },
     });
     const disposeHud = bridgeSession.ui.register({ id: "hud", slot: "roleplay.hud", view: "hud" });
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
