@@ -17,6 +17,7 @@ import {
   patchGenerationControllerEvents,
   patchRoleplayHudBridge,
   patchRoleplayBackgroundBridge,
+  patchRoleplayBackgroundStoreBridge,
   patchSlashCommandListBridge,
   patchTrackerPanelBridge,
   prepareClientOverlay,
@@ -193,10 +194,23 @@ globalThis.document = {
     return Definition ? new Definition() : new HTMLElement();
   },
 };
-const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
+const allNativeClientPatches = [
+  "client.active-chat",
+  "client.agent-suite-tracker-data",
+  "client.command-drafts",
+  "client.commands",
+  "client.generation-lifecycle",
+  "client.native-agent-settings",
+  "client.quick-replies",
+  "client.roleplay-background",
+  "client.roleplay-hud",
+  "client.tracker-sections",
+];
+const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8"))
+  .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.19");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.20");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -487,9 +501,11 @@ assert.equal(
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
-const roleplayBackgroundFixture = 'const bg=uiStore(state=>state.chatBackground);react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
+const roleplayBackgroundStoreFixture = 'const component="chat-area",bg=uiStore(state=>state.chatBackground),weather=uiStore(state=>state.weatherEffects);';
+const roleplayBackgroundFixture = 'react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
+const patchedRoleplayBackgroundStore = patchRoleplayBackgroundStoreBridge(roleplayBackgroundStoreFixture);
 const patchedRoleplayBackground = patchRoleplayBackgroundBridge(roleplayBackgroundFixture);
-assert.match(patchedRoleplayBackground, /bindRoleplayBackgroundStore\(uiStore\)/u);
+assert.match(patchedRoleplayBackgroundStore, /bindRoleplayBackgroundStore\(uiStore\)/u);
 assert.match(patchedRoleplayBackground, /resolveBackgroundProps\(metadata,bg,blur\)/u);
 const clientOverlaySource = await fs.readFile(new URL("../src/server/client-overlay.js", import.meta.url), "utf8");
 assert.match(clientOverlaySource, /bridgeClientRuntime/u);
@@ -512,6 +528,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "chat-settings.js"), chatSettings
 await fs.writeFile(path.join(nativeAssetsRoot, "agent-suite.js"), agentSuiteFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanelFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background-store.js"), roleplayBackgroundStoreFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background.js"), roleplayBackgroundFixture);
 const preparedClientOverlay = await prepareClientOverlay({
   dataDir: path.join(clientOverlayFixtureRoot, "data"),
@@ -531,9 +548,38 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.19"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.20"/u);
+assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
+assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
 assert.match(preparedOverlayMain, /window\.dispatchEvent\(new CustomEvent\("marinara:active-chat"/u);
+
+const degradedNativeRoot = path.join(clientOverlayFixtureRoot, "native-degraded");
+await fs.cp(nativeClientRoot, degradedNativeRoot, { recursive: true });
+await fs.writeFile(
+  path.join(degradedNativeRoot, "assets", "roleplay-background.js"),
+  'const marker="rpg-chat-area mari-chat-area";const changedNativeShape=true;',
+);
+const degradedClientOverlay = await prepareClientOverlay({
+  dataDir: path.join(clientOverlayFixtureRoot, "data-degraded"),
+  sourceRoot: degradedNativeRoot,
+  engineVersion: "2.4.3",
+});
+assert.equal(degradedClientOverlay.patches.includes("client.roleplay-background"), false);
+assert.equal(degradedClientOverlay.patches.includes("client.bridge-first"), false);
+assert.equal(degradedClientOverlay.patches.includes("client.command-drafts"), true);
+assert.equal(degradedClientOverlay.failedPatches.some((failure) => failure.id === "client.roleplay-background"), true);
+const degradedOverlayAssets = await fs.readdir(path.join(degradedClientOverlay.root, "assets"));
+const degradedRuntimeName = degradedOverlayAssets.find((name) => /^mari-bridge-runtime-[a-f0-9]{16}\.js$/u.test(name));
+const degradedOverlayRuntime = await fs.readFile(
+  path.join(degradedClientOverlay.root, "assets", degradedRuntimeName),
+  "utf8",
+);
+const degradedNativePatches = JSON.parse(
+  degradedOverlayRuntime.match(/const NATIVE_PATCHES = new Set\((?<patches>\[[^;]+\])\);/u).groups.patches,
+);
+assert.equal(degradedNativePatches.includes("client.roleplay-background"), false);
+assert.equal(degradedNativePatches.includes("client.command-drafts"), true);
 
 const bootstrapFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-check-"));
 const bootstrapSource = path.join(bootstrapFixtureRoot, "source.mjs");
@@ -556,12 +602,12 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.19"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.19" }, false, "1.0.19"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.18" }, false, "1.0.19"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.19" }, true, "1.0.19"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.20"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.20" }, false, "1.0.20"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.19" }, false, "1.0.20"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.20" }, true, "1.0.20"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
-globalThis[kernelSymbol] = { active: true, version: "1.0.19", failures: [] };
+globalThis[kernelSymbol] = { active: true, version: "1.0.20", failures: [] };
 const installerHooks = [];
 const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
 await installer.activate({

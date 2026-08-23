@@ -41,10 +41,11 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.19` supports Marinara Engine 2.4.3 and adds package-owned structured
-agent result types, committed and agent-facing tracker-context sections, native
-Agent Suite tracker-data registrations, and native tracker-section contributions
-and Roleplay HUD mount points. Agent Suite tracker-data registrations receive a
+Version `1.0.20` supports Marinara Engine 2.4.3 and keeps the injected client
+kernel available when an optional native UI hook drifts. It also adds
+package-owned structured agent result types, committed and agent-facing
+tracker-context sections, native Agent Suite tracker-data registrations, and
+native tracker-section contributions and Roleplay HUD mount points. Agent Suite tracker-data registrations receive a
 post-save callback after Marinara's native GameState refresh, allowing their
 package-owned surfaces to invalidate cached display data immediately. Dry-run
 generation now accepts native generation guidance, supports provider-level
