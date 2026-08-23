@@ -205,6 +205,11 @@ export async function activate(context) {
         detail: clientOverlay ? null : "Native docked Tracker sections require the client overlay",
       },
       {
+        id: "client.agent-suite-tracker-data",
+        status: clientOverlay?.patches?.includes("client.agent-suite-tracker-data") ? "applied" : "unavailable",
+        detail: clientOverlay ? null : "Native Agent Suite tracker data requires the client overlay",
+      },
+      {
         id: "client.roleplay-hud",
         status: clientOverlay?.patches?.includes("client.roleplay-hud") ? "applied" : "unavailable",
         detail: clientOverlay ? null : "Roleplay HUD slots require the client overlay",

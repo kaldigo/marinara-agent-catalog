@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
   "engine": {
     "min": "2.4.3",
@@ -23,13 +23,13 @@
   "files": [
     {
       "path": "bootstrap/register.mjs",
-      "sha256": "a067de378a443b0e768650ab4186610011fdc4794bc1cb77fa467d27788c92cc",
+      "sha256": "fb687dc33d59f27243ee6cce9661ffc1df37a90077e5b4d981a2bcaceb127347",
       "bytes": 27269
     },
     {
       "path": "client.js",
-      "sha256": "482c5a4a73d7ddc85c82bf3108a315c7849306fdb529169f84295dd919633ef6",
-      "bytes": 36585
+      "sha256": "0cdd24397876b58edf0de0a88c4204f7a8abad342af60fa8bb29b19aa62c2dbb",
+      "bytes": 39167
     },
     {
       "path": "server.mjs",
@@ -38,8 +38,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "482c5a4a73d7ddc85c82bf3108a315c7849306fdb529169f84295dd919633ef6",
-      "bytes": 36585
+      "sha256": "0cdd24397876b58edf0de0a88c4204f7a8abad342af60fa8bb29b19aa62c2dbb",
+      "bytes": 39167
     },
     {
       "path": "src/server/bootstrap-install.js",
@@ -53,8 +53,8 @@
     },
     {
       "path": "src/server/client-overlay.js",
-      "sha256": "b0829005edd107f44fd15aa2c4eaccf5082db0d613aae0363bff7d04d45bbd75",
-      "bytes": 27007
+      "sha256": "b88a675e095787d433bc0ccd0c099c0912d072a58314059b8eef3b625612c0ad",
+      "bytes": 31010
     },
     {
       "path": "src/server/group-selector-registry.js",
@@ -68,8 +68,8 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "88d4e27ee17c07821b30e028fb7e719080bcc8cb6b1354fcf11dbb8ecfc5cae5",
-      "bytes": 12386
+      "sha256": "9952d1b774535e46c194243875d4dbe6a6deaa544e5dec2f156caf1156cef460",
+      "bytes": 12665
     },
     {
       "path": "src/server/prompt-registry.js",
@@ -98,7 +98,7 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "150e023a9e1e15e3ec16dcdd54fd2d3da9108f8dbd9bffb9bbd9b3fb779db4dc",
+      "sha256": "cbabf1054dd88da0eb563afcfa87f88182b60d2fc4770a9f41f9adeca5c142f6",
       "bytes": 1841
     }
   ],

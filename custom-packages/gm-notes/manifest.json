@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gm-notes",
   "name": "GM Notes",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
   "engine": {
     "min": "2.4.3",
@@ -39,8 +39,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "b6bf73e565bdc1b696e21c2632d5fb23c5457dc04c14e6b21d3dd9a59848841c",
-      "bytes": 40060
+      "sha256": "c0656b1dc7664eb52c4af714a0222d1b0a191c6f645ce74fc4d92cfaff4c022c",
+      "bytes": 41194
     },
     {
       "path": "server.mjs",
@@ -54,8 +54,8 @@
     },
     {
       "path": "src/shared/state.js",
-      "sha256": "afab46b9809ad9f7048af2eaa3fad0abaf1bb35b46ca66a3892d04b1c3e4b445",
-      "bytes": 6029
+      "sha256": "82321795426a3fbc1e893e9fdb553958320908ccc98d08e6defa07e9e020f690",
+      "bytes": 6710
     }
   ],
   "permissions": [

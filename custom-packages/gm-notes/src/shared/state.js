@@ -97,6 +97,21 @@ export function mergeGmNotesIntoPlayerStats(playerStats, gmNotesState) {
   };
 }
 
+export function buildGmNotesAgentSuitePatch(gameState, parsed) {
+  if (!Array.isArray(parsed)) return { error: "GM Notes must be a JSON array" };
+  const fallbackSource = {
+    messageId: text(gameState?.messageId, 160) || "manual",
+    swipeIndex: Number.isInteger(Number(gameState?.swipeIndex)) ? Math.max(0, Number(gameState.swipeIndex)) : 0,
+  };
+  const normalized = normalizeGmNotesState({ notes: parsed }, fallbackSource);
+  if (normalized.notes.length !== parsed.length) {
+    return { error: "Every GM note must have a unique ID, a valid kind, and non-empty text" };
+  }
+  return {
+    playerStats: mergeGmNotesIntoPlayerStats(gameState?.playerStats, normalized),
+  };
+}
+
 export function applyGmNoteUpdates(currentState, rawUpdates, source = {}) {
   const before = normalizeGmNotesState(currentState, source);
   const notes = before.notes.map((note) => ({ ...note }));

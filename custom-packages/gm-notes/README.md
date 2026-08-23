@@ -63,6 +63,11 @@ through the UI, and agent-produced update/remove operations for it are ignored.
 The HUD remains a compact status surface; detailed management belongs in the
 docked panel.
 
+The native Agent Suite displays the current GM Notes array as Tracker Data.
+Agent Suite owns its normal JSON editor, Save/Reset, dirty-state guard, AI Edit,
+and refresh behavior; GM Notes supplies only its state reader, validation, and a
+merge-safe GameState patch that preserves other package namespaces.
+
 Mari Bridge is required for the result/context hooks and these native UI slots.
 If the required capabilities are unavailable, GM Notes fails closed instead of
 falling back to DOM listeners or a parallel implementation.

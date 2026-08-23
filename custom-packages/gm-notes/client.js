@@ -168,6 +168,21 @@ function mergeGmNotesIntoPlayerStats(playerStats, gmNotesState) {
   };
 }
 
+function buildGmNotesAgentSuitePatch(gameState, parsed) {
+  if (!Array.isArray(parsed)) return { error: "GM Notes must be a JSON array" };
+  const fallbackSource = {
+    messageId: text(gameState?.messageId, 160) || "manual",
+    swipeIndex: Number.isInteger(Number(gameState?.swipeIndex)) ? Math.max(0, Number(gameState.swipeIndex)) : 0,
+  };
+  const normalized = normalizeGmNotesState({ notes: parsed }, fallbackSource);
+  if (normalized.notes.length !== parsed.length) {
+    return { error: "Every GM note must have a unique ID, a valid kind, and non-empty text" };
+  }
+  return {
+    playerStats: mergeGmNotesIntoPlayerStats(gameState?.playerStats, normalized),
+  };
+}
+
 function applyGmNoteUpdates(currentState, rawUpdates, source = {}) {
   const before = normalizeGmNotesState(currentState, source);
   const notes = before.notes.map((note) => ({ ...note }));
@@ -260,6 +275,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     consumerId: PACKAGE_ID,
     api: { major: 1, minMinor: 1 },
     require: [
+      "agent-suite.tracker-data",
       "chat.active",
       "client.bridge-first",
       "consumer.sessions",
@@ -620,6 +636,15 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       agentIds: [PACKAGE_ID],
       rerunAgentId: PACKAGE_ID,
     });
+    const disposeAgentSuite = bridgeSession.agentSuite.registerTrackerData({
+      agentId: PACKAGE_ID,
+      label: "GM Notes",
+      description: "Reminders, unresolved threads, and continuity diagnostics committed for this chat.",
+      getValue(gameState) {
+        return readGmNotesFromPlayerStats(gameState?.playerStats).notes;
+      },
+      buildPatch: buildGmNotesAgentSuitePatch,
+    });
     const disposeHud = bridgeSession.ui.register({ id: "hud", slot: "roleplay.hud", view: "hud" });
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
       if (chatId) void loadState(chatId, true);
@@ -631,6 +656,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     return () => {
       disposeGeneration();
       disposeChat();
+      disposeAgentSuite();
       disposeHud();
       disposeTracker();
     };

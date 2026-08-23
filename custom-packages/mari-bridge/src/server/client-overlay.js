@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v14";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v15";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
@@ -246,6 +246,68 @@ export function patchTrackerPanelBridge(source) {
   return patched;
 }
 
+export function patchAgentSuiteBridge(source) {
+  if (
+    !source.includes('"agent-suite","game-state"')
+    || !source.includes('"No tracker snapshot to update"')
+    || !source.includes('"ui.chat.agentsuitemodal.trackerData"')
+  ) return null;
+  const identifier = "[A-Za-z_$][\\w$]*";
+  const componentPattern = new RegExp(
+    `function (?<component>${identifier})\\(\\{chat:(?<chat>${identifier}),open:(?<open>${identifier}),onClose:(?<close>${identifier}),onCloseGuardChange:(?<guard>${identifier}),agents:(?<agents>${identifier})\\}\\)\\{`,
+    "gu",
+  );
+  const componentMatches = [...source.matchAll(componentPattern)];
+  if (componentMatches.length !== 1) {
+    throw new Error(`Mari Bridge Agent Suite patch expected one modal component, found ${componentMatches.length}`);
+  }
+  const component = componentMatches[0];
+  const bodyStart = component.index + component[0].length - 1;
+  const bodyEnd = findMatchingDelimiter(source, bodyStart, "{", "}");
+  const body = source.slice(bodyStart, bodyEnd + 1);
+  const trackerFlagPattern = new RegExp(
+    `!!(?<selected>${identifier})&&!!(?<registry>${identifier})\\[\\k<selected>\\.id\\]`,
+    "gu",
+  );
+  const trackerFlagMatches = [...body.matchAll(trackerFlagPattern)];
+  if (trackerFlagMatches.length !== 1) {
+    throw new Error(`Mari Bridge Agent Suite patch expected one tracker-agent lookup, found ${trackerFlagMatches.length}`);
+  }
+  const tracker = trackerFlagMatches[0];
+  const trackerSlicePattern = new RegExp(
+    `(?<slice>${identifier})=${escapePattern(tracker.groups.selected)}\\?${escapePattern(tracker.groups.registry)}\\[${escapePattern(tracker.groups.selected)}\\.id\\]:void 0`,
+    "gu",
+  );
+  const trackerSliceMatches = [...body.matchAll(trackerSlicePattern)];
+  if (trackerSliceMatches.length !== 1) {
+    throw new Error(`Mari Bridge Agent Suite patch expected one selected tracker slice, found ${trackerSliceMatches.length}`);
+  }
+  const savePattern = new RegExp(
+    `const (?<savedSlice>${identifier})=${escapePattern(tracker.groups.registry)}\\[(?<agentId>${identifier})\\];if\\(!\\k<savedSlice>\\)throw new Error\\("No tracker snapshot to update"\\)`,
+    "gu",
+  );
+  const saveMatches = [...body.matchAll(savePattern)];
+  if (saveMatches.length !== 1) {
+    throw new Error(`Mari Bridge Agent Suite patch expected one tracker save lookup, found ${saveMatches.length}`);
+  }
+  const react = findNamedImportAlias(source, "vendor-react-", "r");
+  let patchedBody = body;
+  patchedBody = patchedBody.replace(
+    tracker[0],
+    `!!${tracker.groups.selected}&&!!(${CLIENT_SYMBOL_EXPRESSION}?.resolveAgentSuiteTrackerSlice(${tracker.groups.selected}.id)??${tracker.groups.registry}[${tracker.groups.selected}.id])`,
+  );
+  patchedBody = patchedBody.replace(
+    trackerSliceMatches[0][0],
+    `${trackerSliceMatches[0].groups.slice}=${tracker.groups.selected}?(${CLIENT_SYMBOL_EXPRESSION}?.resolveAgentSuiteTrackerSlice(${tracker.groups.selected}.id)??${tracker.groups.registry}[${tracker.groups.selected}.id]):void 0`,
+  );
+  patchedBody = patchedBody.replace(
+    saveMatches[0][0],
+    `const ${saveMatches[0].groups.savedSlice}=${CLIENT_SYMBOL_EXPRESSION}?.resolveAgentSuiteTrackerSlice(${saveMatches[0].groups.agentId})??${tracker.groups.registry}[${saveMatches[0].groups.agentId}];if(!${saveMatches[0].groups.savedSlice})throw new Error("No tracker snapshot to update")`,
+  );
+  patchedBody = `{${CLIENT_SYMBOL_EXPRESSION}?.useAgentSuiteTrackerData(${react});${patchedBody.slice(1)}`;
+  return `${source.slice(0, bodyStart)}${patchedBody}${source.slice(bodyEnd + 1)}`;
+}
+
 function findNamedImportAlias(source, moduleMarker, exportedName) {
   const pattern = new RegExp(`import\\{(?<specifiers>[^}]+)\\}from"[^"]*${escapePattern(moduleMarker)}[^"]*"`, "gu");
   const matches = [...source.matchAll(pattern)];
@@ -358,7 +420,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   try {
     await readFile(readyFile, "utf8");
     await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-    return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
+    return { root: target, fingerprint, patches: ["client.active-chat", "client.agent-suite-tracker-data", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
   } catch {
     // Build below.
   }
@@ -387,6 +449,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     .map((entry) => entry.name);
   let chatInputPatchCount = 0;
   let chatSettingsPatchCount = 0;
+  let agentSuitePatchCount = 0;
   let slashCommandListPatchCount = 0;
   let trackerPanelPatchCount = 0;
   let roleplayHudPatchCount = 0;
@@ -406,6 +469,12 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     if (chatSettingsPatched !== null) {
       assetSource = chatSettingsPatched;
       chatSettingsPatchCount += 1;
+      changed = true;
+    }
+    const agentSuitePatched = patchAgentSuiteBridge(assetSource);
+    if (agentSuitePatched !== null) {
+      assetSource = agentSuitePatched;
+      agentSuitePatchCount += 1;
       changed = true;
     }
     const slashCommandListPatched = patchSlashCommandListBridge(assetSource);
@@ -436,6 +505,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   }
   if (chatInputPatchCount !== 2) throw new Error(`Mari Bridge expected two chat input assets, found ${chatInputPatchCount}`);
   if (chatSettingsPatchCount !== 1) throw new Error(`Mari Bridge expected one chat settings asset, found ${chatSettingsPatchCount}`);
+  if (agentSuitePatchCount !== 1) throw new Error(`Mari Bridge expected one Agent Suite asset, found ${agentSuitePatchCount}`);
   if (slashCommandListPatchCount !== 1) throw new Error(`Mari Bridge expected one slash command list asset, found ${slashCommandListPatchCount}`);
   if (trackerPanelPatchCount !== 1) throw new Error(`Mari Bridge expected one Tracker panel asset, found ${trackerPanelPatchCount}`);
   if (roleplayHudPatchCount !== 1) throw new Error(`Mari Bridge expected one Roleplay HUD asset, found ${roleplayHudPatchCount}`);
@@ -458,5 +528,5 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   await rm(target, { recursive: true, force: true });
   await rename(temporary, target);
   await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-  return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
+  return { root: target, fingerprint, patches: ["client.active-chat", "client.agent-suite-tracker-data", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
 }
