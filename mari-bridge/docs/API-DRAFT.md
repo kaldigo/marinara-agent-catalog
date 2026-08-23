@@ -466,6 +466,16 @@ delivers scoped `capabilityProps` through the
 `marinara-capability-props` event. This is bridge-owned transport at an exact
 native mount site, not consumer-side DOM discovery.
 
+### Agent Suite tracker data
+
+`agent-suite.tracker-data` extends the existing native Agent Suite tracker-slice
+registry. A consumer registers an agent ID, label, description, `getValue`
+reader, and merge-safe `buildPatch` function. Mari Bridge resolves that slice at
+the native lookup sites; Agent Suite continues to own loading, JSON editing,
+Save/Reset, dirty-state protection, AI Edit, GameState refresh, and the native
+manual PATCH request. Consumers must preserve unrelated GameState fields and
+package namespaces in their patch builder and must not render a second editor.
+
 ## Dependency state
 
 The current manifest schema has no package dependency field. Until Marinara

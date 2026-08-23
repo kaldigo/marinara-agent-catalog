@@ -67,6 +67,7 @@ execution or public persistence APIs.
 - native Agent-card additions through `agent.settings`;
 - native composer additions through `composer.above-input`;
 - native docked Tracker sections through `tracker.section`;
+- native Agent Suite Tracker Data through `agent-suite.tracker-data`;
 - Roleplay HUD content through `roleplay.hud`;
 - native background-value adaptation.
 

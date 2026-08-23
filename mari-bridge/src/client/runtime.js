@@ -327,6 +327,57 @@ function createUiRegistry(activeChat) {
   });
 }
 
+function createAgentSuiteTrackerDataRegistry() {
+  const registrations = new Map();
+  const subscribers = new Set();
+  let revision = 0;
+
+  function publish() {
+    revision += 1;
+    for (const subscriber of [...subscribers]) subscriber();
+  }
+
+  return Object.freeze({
+    register(ownerId, input = {}) {
+      const agentId = String(input.agentId ?? "").trim();
+      const label = String(input.label ?? "").trim();
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(agentId) || !label) {
+        throw new TypeError("Mari Bridge Agent Suite tracker data requires an agentId and label");
+      }
+      if (typeof input.getValue !== "function" || typeof input.buildPatch !== "function") {
+        throw new TypeError("Mari Bridge Agent Suite tracker data requires getValue and buildPatch functions");
+      }
+      if (registrations.has(agentId)) throw new Error(`Duplicate Mari Bridge Agent Suite tracker data for ${agentId}`);
+      const registration = Object.freeze({
+        ownerId,
+        agentId,
+        label,
+        description: String(input.description ?? "").trim(),
+        getValue: input.getValue,
+        buildPatch: input.buildPatch,
+      });
+      registrations.set(agentId, registration);
+      publish();
+      return () => {
+        if (registrations.get(agentId) === registration) {
+          registrations.delete(agentId);
+          publish();
+        }
+      };
+    },
+    resolve(agentId) {
+      return registrations.get(String(agentId ?? "").trim());
+    },
+    subscribe(listener) {
+      subscribers.add(listener);
+      return () => subscribers.delete(listener);
+    },
+    getVersion() {
+      return revision;
+    },
+  });
+}
+
 function defineAgentSettingsElement(ui) {
   if (!globalThis.customElements || customElements.get(AGENT_SETTINGS_TAG)) return;
   customElements.define(AGENT_SETTINGS_TAG, class MariBridgeAgentSettings extends HTMLElement {
@@ -695,10 +746,12 @@ function createClientRuntime(serverHealth) {
   const commands = createCommandRegistry();
   const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
+  const agentSuiteTrackerData = createAgentSuiteTrackerDataRegistry();
   const mountNativeSlot = createNativeSlotMounter();
   const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui);
   const capabilities = new Set([
     "chat.active",
+    "agent-suite.tracker-data",
     "client.bridge-first",
     "commands",
     "commands.draft-write",
@@ -715,7 +768,7 @@ function createClientRuntime(serverHealth) {
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.14",
+    implementationVersion: "1.0.15",
     status: "ready",
     capabilities,
     serverHealth,
@@ -807,6 +860,16 @@ function createClientRuntime(serverHealth) {
             return cleanup;
           },
         }),
+        agentSuite: Object.freeze({
+          registerTrackerData(input) {
+            if (!required.includes("agent-suite.tracker-data")) {
+              throw new Error(`${consumerId} did not require agent-suite.tracker-data`);
+            }
+            const cleanup = agentSuiteTrackerData.register(consumerId, input);
+            cleanups.push(cleanup);
+            return cleanup;
+          },
+        }),
         async close(reason = "Mari Bridge client consumer closed") {
           if (closed) return;
           closed = true;
@@ -848,6 +911,17 @@ function createClientRuntime(serverHealth) {
         url,
         blurPx: owned ? Math.max(0, Math.min(24, Math.round(Number(settings.blur) || 0))) : blurPx,
       });
+    },
+    resolveAgentSuiteTrackerSlice(agentId) {
+      return agentSuiteTrackerData.resolve(agentId);
+    },
+    useAgentSuiteTrackerData(react) {
+      if (!react?.useSyncExternalStore) return agentSuiteTrackerData.getVersion();
+      return react.useSyncExternalStore(
+        agentSuiteTrackerData.subscribe,
+        agentSuiteTrackerData.getVersion,
+        agentSuiteTrackerData.getVersion,
+      );
     },
     ui,
     mountNativeSlot,

@@ -41,9 +41,10 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.14` supports Marinara Engine 2.4.3 and adds package-owned structured
-agent result types, committed and agent-facing tracker-context sections, and
-native tracker-section contributions and Roleplay HUD mount points. Tracker
+Version `1.0.15` supports Marinara Engine 2.4.3 and adds package-owned structured
+agent result types, committed and agent-facing tracker-context sections, native
+Agent Suite tracker-data registrations, and native tracker-section contributions
+and Roleplay HUD mount points. Tracker
 contributions are inserted inside Marinara's ordered section list and receive
 the native section header, collapse behavior, edit mode, active-agent state,
 and rerun callback; consumers provide only descriptors and feature-specific
@@ -57,6 +58,11 @@ native active-chat and generation-controller events. It also owns per-chat strea
 which writes through Marinara's persisted draft store after the originating
 screen unmounts. The isolated test instance verifies the bridge and its current
 consumers all reach `ready` after a restart.
+
+Agent Suite tracker-data registrations reuse Marinara's existing Tracker Data
+block, JSON editor, Save/Reset, dirty-state guard, AI Edit, GameState refresh,
+and manual patch flow. Consumers provide only the agent ID, labels, state reader,
+and merge-safe feature-state patch builder.
 
 The version-bound preset-assembly patch extends Marinara's native macro context
 with `{{active-agents}}`, `{{group_scenario_override}}`, and `{{group_mode}}`.

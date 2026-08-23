@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   applyGmNoteUpdates,
+  buildGmNotesAgentSuitePatch,
   formatGmNotesForCommittedContext,
   mergeGmNotesIntoPlayerStats,
   readGmNotesFromPlayerStats,
@@ -58,6 +59,18 @@ assert.equal(readGmNotesFromPlayerStats(JSON.stringify(merged)).notes.length, 2)
 assert.equal(
   formatGmNotesForCommittedContext(merged),
   "[R] Never reveal the true name.\n[T] The western gate remains sealed.",
+);
+const suitePatch = buildGmNotesAgentSuitePatch(
+  { messageId: "message-3", swipeIndex: 1, playerStats: merged },
+  created.state.notes.map((note) => ({ ...note, text: `${note.text} Edited` })),
+);
+assert.deepEqual(suitePatch.playerStats.inventory, existingPlayerStats.inventory);
+assert.deepEqual(suitePatch.playerStats.packageState.other, { keep: true });
+assert.equal(readGmNotesFromPlayerStats(suitePatch.playerStats).notes[0].text, "Never reveal the true name. Edited");
+assert.deepEqual(buildGmNotesAgentSuitePatch({}, {}), { error: "GM Notes must be a JSON array" });
+assert.deepEqual(
+  buildGmNotesAgentSuitePatch({}, [{ id: "invalid", kind: "unknown", text: "Bad" }]),
+  { error: "Every GM note must have a unique ID, a valid kind, and non-empty text" },
 );
 
 const bridgeSymbol = Symbol.for("marinara.mari-bridge.v1");

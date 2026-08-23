@@ -11,6 +11,7 @@ import { createGroupSelectorRegistry } from "../src/server/group-selector-regist
 import { createHostLifecycleRegistry } from "../src/server/host-lifecycle-registry.js";
 import {
   patchActiveChatEvents,
+  patchAgentSuiteBridge,
   patchChatInputBridge,
   patchChatSettingsBridge,
   patchGenerationControllerEvents,
@@ -195,7 +196,8 @@ globalThis.document = {
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.14");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.15");
+assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
@@ -228,7 +230,7 @@ await clientSession.close();
 const featureSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "feature-test",
   api: { major: 1, minMinor: 0 },
-  require: ["commands", "quick-replies.input-macro", "ui.agent-settings", "ui.tracker-section"],
+  require: ["agent-suite.tracker-data", "commands", "quick-replies.input-macro", "ui.agent-settings", "ui.tracker-section"],
 });
 featureSession.commands.register({
   id: "probe",
@@ -283,8 +285,20 @@ const nativeTrackerOrder = globalThis[clientSymbol].renderNativeTrackerSections(
 });
 assert.deepEqual([nativeTrackerOrder[0], nativeTrackerOrder[2]], ["world", "custom"]);
 assert.equal(nativeTrackerOrder[1].key, "mari-bridge:tracker-sections");
+featureSession.agentSuite.registerTrackerData({
+  agentId: "feature-test",
+  label: "Feature Test Data",
+  description: "Package-owned tracker data",
+  getValue: (gameState) => gameState.featureTest ?? [],
+  buildPatch: (_gameState, parsed) => Array.isArray(parsed) ? { featureTest: parsed } : { error: "Must be an array" },
+});
+const featureTrackerSlice = globalThis[clientSymbol].resolveAgentSuiteTrackerSlice("feature-test");
+assert.equal(featureTrackerSlice.label, "Feature Test Data");
+assert.deepEqual(featureTrackerSlice.getValue({ featureTest: [1] }), [1]);
+assert.deepEqual(featureTrackerSlice.buildPatch({}, [2]), { featureTest: [2] });
 await featureSession.close();
 assert.equal(trackerUiPublishes, 3);
+assert.equal(globalThis[clientSymbol].resolveAgentSuiteTrackerSlice("feature-test"), undefined);
 unsubscribeTrackerUi();
 globalThis.fetch = async (url) => {
   assert.equal(url, "/api/generate/dryRun");
@@ -368,6 +382,15 @@ const chatSettingsFixture = [
 const patchedChatSettings = patchChatSettingsBridge(chatSettingsFixture);
 assert.equal((patchedChatSettings.match(/marinara-mari-bridge-agent-settings/gu) ?? []).length, 2);
 assert.match(patchedChatSettings, /"agent-id":agent\.id/u);
+const agentSuiteFixture = [
+  'import{r as react}from"./vendor-react-test.js";',
+  'const slices={};',
+  'function AgentSuite({chat:chat,open:open,onClose:close,onCloseGuardChange:guard,agents:agents}){const selected=agents[0]??null,isTracker=!!selected&&!!slices[selected.id],query=["agent-suite","game-state",chat.id],save=react.useCallback(async(agentId,text)=>{const slice=slices[agentId];if(!slice)throw new Error("No tracker snapshot to update");return slice.buildPatch({},JSON.parse(text))},[]),trackerSlice=selected?slices[selected.id]:void 0;return "ui.chat.agentsuitemodal.trackerData"}',
+].join("");
+const patchedAgentSuite = patchAgentSuiteBridge(agentSuiteFixture);
+assert.equal((patchedAgentSuite.match(/useAgentSuiteTrackerData/gu) ?? []).length, 1);
+assert.equal((patchedAgentSuite.match(/resolveAgentSuiteTrackerSlice/gu) ?? []).length, 3);
+assert.throws(() => patchAgentSuiteBridge('const value=["agent-suite","game-state"];const error="No tracker snapshot to update";const label="ui.chat.agentsuitemodal.trackerData";'), /expected one modal component/u);
 const trackerPanelFixture = [
   'import{r as react,j as jsx}from"./vendor-react-test.js";',
   'import{S as SectionHeader,L as SectionIconButton,f as ReadabilityVeil,E as EmptySection}from"./world-custom-field-icons-test.js";',
@@ -410,6 +433,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-one.js"), chatInputFi
 await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-two.js"), chatInputFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "slash-commands.js"), slashCommandListFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "chat-settings.js"), chatSettingsFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "agent-suite.js"), agentSuiteFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanelFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background.js"), roleplayBackgroundFixture);
@@ -423,7 +447,7 @@ const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.ro
 assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.equal(preparedOverlayMain.startsWith("{\nconst API_VERSION = Object.freeze"), true);
-assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.14"/u);
+assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.15"/u);
 assert.equal(
   preparedOverlayMain.indexOf("const API_VERSION") <
     preparedOverlayMain.indexOf('window.dispatchEvent(new CustomEvent("marinara:active-chat"'),
@@ -451,10 +475,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.14"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.14" }, false, "1.0.14"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.13" }, false, "1.0.14"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.14" }, true, "1.0.14"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.15"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.15" }, false, "1.0.15"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.14" }, false, "1.0.15"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.15" }, true, "1.0.15"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");

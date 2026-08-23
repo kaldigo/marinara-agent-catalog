@@ -1,5 +1,10 @@
 import { activateClientWithMariBridge } from "../../../_mari-bridge/sdk/client.js";
-import { GM_NOTE_KINDS, mergeGmNotesIntoPlayerStats, readGmNotesFromPlayerStats } from "../shared/state.js";
+import {
+  buildGmNotesAgentSuitePatch,
+  GM_NOTE_KINDS,
+  mergeGmNotesIntoPlayerStats,
+  readGmNotesFromPlayerStats,
+} from "../shared/state.js";
 
 const PACKAGE_ID = "gm-notes";
 const TAG_NAME = "marinara-capability-gm-notes";
@@ -31,6 +36,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     consumerId: PACKAGE_ID,
     api: { major: 1, minMinor: 1 },
     require: [
+      "agent-suite.tracker-data",
       "chat.active",
       "client.bridge-first",
       "consumer.sessions",
@@ -391,6 +397,15 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       agentIds: [PACKAGE_ID],
       rerunAgentId: PACKAGE_ID,
     });
+    const disposeAgentSuite = bridgeSession.agentSuite.registerTrackerData({
+      agentId: PACKAGE_ID,
+      label: "GM Notes",
+      description: "Reminders, unresolved threads, and continuity diagnostics committed for this chat.",
+      getValue(gameState) {
+        return readGmNotesFromPlayerStats(gameState?.playerStats).notes;
+      },
+      buildPatch: buildGmNotesAgentSuitePatch,
+    });
     const disposeHud = bridgeSession.ui.register({ id: "hud", slot: "roleplay.hud", view: "hud" });
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
       if (chatId) void loadState(chatId, true);
@@ -402,6 +417,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     return () => {
       disposeGeneration();
       disposeChat();
+      disposeAgentSuite();
       disposeHud();
       disposeTracker();
     };
