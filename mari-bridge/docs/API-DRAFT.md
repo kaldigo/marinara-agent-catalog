@@ -3,13 +3,19 @@
 These names are provisional. The important part is the separation between
 suppression, injection, message transformation, and observation.
 
+This document is subordinate to the native-first package policy in
+`packages/AGENTS.md`. An API is justified only when an active package cannot use
+an existing Marinara agent, setting, store, action, or UI surface directly. It
+must expose the smallest missing native seam; it must not become a parallel
+settings, generation, persistence, or rendering framework.
+
 ## Server discovery
 
 Consumer server entrypoints use the `_mari-bridge` SDK. They do not read the
 global registry directly:
 
 ```js
-import { activateWithMariBridge } from "../../bridge/sdk.js";
+import { activateWithMariBridge } from "../../../_mari-bridge/sdk/server.js";
 
 export async function activate(context) {
   return activateWithMariBridge(
@@ -42,11 +48,20 @@ owning package ID.
 Client packages use the corresponding SDK entrypoint:
 
 ```ts
+import { activateClientWithMariBridge } from "../../../_mari-bridge/sdk/client.js";
+
 activateClientWithMariBridge(
   {
     consumerId: "presence",
-    api: { major: 1, minMinor: 0 },
-    require: ["commands", "ui.chat-settings", "chat.lifecycle"],
+    api: { major: 1, minMinor: 1 },
+    require: [
+      "chat.active",
+      "client.bridge-first",
+      "commands",
+      "consumer.sessions",
+      "runtime.health",
+      "ui.agent-settings",
+    ],
   },
   (session) => mountPresenceClient(session),
 );
@@ -333,73 +348,48 @@ package variables, conditionals, and date/time. Unknown macros should remain
 visible unless the native resolver defines different behavior; never silently
 delete arbitrary tokens.
 
-## Model and generation execution
+## Native generation lifecycle
 
-Surviving packages need a supported way to run configured agent work without
-reconstructing raw/dry-run requests independently:
+Normal prompt agents must use Marinara's native agent runner. Commands that are
+variants of an existing native workflow must invoke that workflow rather than
+reconstructing its request, connection, model, streaming, or abort handling.
 
-```ts
-const run = await bridge.generation.execute({
-  owner: "example-package",
-  id: "post-response-job",
-  kind: "agent",
-  chatId,
-  connectionCategory: "agent",
-  messages,
-  responseSchema,
-  lockComposer: false,
-  signal,
-});
-```
-
-The execution service must inherit saved connection parameters and use the
-configured Agent-category fallback. It should support structured non-streaming,
-raw, and dry-run/streaming execution where a surviving consumer needs them.
-
-Generation lifecycle registration includes:
+The bridge exposes lifecycle observation and ownership only where a package
+needs a signal Marinara does not publish:
 
 ```ts
-bridge.generation.subscribe(listener);
-bridge.generation.getSnapshot();
-bridge.generation.declare({ owner, id, kind, chatId, abort, lockComposer });
-bridge.generation.abort(runId);
+bridgeSession.generation.subscribe(listener);
+bridgeSession.generation.getSnapshot();
 ```
 
-Snapshots distinguish native main generation from package agent generation and
-report started, completed, errored, and aborted states. Declarations return an
-idempotent controller with `complete`, `error`, and `abort` methods. Native
-generation tracking must use patched stores/call sites rather than Stop-button
-DOM detection.
+Snapshots distinguish native main generation from bridge-owned draft work and
+report started, completed, errored, and aborted states. The bridge's patched
+native adapter owns lifecycle declarations and abort controllers; ordinary
+consumers observe only the scoped session surface. Native generation tracking
+uses patched stores/call sites rather than Stop-button DOM detection.
 
 Composer locking is reference-counted by chat/run. The native send control
 becomes a Stop action only when the owning run is abortable, and cleanup restores
 the exact native state.
 
-SSE parsing and JSON-stream helpers remain thin SDK/internal utilities for
-these execution paths. The old general fetch-interceptor pipeline is not
-retained because Response Keeper is being retired.
+SSE parsing and JSON-stream helpers remain private to the narrow native draft
+adapter used by Better Impersonate. They are not a general package generation
+API. The old fetch-interceptor pipeline is not retained.
 
-## Chat, navigation, summary, and roster lifecycle
+## Chat and host lifecycle
 
-Replace active-chat polling and summary diff inference with native patched
-events:
+Replace active-chat polling with events from exact native call sites:
 
 ```ts
-clientBridge.chat.getActive();
-clientBridge.chat.subscribe(listener);
-bridge.lifecycle.onSummaryChange(listener);
-bridge.lifecycle.onRosterChange(listener);
+bridgeSession.chat.active.getSnapshot();
+bridgeSession.chat.active.subscribe(listener);
+bridgeSession.lifecycle.register(listener);
 ```
 
-Chat events include previous/next chat ID, workflow, and navigation reason.
-Summary events distinguish created, generated, edited, toggled, and deleted
-entries with source metadata. Roster events include added/removed character IDs
-and the resulting ordered roster.
-
-The server side should also expose the bulk scoped message update needed by
-Presence so roster reconciliation and Hide From AI backfill do not issue one
-external request per message. Per-character summary audiences remain a retained
-bridge requirement even if implemented after the basic event stream.
+Chat events include the active chat ID and workflow. Host lifecycle events are
+added only for an active consumer and carry structured native state. Presence
+uses these events for roster/message reconciliation and writes Marinara's native
+message visibility fields. Presence does not observe or alter summaries.
 
 ## Slash commands and native composer actions
 
@@ -407,14 +397,12 @@ Slash commands become a native composer registry rather than capture-phase DOM
 listeners:
 
 ```ts
-clientBridge.commands.register({
-  owner: "presence",
+bridgeSession.commands.register({
   id: "presence",
   commands: ["/presence"],
-  augments: ["/hide"],
-  priority: 100,
-  owns(match, context) {},
-  run(match, context) {},
+  description: "Show or update character presence for this chat",
+  usage: "/presence [status or character]",
+  handler({ raw, context }) {},
 });
 ```
 
@@ -424,71 +412,55 @@ cleanup. Message-range parsing remains a thin SDK utility.
 
 Roleplay command contexts expose `setDraft(text)` when the consumer requires
 `commands.draft-write`. Long-running draft work uses
-`clientBridge.drafts.generate({ chatId, body, onUpdate })`; the bridge owns the
+`bridgeSession.drafts.generate({ chatId, body, onUpdate })`; the bridge owns the
 stream independently of the mounted chat surface, while `setDraft` commits each
 update through Marinara's native per-chat draft store. Consumers stop their own
-run with `clientBridge.drafts.abort(chatId)`.
-
-Native composer actions replace button lookup/click helpers:
-
-```ts
-await clientBridge.composer.invoke("trigger-character-response", options);
-await clientBridge.composer.invoke("quick-reply", { label, chatId });
-```
-
-Invocation returns structured missing, disabled, started, and completed states.
-Composer slot props also expose the active chat, input state, generation state,
-and supported action IDs without exposing DOM nodes.
+run with `bridgeSession.drafts.abort(chatId)`.
 
 ## Client registration
 
-Proposed native slots:
+Implemented native extension slots:
 
-- `chat.settings`
-- `message.actions`
+- `agent.settings`
 - `composer.above-input`
-- `composer.quick-actions`
-- `chat.toolbar`
-- `chat.surface`
-- `topbar.panels`
+- `tracker.panel`
+- `roleplay.hud`
 
-Every listed slot is part of the retained contract. Implementation can stage
-them, but publication/migration cannot strand a surviving consumer.
+Each slot is mounted at an exact native render site and exists because an active
+consumer needs a field or surface Marinara does not expose. Future slots are not
+added speculatively.
 
 Example registration:
 
 ```ts
-clientBridge.slots.register({
-  id: "example-package:chat-settings",
-  slot: "chat.settings",
-  order: 300,
-  workflows: ["roleplay", "visual-novel"],
-  placement: {
-    section: "roleplay-agents",
-    card: { title: "Example Package", description: "...", icon: "settings" },
-  },
-  render(host, props) {
-    return mountExamplePackageSettings(host, props);
-  },
+bridgeSession.ui.register({
+  id: "example-package:agent-field",
+  slot: "agent.settings",
+  agentId: "example-package",
+  view: "agent-field",
 });
 ```
 
-`chat.settings` props should include chat ID, mode/workflow, enabled package
-state, save/update helpers, drawer lifecycle, and placement metadata. Settings
-registrations support section, card title/description/icon, order, visibility,
-and stable contribution IDs.
+`agent.settings` is for package-specific fields inside an existing native agent
+card. Marinara still renders and saves the standard agent settings, prompt
+templates, connection/model, tools, and enablement. A consumer may not use this
+slot to replace the whole card.
 
-`message.actions` props should include chat ID, message ID, active swipe,
-speaker/character identity, user/assistant role, generation state, and native
-refresh callbacks.
+`tracker.panel` and `roleplay.hud` extend native tracker surfaces. Their
+interactions must follow the closest native behavior: inline editing, explicit
+add/remove/lock modes where applicable, responsive clamped portals, and no
+browser alert/prompt/confirm workflow. `composer.above-input` is reserved for a
+real control that cannot be expressed as a native command or existing composer
+action.
 
 Patched React mounts own host creation and destruction. Consumer cleanup only
 unmounts its renderer. No MutationObserver, repeated full-chat scan, or selector
 probing belongs in the new native-slot path.
 
-All surviving consumers are rewritten for this direct renderer contract. The
-new runtime does not emulate the old custom element, `view`, `capabilityProps`,
-or `marinara-capability-props` interfaces.
+The patched host creates deterministic `marinara-capability-*` elements and
+delivers scoped `capabilityProps` through the
+`marinara-capability-props` event. This is bridge-owned transport at an exact
+native mount site, not consumer-side DOM discovery.
 
 ## Dependency state
 
@@ -502,7 +474,7 @@ supports one, consumer packages should:
 5. stop and clean up if a required capability is revoked;
 6. never fall back to old prompt, DOM, event, or fetch behavior.
 
-For the planned rewrites, no old-bridge fallback is permitted. Each migrated
+No old-bridge fallback is permitted. Each migrated
 consumer either holds a healthy SDK session for all declared requirements or
 does not run.
 

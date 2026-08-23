@@ -105,18 +105,53 @@ function patchRoleplayCommandDraftWriter(source) {
 }
 
 export function patchChatSettingsBridge(source) {
-  if (!source.includes("data-chat-settings-section")) return null;
-  const pattern = /(?<open>[A-Za-z_$][\w$]*&&)(?<jsx>[A-Za-z_$][\w$]*)\.jsx\("div",\{className:(?<cn>[A-Za-z_$][\w$]*)\("px-4 pb-3",(?<contentClass>[A-Za-z_$][\w$]*)\?\?"pt-3"\),children:(?<children>[A-Za-z_$][\w$]*)\}\)/gu;
+  if (!source.includes("data-chat-agent-entry")) return null;
+  const pattern = /(?<jsx>[A-Za-z_$][\w$]*)\.jsxs\("div",\{(?<props>[^{}]{0,1400}?"data-chat-agent-entry":(?<agent>[A-Za-z_$][\w$]*)\.id[^{}]{0,1400}?),children:\[/gu;
   const matches = [...source.matchAll(pattern)];
-  if (matches.length !== 1) throw new Error(`Mari Bridge chat-settings slot patch expected one section body, found ${matches.length}`);
-  const componentStart = source.lastIndexOf("function ", matches[0].index);
-  const componentPrefix = source.slice(componentStart, matches[0].index);
-  const sectionId = componentPrefix.match(/\(\{id:(?<id>[A-Za-z_$][\w$]*)/u)?.groups?.id;
-  if (!sectionId) throw new Error("Mari Bridge chat-settings slot patch could not identify the section id");
-  return source.replace(pattern, (...args) => {
-    const groups = args.at(-1);
-    return `${groups.open}${groups.jsx}.jsxs("div",{className:${groups.cn}("px-4 pb-3",${groups.contentClass}??"pt-3"),children:[${groups.children},${sectionId}==="roleplay-agents"?${groups.jsx}.jsx("marinara-mari-bridge-slot",{name:"chat.settings"}):null]})`;
+  if (matches.length !== 2) {
+    throw new Error(`Mari Bridge native agent-settings patch expected two generic agent cards, found ${matches.length}`);
+  }
+  const insertions = matches.map((match) => {
+    const childrenStart = match.index + match[0].length - 1;
+    const childrenEnd = findMatchingDelimiter(source, childrenStart, "[", "]");
+    const prefix = source.slice(Math.max(0, match.index - 900), match.index);
+    const activePattern = new RegExp(
+      `const (?<active>[A-Za-z_$][\\w$]*)=[A-Za-z_$][\\w$]*\\.includes\\(${escapePattern(match.groups.agent)}\\.id\\)`,
+      "gu",
+    );
+    const activeMatches = [...prefix.matchAll(activePattern)];
+    const active = activeMatches.at(-1)?.groups?.active;
+    const expression = `${match.groups.jsx}.jsx("marinara-mari-bridge-agent-settings",{"agent-id":${match.groups.agent}.id})`;
+    return { index: childrenEnd, text: `,${active ? `${active}&&` : ""}${expression}` };
   });
+  let patched = source;
+  for (const insertion of insertions.sort((left, right) => right.index - left.index)) {
+    patched = `${patched.slice(0, insertion.index)}${insertion.text}${patched.slice(insertion.index)}`;
+  }
+  return patched;
+}
+
+function findMatchingDelimiter(source, start, open, close) {
+  if (source[start] !== open) throw new Error(`Mari Bridge delimiter scan expected ${open}`);
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+      continue;
+    }
+    if (character === open) depth += 1;
+    else if (character === close && --depth === 0) return index;
+  }
+  throw new Error(`Mari Bridge delimiter scan did not find ${close}`);
 }
 
 export function patchTrackerPanelBridge(source) {
@@ -142,6 +177,24 @@ export function patchRoleplayHudBridge(source) {
   return source.replace(
     pattern,
     `${matches[0].groups.jsx}("div",{ref:Z=>${CLIENT_SYMBOL_EXPRESSION}?.mountNativeSlot(Z,"roleplay.hud"),className:${matches[0].groups.cn}("rpg-hud",`,
+  );
+}
+
+export function patchRoleplayBackgroundBridge(source) {
+  if (!source.includes('"rpg-chat-area mari-chat-area')) return null;
+  const pattern = /(?<jsx>[A-Za-z_$][\w$]*)\.jsx\((?<component>[A-Za-z_$][\w$]*),\{url:(?<url>[A-Za-z_$][\w$]*),blurPx:(?<blur>[A-Za-z_$][\w$]*)\}\)/gu;
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`Mari Bridge Roleplay background patch expected one native background render, found ${matches.length}`);
+  }
+  const match = matches[0];
+  const after = source.slice(match.index + match[0].length, match.index + match[0].length + 6_000);
+  const metadata = after.match(/[A-Za-z_$][\w$]*&&(?<metadata>[A-Za-z_$][\w$]*)\.enableAgents&&/u)?.groups?.metadata;
+  if (!metadata) throw new Error("Mari Bridge Roleplay background patch could not identify chat metadata");
+  const { jsx, component, url, blur } = match.groups;
+  return source.replace(
+    pattern,
+    `${jsx}.jsx(${component},{...(${CLIENT_SYMBOL_EXPRESSION}?.resolveBackgroundProps(${metadata},${url},${blur})??{url:${url},blurPx:${blur}})})`,
   );
 }
 
@@ -213,7 +266,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   try {
     await readFile(readyFile, "utf8");
     await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-    return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-ui", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud"] };
+    return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud", "client.roleplay-background"] };
   } catch {
     // Build below.
   }
@@ -241,6 +294,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   let slashCommandListPatchCount = 0;
   let trackerPanelPatchCount = 0;
   let roleplayHudPatchCount = 0;
+  let roleplayBackgroundPatchCount = 0;
   for (const entry of assetEntries) {
     if (!entry.isFile() || !entry.name.endsWith(".js")) continue;
     const assetPath = join(assetsRoot, entry.name);
@@ -276,6 +330,12 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
       roleplayHudPatchCount += 1;
       changed = true;
     }
+    const roleplayBackgroundPatched = patchRoleplayBackgroundBridge(assetSource);
+    if (roleplayBackgroundPatched !== null) {
+      assetSource = roleplayBackgroundPatched;
+      roleplayBackgroundPatchCount += 1;
+      changed = true;
+    }
     if (changed) await writeFile(assetPath, assetSource);
   }
   if (chatInputPatchCount !== 2) throw new Error(`Mari Bridge expected two chat input assets, found ${chatInputPatchCount}`);
@@ -283,6 +343,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   if (slashCommandListPatchCount !== 1) throw new Error(`Mari Bridge expected one slash command list asset, found ${slashCommandListPatchCount}`);
   if (trackerPanelPatchCount !== 1) throw new Error(`Mari Bridge expected one Tracker panel asset, found ${trackerPanelPatchCount}`);
   if (roleplayHudPatchCount !== 1) throw new Error(`Mari Bridge expected one Roleplay HUD asset, found ${roleplayHudPatchCount}`);
+  if (roleplayBackgroundPatchCount !== 1) throw new Error(`Mari Bridge expected one Roleplay background asset, found ${roleplayBackgroundPatchCount}`);
   for (const name of assetJavaScriptNames) {
     const assetPath = join(assetsRoot, name);
     await writeFile(assetPath, versionAssetReferences(await readFile(assetPath, "utf8"), assetJavaScriptNames, fingerprint));
@@ -315,5 +376,5 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   await rm(target, { recursive: true, force: true });
   await rename(temporary, target);
   await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-  return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-ui", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud"] };
+  return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud", "client.roleplay-background"] };
 }

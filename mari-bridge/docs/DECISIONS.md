@@ -55,9 +55,15 @@ writes and leave an unsafe storage lifecycle.
 
 ## D-006: Native UI mounts replace bridge DOM observation
 
-Decision: patch small React call sites for generic chat-settings and
-message-action slots. Migrated packages register renderers; they do not locate
-hosts with MutationObservers or repeated DOM scans.
+Decision: patch small React call sites only for native surfaces required by an
+active consumer. The implemented mounts cover native agent-card additions,
+composer additions, the docked Tracker panel, and Roleplay HUD. Migrated
+packages register scoped contributions; they do not locate hosts with
+MutationObservers or repeated DOM scans.
+
+Constraint: a mount extends the native surface. It is not permission to replace
+the native agent editor, settings schema, tracker behavior, or application
+shell. Contributions must match the corresponding native interaction patterns.
 
 Consequence: the production client build needs a verified overlay because Node
 module hooks do not transform browser assets served from disk.
@@ -82,6 +88,9 @@ Reason: sharing helper names does not mean those workflows assemble prompts or
 track generation identically.
 
 ## D-009: Internal state is generated after the main response
+
+Status: archived design context for a separate project. D-009 through D-012 do
+not define the Mari Bridge foundation or current consumer migration scope.
 
 Decision: preserve the main model's reasoning/instructions for consuming state,
 but remove state-maintenance output from its visible response. Run one separate
@@ -159,13 +168,15 @@ generation-service implementation detail, not as Response Keeper compatibility.
 
 ## D-016: Preserve every other materially used bridge capability
 
-Decision: the new plan must cover slash commands, command ranges, active-chat
-lifecycle, generation state/abort, native actions, host route/persistence
-access, prompt macro resolution, runtime ownership/versioning, and the native UI
-slots already selected.
+Decision: preserve every capability materially used by an active consumer:
+slash commands and ranges, active-chat lifecycle, generation state/abort,
+scoped host access, runtime ownership/versioning, and the native UI slots
+currently selected.
 
-The implementation may replace old DOM techniques, but it may not drop retained
-behavior merely because the first migrated consumers do not use it.
+Do not retain or build speculative replacement services merely because an old
+bridge once exposed something similar. Native prompt macros, generation,
+actions, persistence, and UI remain native unless a current consumer proves a
+missing seam.
 
 ## D-017: `_mari-bridge` is the mandatory consumer SDK
 
@@ -204,3 +215,23 @@ The preload kernel exists before Engine imports; the installed server runtime
 is activated before consumers; the client overlay/runtime is ready before
 consumer client entrypoints execute. The SDK check is therefore deterministic,
 not a timing race or polling loop.
+
+## D-020: Native Marinara owns the default workflow
+
+Decision: packages reuse native agent definitions, settings, connection/model
+selection, generation, dry runs, Stop behavior, persistence routes, and standard
+UI whenever available. Mari Bridge adds only a missing hook or native extension
+slot. Package code owns only feature-specific behavior and state with no native
+owner.
+
+Consequences:
+
+- a normal agent remains a normal `agents.json` agent;
+- package settings extend its native card instead of replacing the editor;
+- package routes do not proxy an existing native route;
+- feature UI mounted in native slots follows native inline edit, add/remove
+  mode, locking, responsive popover, and cleanup behavior;
+- prompt guidance does not become a destructive storage cap without an
+  explicit product rule;
+- screenshots are insufficient verification: persistence and interactions must
+  be exercised in the harness.

@@ -7,12 +7,15 @@ import { createBridgeRuntime } from "../src/server/runtime.js";
 import { createPromptRegistry } from "../src/server/prompt-registry.js";
 import { createAgentResultRegistry } from "../src/server/result-registry.js";
 import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
+import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
+import { createHostLifecycleRegistry } from "../src/server/host-lifecycle-registry.js";
 import {
   patchActiveChatEvents,
   patchChatInputBridge,
   patchChatSettingsBridge,
   patchGenerationControllerEvents,
   patchRoleplayHudBridge,
+  patchRoleplayBackgroundBridge,
   patchSlashCommandListBridge,
   patchTrackerPanelBridge,
   versionAssetReferences,
@@ -99,6 +102,40 @@ const trackerSummary = {};
 trackerRegistry.appendAgentState({ activeAgentIds: ["notes"] }, trackerSummary);
 assert.deepEqual(trackerSummary, { notes: { notes: ["Remember this."] } });
 
+const groupRegistry = createGroupSelectorRegistry();
+groupRegistry.register("group-owner", {
+  id: "selector",
+  agentTypes: ["group-sort-order"],
+  select: async () => ["char-2"],
+});
+assert.deepEqual(
+  groupRegistry.resolvePolicy(
+    { chatMetadata: { enableAgents: true, activeAgentIds: ["group-sort-order"] } },
+    { groupChatMode: "merged", groupResponseOrder: "sequential" },
+  ),
+  { groupChatMode: "individual", groupResponseOrder: "smart" },
+);
+assert.deepEqual(
+  await groupRegistry.select(
+    { chatMetadata: { enableAgents: true, activeAgentIds: ["group-sort-order"] } },
+    async () => ["native"],
+  ),
+  ["char-2"],
+);
+
+const lifecycleRegistry = createHostLifecycleRegistry();
+const lifecycleCalls = [];
+lifecycleRegistry.register("presence", {
+  id: "visibility",
+  preHandler: async (request) => lifecycleCalls.push(`pre:${request.url}`),
+  onSend: async (_request, _reply, payload) => `${payload}:presence`,
+  onResponse: async (request) => lifecycleCalls.push(`response:${request.url}`),
+});
+await lifecycleRegistry.dispatch("preHandler", { url: "/api/generate" }, {});
+assert.equal(await lifecycleRegistry.dispatch("onSend", {}, {}, "payload"), "payload:presence");
+await lifecycleRegistry.dispatch("onResponse", { url: "/api/generate" }, {});
+assert.deepEqual(lifecycleCalls, ["pre:/api/generate", "response:/api/generate"]);
+
 const clientSymbol = Symbol.for("marinara.mari-bridge.client.v1");
 const customElementDefinitions = new Map();
 const clientEventListeners = new Map();
@@ -122,7 +159,23 @@ globalThis.fetch = async () => ({
     };
   },
 });
-globalThis.HTMLElement = class HTMLElement {};
+globalThis.HTMLElement = class HTMLElement {
+  constructor(classes = []) {
+    this.attributes = new Map();
+    this.children = [];
+    this.classList = { contains: (name) => classes.includes(name) };
+    this.dataset = {};
+    this.parentElement = null;
+    this.style = {};
+  }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  appendChild(child) {
+    child.parentElement = this;
+    this.children.push(child);
+    return child;
+  }
+};
 Object.defineProperty(globalThis, "localStorage", {
   configurable: true,
   value: { getItem() { return null; } },
@@ -131,16 +184,31 @@ globalThis.customElements = {
   get(name) { return customElementDefinitions.get(name); },
   define(name, definition) { customElementDefinitions.set(name, definition); },
 };
-globalThis.document = { documentElement: { dataset: {} } };
+globalThis.document = {
+  documentElement: { dataset: {} },
+  createElement(name) {
+    const Definition = customElementDefinitions.get(name);
+    return Definition ? new Definition() : new HTMLElement();
+  },
+};
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.10");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.12");
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
-assert.equal(globalThis[clientSymbol].capabilities.has("ui.chat-settings"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
 assert.equal(typeof customElements.get("marinara-capability-mari-bridge"), "function");
 assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
+const hudRoot = new HTMLElement();
+const mobileHudGroup = new HTMLElement(["md:hidden"]);
+const desktopHudGroup = new HTMLElement(["md:flex"]);
+hudRoot.children.push(mobileHudGroup, desktopHudGroup);
+globalThis[clientSymbol].mountNativeSlot(hudRoot, "roleplay.hud");
+assert.equal(mobileHudGroup.children.length, 1);
+assert.equal(desktopHudGroup.children.length, 1);
+assert.equal(mobileHudGroup.children[0].style.display, "contents");
+assert.equal(desktopHudGroup.children[0].style.display, "contents");
 const clientSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "client-test",
   api: { major: 1, minMinor: 0 },
@@ -157,7 +225,7 @@ await clientSession.close();
 const featureSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "feature-test",
   api: { major: 1, minMinor: 0 },
-  require: ["commands", "quick-replies.input-macro", "ui.chat-settings"],
+  require: ["commands", "quick-replies.input-macro", "ui.agent-settings"],
 });
 featureSession.commands.register({
   id: "probe",
@@ -179,8 +247,8 @@ assert.deepEqual(globalThis[clientSymbol].listCommands({ mode: "roleplay" }), [{
 }]);
 assert.equal(globalThis[clientSymbol].resolveQuickReply("/probe {{input}} + {{input}}", "draft"), "/probe draft + draft");
 assert.equal(globalThis[clientSymbol].resolveQuickReply("unchanged", "draft"), "unchanged");
-featureSession.ui.register({ id: "settings", slot: "chat.settings", view: "settings" });
-assert.equal(globalThis[clientSymbol].ui.list("chat.settings")[0].ownerId, "feature-test");
+featureSession.ui.register({ id: "settings", slot: "agent.settings", agentIds: ["feature-test"], view: "settings" });
+assert.equal(globalThis[clientSymbol].ui.list("agent.settings", { agentId: "feature-test" })[0].ownerId, "feature-test");
 await featureSession.close();
 globalThis.fetch = async (url) => {
   assert.equal(url, "/api/generate/dryRun");
@@ -258,14 +326,12 @@ assert.equal(
   'import("./ChatRoleplaySurface-abc.js?mariBridge=overlay123");import("./vendor.js?mariBridge=overlay123");',
 );
 const chatSettingsFixture = [
-  'function section({id:sectionId,label,children:body}){',
-  'return open&&react.jsx("div",{className:cn("px-4 pb-3",contentClass??"pt-3"),children:body})',
-  '}',
-  'const marker="data-chat-settings-section";',
+  'react.jsxs("div",{"data-chat-agent-entry":agent.id,className:"one",children:[first]});',
+  'react.jsxs("div",{"data-chat-agent-entry":other.id,className:"two",children:[second]});',
 ].join("");
 const patchedChatSettings = patchChatSettingsBridge(chatSettingsFixture);
-assert.match(patchedChatSettings, /sectionId==="roleplay-agents"/u);
-assert.match(patchedChatSettings, /name:"chat\.settings"/u);
+assert.equal((patchedChatSettings.match(/marinara-mari-bridge-agent-settings/gu) ?? []).length, 2);
+assert.match(patchedChatSettings, /"agent-id":agent\.id/u);
 const trackerPanelFixture = 'react.jsx("section",{"data-component":"TrackerDataSidebar",className:"panel"})';
 const patchedTrackerPanel = patchTrackerPanelBridge(trackerPanelFixture);
 assert.match(patchedTrackerPanel, /mountNativeSlot\(Z,"tracker\.panel",\{target:"content"\}\)/u);
@@ -276,6 +342,9 @@ assert.equal(
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
+const roleplayBackgroundFixture = 'react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
+const patchedRoleplayBackground = patchRoleplayBackgroundBridge(roleplayBackgroundFixture);
+assert.match(patchedRoleplayBackground, /resolveBackgroundProps\(metadata,bg,blur\)/u);
 const clientOverlaySource = await fs.readFile(new URL("../src/server/client-overlay.js", import.meta.url), "utf8");
 assert.match(clientOverlaySource, /bridgeClientRuntime/u);
 assert.doesNotMatch(clientOverlaySource, /client\?preload=1/u);
@@ -301,10 +370,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.10"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.10" }, false, "1.0.10"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.9" }, false, "1.0.10"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.10" }, true, "1.0.10"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.12"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.12" }, false, "1.0.12"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.11" }, false, "1.0.12"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.12" }, true, "1.0.12"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
@@ -358,6 +427,8 @@ assert.match(bootstrapPatchSource, /agent\.result-apply-main/u);
 assert.match(bootstrapPatchSource, /agent\.result-apply-retry/u);
 assert.match(bootstrapPatchSource, /tracker\.context-committed/u);
 assert.match(bootstrapPatchSource, /tracker\.context-agent/u);
+assert.match(bootstrapPatchSource, /group\.selector-policy/u);
+assert.match(bootstrapPatchSource, /group\.selector-call/u);
 const { decodeModuleSource, patchCommittedTrackerActiveGuard, patchServerModule } = await import(
   new URL(`../bootstrap/register.mjs?check=${Date.now()}`, import.meta.url)
 );

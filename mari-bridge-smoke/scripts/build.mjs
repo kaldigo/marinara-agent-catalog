@@ -24,7 +24,7 @@ await fs.writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify({
   name: "Mari Bridge Smoke Test",
   version,
   description: "Test-only consumer that proves Mari Bridge SDK gating and cleanup.",
-  engine: { min: "2.4.2", maxExclusive: "3.0.0" },
+  engine: { min: "2.4.3", maxExclusive: "2.4.4" },
   kind: ["agent"],
   entrypoints: { server: "server.mjs", client: "client.js" },
   contributions: { slots: ["chat-runtime"] },

@@ -16,9 +16,32 @@ This folder contains the published package implementation:
 The consumer SDK is stable at API major version 1. Engine source patches remain
 explicitly version-bound.
 
+## Native-first boundary
+
+Mari Bridge exists to expose capabilities Marinara does not currently expose to
+packages. It is not a framework for replacing native Marinara behavior.
+
+Consumers must use native agent definitions and native settings, connection,
+model, prompt, generation, dry-run, Stop, persistence, and rendering behavior
+whenever those paths already exist. The bridge adds only the missing seam: for
+example a result type, tracker-context formatter, group-selector delegation,
+command registration, lifecycle event, or verified native UI mount.
+
+The decision order is:
+
+1. Native Marinara API/component/workflow unchanged.
+2. A small package-neutral bridge hook into that native workflow.
+3. Package-specific implementation only where Marinara has no owner.
+
+Bridge UI slots mount inside native React surfaces. They do not authorize a
+consumer to create a parallel settings system or application shell. Added UI
+must follow the matching native component's interactions as well as its visual
+tokens. Standard agent settings stay in Marinara's standard editor; an
+`agent.settings` contribution may add only a missing package-specific control.
+
 ## Current implementation boundary
 
-Version `1.0.4` supports Marinara Engine 2.4.3 and adds package-owned structured
+Version `1.0.12` supports Marinara Engine 2.4.3 and adds package-owned structured
 agent result types, committed and agent-facing tracker-context sections, and
 native mount points for the docked Tracker panel and Roleplay HUD. It also
 retains the package-owned loader, SDK dependency gate, prompt kernel, and first
@@ -30,6 +53,9 @@ native active-chat and generation-controller events. It also owns per-chat strea
 which writes through Marinara's persisted draft store after the originating
 screen unmounts. The isolated test instance verifies the bridge and its current
 consumers all reach `ready` after a restart.
+
+Roleplay HUD hosts use a layout-transparent wrapper, so contributed widgets are
+native flex items and inherit the HUD's exact alignment and `gap-0.5` spacing.
 
 Before registering Node loader hooks, the preload requires an exact supported
 Engine version and preflights every target module and anchor. A version mismatch,
@@ -51,28 +77,31 @@ compatibility metadata, state, diagnostics, and cleanup under `DATA_DIR`.
 Docker Compose edits, an upstream Engine change, a custom image, and persistent
 mutation of `/app` are not part of the intended installation flow.
 
-The bridge provides five broad capabilities:
+The bridge provides six broad capability groups:
 
 1. Prompt assembly control: named-section suppression, explicit-depth
    injection, and message transforms at defined processing stages.
-2. Native client mount points: chat settings, message actions, composer slots,
-   and related surfaces without package-owned DOM observers.
+2. Native client extension points: inline agent-card additions, composer
+   slots, tracker surfaces, and Roleplay HUD contributions without consumer DOM
+   observation. These extend native surfaces; they do not replace them.
 3. Lifecycle infrastructure: compatibility checks, package registration,
    prompt inspection, patch diagnostics, and safe failure when Marinara changes.
 4. Native active-chat, command, Quick Reply, composer-slot, and generation
-lifecycle APIs that replace DOM observation and button probing.
+   lifecycle APIs that replace DOM observation and button probing.
 5. Package-neutral tracker integration: JSON result dispatch at normal and
    retry application points, exact-snapshot state adapters, and shared tracker
    context assembly.
-6. Shared host services for persistence/route access, configured Agent
-   execution, prompt macros, streaming, and package coordination.
+6. Shared host services only where no public package API exists: scoped native
+   request access, package coordination, native group-selector delegation, and
+   host lifecycle contributions. Consumers must not use these to rebuild
+   available native workflows.
 
 ## Relationship to `_mari-bridge`
 
 `../_mari-bridge` remains the shared source root copied into package builds.
-Migrated consumers copy only its thin `sdk/` surface; legacy compatibility
-helpers remain temporarily for packages that have not yet been retired.
-This new folder is a real installable capability package.
+Migrated consumers copy only its thin `sdk/` surface. This folder is a real
+installable capability package; `_mari-bridge` contains no runtime implementation
+or legacy compatibility layer.
 
 The intended split is:
 
@@ -81,8 +110,8 @@ The intended split is:
 - `_mari-bridge`: the mandatory thin build-time SDK bundled into every consumer.
   It is the sole supported consumer integration surface: it verifies that the
   installed runtime is healthy and compatible, acquires a scoped consumer
-  session, registers/cleans up behavior, and provides pure helpers such as
-  message-range and stream parsing.
+  session, registers/cleans up behavior, and exposes the typed client/server
+  session contracts.
 
 Marinara's current package manifest does not declare package-to-package
 dependencies, so every migrated consumer uses the SDK as a deterministic
@@ -114,6 +143,8 @@ jobs and never fall back to the old bridge.
 ## Non-goals
 
 - Replacing Marinara's entire prompt pipeline.
+- Reimplementing native agent settings, model/connection policy, generation,
+  dry runs, Stop behavior, persistence, or standard tracker controls.
 - Copying or permanently editing the Engine installation.
 - Making arbitrary third-party source patches without fingerprints.
 - Reimplementing Fastify generation routes.

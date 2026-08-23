@@ -9,21 +9,10 @@ function readyClientRuntime() {
   return runtime?.status === "ready" && typeof runtime.registerConsumer === "function" ? runtime : null;
 }
 
-async function waitForClientRuntime(timeoutMs) {
-  const timeout = Math.max(0, Math.min(30_000, Number(timeoutMs) || 0));
-  const deadline = Date.now() + timeout;
-  let runtime = readyClientRuntime();
-  while (!runtime && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(25, Math.max(1, deadline - Date.now()))));
-    runtime = readyClientRuntime();
-  }
-  return runtime;
-}
-
 export async function activateClientWithMariBridge(input, activateConsumer) {
   if (typeof activateConsumer !== "function") throw new TypeError("Mari Bridge consumer activation must be a function");
   const requirements = normalizeBridgeRequirements(input);
-  const runtime = readyClientRuntime() ?? await waitForClientRuntime(input?.waitForBridgeMs ?? 5_000);
+  const runtime = readyClientRuntime();
   if (!runtime) {
     throw missingBridgeError(requirements.consumerId, "client");
   }

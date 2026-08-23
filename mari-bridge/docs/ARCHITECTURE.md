@@ -3,8 +3,10 @@
 ## Design principles
 
 Mari Bridge is a narrow adapter around verified Marinara seams, not a fork of
-the Engine. The package owns reusable registries; consumer packages own feature
-prompts, schemas, storage decisions, and UI.
+the Engine. The package owns reusable registries and missing native extension
+points. Consumer packages own only their feature-specific prompts, schemas,
+logic, and state; native Marinara remains the owner of standard agents,
+settings, generation, persistence, and UI behavior.
 
 Patches must be:
 
@@ -15,6 +17,21 @@ Patches must be:
 - reversible by starting Marinara without the bridge loader;
 - scoped separately for Roleplay, Conversation, Visual Novel, and Game Mode;
 - free of package-owned MutationObservers for native UI integration.
+
+## Integration decision order
+
+Every consumer change follows the same order:
+
+1. Reuse the native API, component, store, route, or workflow unchanged.
+2. If it is not publicly reachable, patch the smallest verified call site and
+   expose a package-neutral bridge capability.
+3. Implement package-specific behavior only when there is no native owner.
+
+The bridge must not become a second application layer. In particular, it does
+not own replacement agent editors, connection/model resolution, generation
+pipelines, dry-run behavior, Stop controls, or generic tracker CRUD. A bridge
+host may mount missing feature content inside a native surface, but the content
+must follow that surface's native interaction contract.
 
 ## Runtime layers
 
@@ -70,11 +87,12 @@ entrypoint, but it cannot create mount points that the native React tree does
 not contain. A version-specific client overlay therefore patches small native
 call sites so they render bridge slots.
 
-Consumer client modules register renderers with a versioned external store.
-Patched React components subscribe to that store (for example through
-`useSyncExternalStore`) and render bridge-owned native hosts using direct props.
-Late package activation must cause a normal React update; it must not require a
-DOM scan.
+Consumer client modules register contributions with a versioned external
+store. Patched React components create bridge-owned hosts at exact native call
+sites. The current transport mounts deterministic
+`marinara-capability-<package>` elements and supplies scoped capability props;
+the host/store publishes late registrations without DOM discovery. Consumers
+must not search for those native call sites themselves.
 
 The client overlay also patches stable native lifecycle call sites for active
 chat/navigation changes, generation state and aborts,
@@ -122,10 +140,10 @@ runs no feature callback; later loss of a required capability revokes the
 session and runs cleanup once.
 
 Migration is package-by-package, but each surviving consumer is rewritten for
-the new API. The installed runtime does not emulate old custom elements,
-`capabilityProps` events, DOM observers, global generation events, or fetch
-interceptors. Unmigrated packages may continue bundling the old shared root
-during development, but migrated packages have no old-bridge fallback.
+the new API. The installed runtime's scoped capability elements are an explicit
+native-slot transport, not compatibility with the old DOM-slot finder. The
+runtime does not restore DOM observers, global generation events, button
+probing, or fetch interceptors. Migrated packages have no old-bridge fallback.
 
 Response Keeper is not migrated. Its general fetch interception pipeline is
 intentionally omitted; retained request/prompt behavior attaches at explicit
@@ -194,10 +212,14 @@ find or click buttons.
 
 ## Host and feature lifecycle services
 
-The bridge host service normalizes package-owned Fastify injection when public
-capability persistence/resources do not cover a required operation. It marks
+The bridge host service normalizes package-owned Fastify injection only when
+public capability persistence/resources do not cover a required operation. It marks
 internal requests to avoid recursion, validates relative API paths, and prefers
 native persistence transactions/chat locks where available.
+
+Consumers use public/native routes directly when those routes already express
+the operation. They must not create package routes that merely proxy native
+chat, GameState, agent, or message APIs.
 
 Presence owns roster reconciliation and scoped message updates. It uses the
 bridge host service for native requests and leaves summaries untouched. Prompt
@@ -229,10 +251,11 @@ All transformations return values. Patched Engine code must not expose mutable
 internal arrays to arbitrary packages when an immutable replacement contract is
 practical.
 
-## Post-response package job flow
+## Separate post-response project pattern
 
-A future consumer may add a separate package-owned job after an assistant
-response is committed:
+This pattern is retained as reference for a separate future project and is not
+part of the Mari Bridge foundation completion scope. A future consumer may add
+a package-owned job after an assistant response is committed:
 
 ```text
 assistant response committed
@@ -274,8 +297,15 @@ Installed package files continue to live in Marinara's own
 `DATA_DIR/capability-packages` layout. Runtime snapshots are temporary and must
 not be used as the stable preload path.
 
-Feature data should stay with the feature package or native tracker, not in the
-bridge infrastructure directory.
+Feature data should use the existing native owner first: message extra, chat
+metadata, GameState, agent settings, or character tracker fields/stats. Only
+genuinely package-specific data belongs in a package namespace. It never belongs
+in the bridge infrastructure directory.
+
+Prompt guidance is not automatically a persistence invariant. A prompt may ask
+an agent to prefer a bounded working set without deterministic code truncating
+stored data. Code-level caps require an explicit product rule. Stored locks must
+also be enforced by result application, not only displayed in UI.
 
 ## Compatibility and failure behavior
 
