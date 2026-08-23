@@ -355,6 +355,7 @@ function createAgentSuiteTrackerDataRegistry() {
         description: String(input.description ?? "").trim(),
         getValue: input.getValue,
         buildPatch: input.buildPatch,
+        onSaved: typeof input.onSaved === "function" ? input.onSaved : null,
       });
       registrations.set(agentId, registration);
       publish();
@@ -367,6 +368,15 @@ function createAgentSuiteTrackerDataRegistry() {
     },
     resolve(agentId) {
       return registrations.get(String(agentId ?? "").trim());
+    },
+    async notifySaved(agentId, detail = {}) {
+      const registration = registrations.get(String(agentId ?? "").trim());
+      if (!registration?.onSaved) return;
+      try {
+        await registration.onSaved(Object.freeze({ ...detail, agentId: registration.agentId }));
+      } catch (error) {
+        console.warn(`[Mari Bridge] Agent Suite tracker save notification failed for ${registration.agentId}`, error);
+      }
     },
     subscribe(listener) {
       subscribers.add(listener);
@@ -768,7 +778,7 @@ function createClientRuntime(serverHealth) {
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.15",
+    implementationVersion: "1.0.16",
     status: "ready",
     capabilities,
     serverHealth,
@@ -914,6 +924,9 @@ function createClientRuntime(serverHealth) {
     },
     resolveAgentSuiteTrackerSlice(agentId) {
       return agentSuiteTrackerData.resolve(agentId);
+    },
+    notifyAgentSuiteTrackerSaved(agentId, detail) {
+      return agentSuiteTrackerData.notifySaved(agentId, detail);
     },
     useAgentSuiteTrackerData(react) {
       if (!react?.useSyncExternalStore) return agentSuiteTrackerData.getVersion();
