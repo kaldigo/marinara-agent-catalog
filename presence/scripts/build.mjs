@@ -17,7 +17,10 @@ await fs.mkdir(packageRoot, { recursive: true });
 await copyTree(path.join(projectRoot, "src/shared"), path.join(packageRoot, "src/shared"));
 await copyTree(path.join(projectRoot, "src/server"), path.join(packageRoot, "src/server"), rewriteSourceImports);
 await copyTree(path.join(projectRoot, "src/client"), path.join(packageRoot, "src/client"), rewriteSourceImports);
-await copyTree(sdkRoot, path.join(packageRoot, "bridge-sdk"));
+await fs.mkdir(path.join(packageRoot, "bridge-sdk"), { recursive: true });
+for (const file of ["contracts.js", "server.js"]) {
+  await fs.copyFile(path.join(sdkRoot, file), path.join(packageRoot, "bridge-sdk", file));
+}
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
 await writeFile(path.join(packageRoot, "server.mjs"), `export { activate, selfCheck } from "./src/server/index.js";\n`);
@@ -34,7 +37,7 @@ function manifest() {
     name: "Presence",
     version,
     description: "Tracks per-message character presence with native per-character Hide From AI state.",
-    engine: { min: "2.3.3", maxExclusive: "3.0.0" },
+    engine: { min: "2.4.3", maxExclusive: "2.4.4" },
     kind: ["agent"],
     entrypoints: {
       server: "server.mjs",
@@ -42,15 +45,14 @@ function manifest() {
       agents: "agents.json",
     },
     contributions: {
-      agentDetail: { agentIds: ["presence"] },
-      slots: ["chat-settings"],
+      slots: ["chat-runtime"],
     },
     files: [
       { path: "server.mjs", sha256: "0".repeat(64), bytes: 0 },
       { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
       { path: "agents.json", sha256: "0".repeat(64), bytes: 0 },
     ],
-    permissions: ["agent-runtime", "chat-read", "chat-write", "routes", "storage", "ui"],
+    permissions: ["agent-runtime", "chat-read", "chat-write", "routes", "ui"],
     restartRequired: true,
   };
 }
@@ -60,7 +62,7 @@ function agentDefinitions() {
     {
       id: "presence",
       name: "Presence",
-      description: "Feature runtime for per-message character presence.",
+      description: "Controls which group characters can see each Roleplay message and keeps per-message attendance in native visibility metadata.",
       category: "tracker",
       phase: "pre_generation",
       execution: "feature",
@@ -95,8 +97,6 @@ function rewriteSourceImports(content) {
 async function buildClientEntrypoint() {
   const files = [
     path.join(sdkRoot, "contracts.js"),
-    path.join(sdkRoot, "ranges.js"),
-    path.join(sdkRoot, "settings.js"),
     path.join(sdkRoot, "client.js"),
     path.join(projectRoot, "src/client/runtime.js"),
   ];

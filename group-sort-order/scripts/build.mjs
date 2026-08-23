@@ -9,7 +9,6 @@ const distRoot = path.join(projectRoot, "dist");
 const packageRoot = path.join(distRoot, "package");
 const sdkRoot = path.resolve(projectRoot, "..", "_mari-bridge", "sdk");
 const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8")).version;
-const bridgeClientSources = ["contracts.js", "settings.js", "client.js"];
 
 if (!existsSync(sdkRoot)) {
   throw new Error("Missing shared root: _mari-bridge");
@@ -20,12 +19,13 @@ await fs.mkdir(packageRoot, { recursive: true });
 
 await copyTree(path.join(projectRoot, "src/shared"), path.join(packageRoot, "src/shared"));
 await copyTree(path.join(projectRoot, "src/server"), path.join(packageRoot, "src/server"), rewriteSourceImports);
-await copyTree(path.join(projectRoot, "src/client"), path.join(packageRoot, "src/client"), rewriteSourceImports);
-await copyTree(sdkRoot, path.join(packageRoot, "bridge-sdk"));
+await fs.mkdir(path.join(packageRoot, "bridge-sdk"), { recursive: true });
+for (const file of ["contracts.js", "server.js"]) {
+  await fs.copyFile(path.join(sdkRoot, file), path.join(packageRoot, "bridge-sdk", file));
+}
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
 await writeFile(path.join(packageRoot, "server.mjs"), `export { activate, selfCheck } from "./src/server/index.js";\n`);
-await writeFile(path.join(packageRoot, "client.js"), await buildClientEntrypoint());
 await writeFile(path.join(packageRoot, "agents.json"), `${JSON.stringify(agentDefinitions(), null, 2)}\n`);
 await writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify(manifest(), null, 2)}\n`);
 
@@ -37,24 +37,18 @@ function manifest() {
     id: "group-sort-order",
     name: "Group Sort Order",
     version,
-    description: "Tracks and directs the next speaker in group roleplay chats using main-model next-speaker markers.",
-    engine: { min: "2.4.0", maxExclusive: "3.0.0" },
+    description: "Uses a configurable agent model to choose Marinara's native smart group response queue.",
+    engine: { min: "2.4.3", maxExclusive: "2.4.4" },
     kind: ["agent"],
     entrypoints: {
       server: "server.mjs",
-      client: "client.js",
       agents: "agents.json"
-    },
-    contributions: {
-      agentDetail: { agentIds: ["group-sort-order"] },
-      slots: ["chat-runtime", "chat-settings"]
     },
     files: [
       { path: "server.mjs", sha256: "0".repeat(64), bytes: 0 },
-      { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
       { path: "agents.json", sha256: "0".repeat(64), bytes: 0 }
     ],
-    permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+    permissions: ["agent-runtime"],
     restartRequired: true
   };
 }
@@ -64,16 +58,22 @@ function agentDefinitions() {
     {
       id: "group-sort-order",
       name: "Group Sort Order",
-      description: "Feature runtime for group next-speaker ordering and prompt marker instructions.",
+      description: "Replaces the native smart group selector model while leaving Marinara's queueing and generation flow intact.",
       category: "misc",
       phase: "pre_generation",
-      execution: "feature",
       enabledByDefault: false,
       runtimeDisabled: true,
       modeAllowlist: ["roleplay", "visual_novel"],
       defaultTools: [],
-      defaultSettings: {},
-      defaultPromptTemplate: ""
+      defaultSettings: { maxTokens: 256, temperature: 0.2 },
+      defaultPromptTemplate: [
+        "You are a hidden response orchestrator for a roleplay group chat.",
+        "Choose which character or characters should respond next from the supplied candidates.",
+        "Use the latest message, recent scene context, relevance, personality, talkativeness, and who spoke recently.",
+        "Usually choose one character. Choose multiple only when several characters have a strong immediate reason to respond.",
+        "Do not always choose the first candidate, and avoid choosing the character who just spoke unless the context requires it.",
+        "Return ONLY a valid JSON array of character IDs, such as [\"character-id\"]. No prose or markdown."
+      ].join("\n")
     }
   ];
 }
@@ -96,44 +96,7 @@ function rewriteSourceImports(content) {
   return content.replaceAll("../../../_mari-bridge/sdk/", "../../bridge-sdk/");
 }
 
-async function buildClientEntrypoint() {
-  const chunks = [];
-  for (const file of bridgeClientSources) {
-    const source = await fs.readFile(path.join(sdkRoot, file), "utf8");
-    chunks.push(`// bridge/${file}\n${stripBrowserModuleSyntax(source).trim()}\n`);
-  }
-  const runtimeSource = await fs.readFile(path.join(projectRoot, "src/client/runtime.js"), "utf8");
-  chunks.push(`// src/client/runtime.js\n${stripBrowserModuleSyntax(runtimeSource).trim()}\n`);
-  return [
-    "(async () => {",
-    "  \"use strict\";",
-    indent(chunks.join("\n")),
-    "})();",
-    "",
-  ].join("\n");
-}
-
-function stripBrowserModuleSyntax(content) {
-  return content
-    .replace(/^import\s+[\s\S]*?\s+from\s+["'][^"']+["'];\r?\n/gm, "")
-    .replace(/^import .*?;\r?\n/gm, "")
-    .replace(/^export async function /gm, "async function ")
-    .replace(/^export function /gm, "function ")
-    .replace(/^export const /gm, "const ")
-    .replace(/^export let /gm, "let ")
-    .replace(/^export var /gm, "var ")
-    .replace(/^export class /gm, "class ")
-    .replace(/^export \{[^}]*\};?\r?\n/gm, "");
-}
-
 async function writeFile(file, content) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content);
-}
-
-function indent(content) {
-  return content
-    .split("\n")
-    .map((line) => (line ? `  ${line}` : line))
-    .join("\n");
 }

@@ -11,9 +11,13 @@
   "package": {
     "id": "group-sort-order",
     "name": "Group Sort Order",
-    "description": "Package-era next-speaker ordering helper for group roleplay chats.",
+    "description": "Configurable model override for Marinara's native smart group responder selector.",
+    "engine": {
+      "min": "2.4.3",
+      "maxExclusive": "2.4.4"
+    },
     "kind": ["agent"],
-    "permissions": ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+    "permissions": ["agent-runtime"],
     "restartRequired": true
   }
 }

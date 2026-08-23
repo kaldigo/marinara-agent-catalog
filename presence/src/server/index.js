@@ -8,8 +8,8 @@ export async function activate(context) {
     context,
     {
       consumerId: "presence",
-      api: { major: 1, minMinor: 0 },
-      require: ["consumer.sessions", "host.request", "runtime.health"],
+      api: { major: 1, minMinor: 2 },
+      require: ["consumer.sessions", "host.lifecycle", "host.request", "runtime.health"],
     },
     async (bridgeSession) => {
       registerPresenceMessageCreateHook({ app: context.app, runtime: context.api.runtime, bridgeSession });

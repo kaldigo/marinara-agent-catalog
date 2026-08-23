@@ -1,6 +1,6 @@
 # Presence
 
-Presence is a tracker-category feature agent for per-message character attendance in Marinara Engine Roleplay and Visual Novel chats. It only mutates chats where the Presence tracker is enabled.
+Presence is a chat-specific tracker feature for per-message character attendance in Marinara Engine Roleplay chats. It only mutates chats where the Presence agent is enabled.
 
 ## Message State
 
@@ -18,7 +18,9 @@ The positive record remains authoritative when the roster changes. A character a
 
 ## Always Present
 
-Chat Settings and the Presence agent detail view include the shared Mari Bridge avatar picker for characters that should always be present. This is intended for narrator and system-style cards. Selecting one updates existing non-globally-hidden messages and includes that character in future stamps even while inactive.
+The native Presence agent card includes a Mari Bridge avatar picker for characters that should always be present. This is intended for narrator and system-style cards. Selecting one updates existing non-globally-hidden messages and includes that character in future stamps even while inactive.
+
+The package does not replace Marinara's agent editor or settings layout. Mari Bridge contributes only this package-specific picker inside the existing native card.
 
 ## Slash Commands
 
@@ -31,3 +33,13 @@ Chat Settings and the Presence agent detail view include the shared Mari Bridge 
 ```
 
 `/presence resync` rebuilds native per-character Hide From AI IDs from each message's positive Presence record. For older messages without a positive record, it adopts their current native per-character visibility first. Native `/hide 4-46` and `/unhide last 20` commands pass through untouched.
+
+## Native boundary
+
+Marinara owns agent membership, the agent settings card, message persistence,
+and prompt-history filtering through `hiddenFromAICharacterIds`. Presence owns
+only the positive attendance record and its projection into those native IDs.
+Mari Bridge supplies the missing active-chat/lifecycle events, command routing,
+and one package-specific field inside the native agent card. Presence does not
+read or modify summaries and does not provide a parallel history or settings
+system.

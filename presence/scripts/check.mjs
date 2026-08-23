@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createHideCommandOwner } from "../../_mari-bridge/sdk/ranges.js";
+import { createHideCommandOwner } from "../src/shared/message-range.js";
 import { readPresenceChatState } from "../src/shared/chat-state.js";
 import { buildPresenceExtraPatch, readPresenceState } from "../src/shared/presence-state.js";
 import { planRosterBackfill } from "../src/shared/roster.js";
@@ -18,11 +18,11 @@ assert((await router.run("/presence test", { chatId: "chat-1" })).result === "ch
 
 const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientRuntime.includes("bridgeSession.commands.register"), "client registers commands through the installed bridge");
-assert(clientRuntime.includes("bridgeSession.ui.register"), "client registers chat settings through the installed bridge");
-assert(clientRuntime.includes('slot: "chat.settings"'), "client targets the native chat settings slot");
-assert(clientRuntime.includes("setMariBridgeNativeSettingsHtml"), "settings are rendered by the bridge-owned native descriptor renderer");
-assert(clientRuntime.includes("data-presence-always-character-id"), "settings expose an avatar character picker");
-assert(clientRuntime.includes("Selected characters see every non-globally-hidden message"), "settings explain always-present behavior");
+assert(clientRuntime.includes("bridgeSession.ui.register"), "client contributes settings inside the native agent card");
+assert(clientRuntime.includes('slot: "agent.settings"'), "client targets the native agent settings extension point");
+assert(clientRuntime.includes("data-presence-character-id"), "settings expose a compact avatar character picker");
+assert(clientRuntime.includes("Selected characters retain access"), "settings explain always-present behavior");
+assert(!clientRuntime.includes("setMariBridgeNativeSettingsHtml"), "client does not replace Marinara's agent settings shell");
 assert(!clientRuntime.includes("summary"), "client no longer describes summary behavior");
 assert(!clientRuntime.includes("MutationObserver"), "client does not DOM-inject chat settings");
 assert(!clientRuntime.includes("watchActiveChatId"), "client uses bridge active-chat state without polling");
@@ -142,6 +142,7 @@ globalThis[bridgeSymbol] = {
   registerConsumer(requirements) {
     assert(requirements.consumerId === "presence", "server activates through the Presence bridge identity");
     assert(requirements.require.includes("host.request"), "Presence requires the bridge host service");
+    assert(requirements.require.includes("host.lifecycle"), "Presence requires the bridge host lifecycle slot");
     const cleanups = [];
     return {
       signal: new AbortController().signal,
@@ -149,6 +150,16 @@ globalThis[bridgeSymbol] = {
         async request(input) {
           const response = await hostApp.inject({ method: input.method, url: input.path, payload: input.body, headers: input.headers });
           return response.payload ? JSON.parse(response.payload) : null;
+        },
+      },
+      lifecycle: {
+        register(input) {
+          for (const name of ["preHandler", "onSend", "onResponse"]) {
+            if (typeof input[name] === "function") registeredHooks.push({ name, handler: input[name] });
+          }
+          const cleanup = () => { registeredHooks.splice(0); };
+          cleanups.push(cleanup);
+          return cleanup;
         },
       },
       addCleanup(cleanup) { cleanups.push(cleanup); },
@@ -161,9 +172,9 @@ await activate({ app: hostApp, api: { runtime } });
 assert(registeredRoutes.includes("GET /chat/:chatId/state"), "state route registered");
 assert(registeredRoutes.includes("POST /chat/:chatId/command"), "command route registered");
 assert(registeredRoutes.includes("POST /chat/:chatId/ensure"), "ensure route registered");
-assert(registeredHooks.some((hook) => hook.name === "onSend"), "message save hook registered");
-assert(registeredHooks.some((hook) => hook.name === "preHandler"), "generation capture hook registered");
-assert(registeredHooks.some((hook) => hook.name === "onResponse"), "generation completion hook registered");
+assert(registeredHooks.some((hook) => hook.name === "onSend"), "message save policy is registered through the bridge lifecycle slot");
+assert(registeredHooks.some((hook) => hook.name === "preHandler"), "generation capture policy is registered through the bridge lifecycle slot");
+assert(registeredHooks.some((hook) => hook.name === "onResponse"), "generation completion policy is registered through the bridge lifecycle slot");
 
 const stateResponse = await registeredRouteHandlers.get("GET /chat/:chatId/state")(
   { params: { chatId: "chat-1" } },

@@ -2,35 +2,23 @@ import { readPresenceChatState, writePresenceChatState } from "../shared/chat-st
 import { PRESENCE_PACKAGE_ID } from "../shared/constants.js";
 import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
-import { parseMessageRange } from "../../../_mari-bridge/sdk/ranges.js";
+import { parseMessageRange } from "../shared/message-range.js";
 import { createPresenceCommandRouter } from "./command-router.js";
 
-const MESSAGE_CREATE_HOOK_KEY = Symbol.for("marinara.presence.messageCreateHook");
 const GENERATE_REQUEST_STATE = new WeakMap();
 const EARLY_USER_STAMP_TIMEOUT_MS = 5_000;
 const EARLY_USER_STAMP_INTERVAL_MS = 50;
 
 export function registerPresenceMessageCreateHook({ app, runtime, bridgeSession }) {
-  if (app[MESSAGE_CREATE_HOOK_KEY]) return;
-  app[MESSAGE_CREATE_HOOK_KEY] = true;
-  app.addHook("preHandler", async (request) => {
-    await captureGenerationRequestState({ app, runtime, bridgeSession, request });
-  });
-  app.addHook("onSend", async (request, reply, payload) => {
-    try {
+  return bridgeSession.lifecycle.register({
+    id: "message-visibility",
+    preHandler: (request) => captureGenerationRequestState({ app, runtime, bridgeSession, request }),
+    async onSend(request, reply, payload) {
       await stampCreatedMessage({ app, runtime, bridgeSession, request, reply, payload });
       await ensureAfterChatSettingsChange({ app, runtime, bridgeSession, request, reply });
-    } catch (error) {
-      runtime.logger.warn(error, "[Presence] Could not process response hook");
-    }
-    return payload;
-  });
-  app.addHook("onResponse", async (request, reply) => {
-    try {
-      await finishGenerationLifecycle({ app, runtime, bridgeSession, request, reply });
-    } catch (error) {
-      runtime.logger.warn(error, "[Presence] Could not finish generation lifecycle");
-    }
+      return payload;
+    },
+    onResponse: (request, reply) => finishGenerationLifecycle({ app, runtime, bridgeSession, request, reply }),
   });
 }
 
