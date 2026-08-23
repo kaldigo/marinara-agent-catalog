@@ -1,283 +1,68 @@
-import { dirname, join, resolve } from "node:path";
-import {
-  MARI_BRIDGE_IMPLEMENTATION_VERSION,
-  MARI_BRIDGE_KERNEL_SYMBOL,
-  MARI_BRIDGE_SERVER_SYMBOL,
-} from "../shared/contracts.js";
-import { createBridgeRuntime } from "./runtime.js";
-import { createDiagnosticsRoutes } from "./routes.js";
-import { createPromptRegistry } from "./prompt-registry.js";
-import { createAgentResultRegistry } from "./result-registry.js";
-import { createTrackerContextRegistry } from "./tracker-context-registry.js";
-import { createGroupSelectorRegistry } from "./group-selector-registry.js";
-import { createHostLifecycleRegistry } from "./host-lifecycle-registry.js";
-import { prepareClientOverlay } from "./client-overlay.js";
+import { join } from "node:path";
+import { MARI_BRIDGE_IMPLEMENTATION_VERSION, MARI_BRIDGE_KERNEL_SYMBOL } from "../shared/contracts.js";
 import { schedulePackageBootstrapRestart } from "./bootstrap-restart.js";
 import { installBootstrapFile, requiresBootstrapHandoff } from "./bootstrap-install.js";
 
-let activeRuntime = null;
-const HOST_LIFECYCLE_HOOKS = Symbol.for("marinara.mari-bridge.hostLifecycleHooks.v1");
+const STABLE_RUNTIME_FILES = Object.freeze([
+  "src/shared/contracts.js",
+  "src/server/runtime.js",
+  "src/server/prompt-registry.js",
+  "src/server/result-registry.js",
+  "src/server/tracker-context-registry.js",
+  "src/server/group-selector-registry.js",
+  "src/server/host-lifecycle-registry.js",
+  "src/server/client-overlay.js",
+  "src/client/runtime.js",
+  // Commit the preload entry last, after every module it imports exists.
+  "bootstrap/register.mjs",
+]);
 
-function installHostLifecycleHooks(app, runtime, registry) {
-  let host = app[HOST_LIFECYCLE_HOOKS];
-  if (!host) {
-    host = { registry };
-    app[HOST_LIFECYCLE_HOOKS] = host;
-    app.addHook("preHandler", async (request, reply) => {
-      try { await host.registry.dispatch("preHandler", request, reply); }
-      catch (error) { runtime.logger.warn(error, "[Mari Bridge] Host preHandler contribution failed"); }
-    });
-    app.addHook("onSend", async (request, reply, payload) => {
-      try { return await host.registry.dispatch("onSend", request, reply, payload); }
-      catch (error) {
-        runtime.logger.warn(error, "[Mari Bridge] Host onSend contribution failed");
-        return payload;
-      }
-    });
-    app.addHook("onResponse", async (request, reply) => {
-      try { await host.registry.dispatch("onResponse", request, reply); }
-      catch (error) { runtime.logger.warn(error, "[Mari Bridge] Host onResponse contribution failed"); }
-    });
-  } else {
-    host.registry = registry;
+let lastInstall = null;
+
+async function installStableRuntime(context) {
+  const targetRoot = join(context.dataDir, "mari-bridge");
+  let changed = false;
+  let bootstrapPath = null;
+  for (const relativePath of STABLE_RUNTIME_FILES) {
+    const result = await installBootstrapFile(
+      new URL(`../../${relativePath}`, import.meta.url),
+      join(targetRoot, relativePath),
+    );
+    changed ||= result.changed;
+    if (relativePath === "bootstrap/register.mjs") bootstrapPath = result.path;
   }
-}
-
-function createHostRequest(app) {
-  return async (consumerId, input = {}) => {
-    const method = String(input.method ?? "GET").toUpperCase();
-    const path = String(input.path ?? input.url ?? "");
-    if (!path.startsWith("/api/")) throw new TypeError("Mari Bridge host requests must target /api routes");
-    const headers = {
-      accept: "application/json",
-      "x-mari-bridge-internal": "1",
-      "x-mari-bridge-consumer": consumerId,
-      ...(input.headers ?? {}),
-    };
-    const response = await app.inject({
-      method,
-      url: path,
-      headers,
-      ...(input.body === undefined ? {} : { payload: input.body }),
-    });
-    let data = null;
-    if (response.payload) {
-      try {
-        data = JSON.parse(response.payload);
-      } catch {
-        data = response.payload;
-      }
-    }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      const message = data && typeof data === "object" && typeof data.error === "string"
-        ? data.error
-        : `Host request failed with HTTP ${response.statusCode}`;
-      const error = new Error(message);
-      error.statusCode = response.statusCode;
-      error.data = data;
-      throw error;
-    }
-    return data;
-  };
-}
-
-async function installStableBootstrap(context) {
-  const source = new URL("../../bootstrap/register.mjs", import.meta.url);
-  const target = join(context.dataDir, "mari-bridge", "bootstrap", "register.mjs");
-  return installBootstrapFile(source, target);
+  if (!bootstrapPath) throw new Error("Mari Bridge stable preload entry was not installed");
+  return Object.freeze({ targetRoot, bootstrapPath, changed });
 }
 
 export async function activate(context) {
-  if (globalThis[MARI_BRIDGE_SERVER_SYMBOL]) {
-    throw new Error("Another Mari Bridge server runtime already owns the global registry");
-  }
-  const bootstrapInstall = await installStableBootstrap(context);
-  const bootstrapPath = bootstrapInstall.path;
+  const install = await installStableRuntime(context);
   const kernel = globalThis[MARI_BRIDGE_KERNEL_SYMBOL] ?? null;
-  const bootstrapHandoffRequired = requiresBootstrapHandoff(
+  if (kernel && kernel.active !== true) {
+    throw new Error(
+      `Mari Bridge injected runtime failed: ${kernel.failures?.join("; ") || "unknown preload failure"}`,
+    );
+  }
+  const force = requiresBootstrapHandoff(
     kernel,
-    bootstrapInstall.changed,
+    install.changed,
     MARI_BRIDGE_IMPLEMENTATION_VERSION,
   );
-  const bridgeOperational = kernel?.active === true && kernel?.engineCompatibility?.compatible === true;
-  let clientOverlay = null;
-  const firstStartNativeClientRoot = process.argv[1]
-    ? resolve(dirname(resolve(process.argv[1])), "..", "..", "client", "dist")
-    : null;
-  const clientSourceRoot = kernel?.nativeClientRoot ?? (!kernel ? firstStartNativeClientRoot : null);
-  if ((bridgeOperational || !kernel) && clientSourceRoot) {
-    clientOverlay = await prepareClientOverlay({
-      dataDir: context.dataDir,
-      sourceRoot: clientSourceRoot,
-      engineVersion: kernel?.engineCompatibility?.detected ?? "2.4.3",
-    });
-  }
-  if (bridgeOperational && clientOverlay) {
-    kernel.clientRoot = clientOverlay.root;
-    kernel.patches["client.bridge-first"] = "applied";
-    for (const patchId of clientOverlay.patches ?? []) kernel.patches[patchId] = "applied";
-  }
-  const bootstrapRestart = await schedulePackageBootstrapRestart(context, bootstrapPath, {
-    force: bootstrapHandoffRequired,
-    reason: bootstrapHandoffRequired ? "version-handoff" : undefined,
+  const restart = await schedulePackageBootstrapRestart(context, install.bootstrapPath, {
+    force,
+    reason: force ? "version-handoff" : undefined,
   });
-  const promptRegistry = createPromptRegistry();
-  const agentResultRegistry = createAgentResultRegistry();
-  const trackerContextRegistry = createTrackerContextRegistry();
-  const groupSelectorRegistry = createGroupSelectorRegistry();
-  const hostLifecycleRegistry = createHostLifecycleRegistry();
-  installHostLifecycleHooks(context.app, context.api.runtime, hostLifecycleRegistry);
-  const promptPatchApplied =
-    kernel?.patches?.["prompt.assembler"] === "applied" &&
-    kernel?.patches?.["prompt.generate-fallback"] === "applied";
-  const agentResultPatchApplied =
-    kernel?.patches?.["agent.result-types"] === "applied" &&
-    kernel?.patches?.["agent.result-apply-main"] === "applied" &&
-    kernel?.patches?.["agent.result-apply-retry"] === "applied";
-  const trackerContextPatchApplied =
-    kernel?.patches?.["tracker.context-committed-active"] === "applied" &&
-    kernel?.patches?.["tracker.context-committed"] === "applied" &&
-    kernel?.patches?.["tracker.context-agent"] === "applied";
-  const groupSelectorPatchApplied =
-    kernel?.patches?.["group.selector-policy"] === "applied" &&
-    kernel?.patches?.["group.selector-call"] === "applied";
-  const runtime = createBridgeRuntime({
-    capabilities: [
-      "diagnostics",
-      "runtime.health",
-      ...(bridgeOperational ? ["consumer.sessions", "host.lifecycle", "host.request"] : []),
-      ...(bridgeOperational && promptPatchApplied
-        ? ["prompt.inject", "prompt.suppress", "prompt.transform-final", "prompt.transform-history"]
-        : []),
-      ...(clientOverlay ? ["client.bridge-first"] : []),
-      ...(agentResultPatchApplied ? ["agent.result-types"] : []),
-      ...(trackerContextPatchApplied ? ["tracker.context"] : []),
-      ...(bridgeOperational && groupSelectorPatchApplied ? ["group.selector"] : []),
-    ],
-    promptRegistry,
-    agentResultRegistry,
-    trackerContextRegistry,
-    groupSelectorRegistry,
-    hostLifecycleRegistry,
-    hostRequest: createHostRequest(context.app),
-    patches: [
-      {
-        id: "engine.version",
-        status: bridgeOperational ? "applied" : "unavailable",
-        detail: bridgeOperational
-          ? `Engine ${kernel.engineCompatibility.detected} is supported`
-          : `Mari Bridge supports Engine ${kernel?.engineCompatibility?.supported?.join(", ") ?? "2.4.3"}; detected ${kernel?.engineCompatibility?.detected ?? "unknown"}`,
-      },
-      {
-        id: "bridge-first.activation",
-        status: kernel?.patches?.["bridge-first.activation"] === "applied" ? "applied" : "unavailable",
-        detail: bridgeOperational
-          ? null
-          : kernel?.failures?.join("; ") || "Mari Bridge preload is not active; configure the stable bootstrap and restart",
-      },
-      {
-        id: "packages.client-only-updates",
-        status: kernel?.patches?.["packages.client-only-updates"] === "applied" ? "applied" : "unavailable",
-        detail: kernel?.patches?.["packages.client-only-updates"] === "applied"
-          ? null
-          : "Client-only package updates cannot be finalized during startup",
-      },
-      {
-        id: "prompt.assembler",
-        status: promptPatchApplied ? "applied" : "unavailable",
-        detail: promptPatchApplied ? null : "Preset or fallback prompt assembly patch is not active",
-      },
-      {
-        id: "prompt.generate-fallback",
-        status: kernel?.patches?.["prompt.generate-fallback"] === "applied" ? "applied" : "unavailable",
-        detail: kernel?.patches?.["prompt.generate-fallback"] === "applied"
-          ? null
-          : "No-preset generation prompt patch is not active",
-      },
-      {
-        id: "client.bridge-first",
-        status: clientOverlay ? "applied" : "unavailable",
-        detail: clientOverlay ? clientOverlay.fingerprint : "Client overlay is unavailable until the preload is active",
-      },
-      {
-        id: "client.tracker-sections",
-        status: clientOverlay?.patches?.includes("client.tracker-sections") ? "applied" : "unavailable",
-        detail: clientOverlay ? null : "Native docked Tracker sections require the client overlay",
-      },
-      {
-        id: "client.agent-suite-tracker-data",
-        status: clientOverlay?.patches?.includes("client.agent-suite-tracker-data") ? "applied" : "unavailable",
-        detail: clientOverlay ? null : "Native Agent Suite tracker data requires the client overlay",
-      },
-      {
-        id: "client.roleplay-hud",
-        status: clientOverlay?.patches?.includes("client.roleplay-hud") ? "applied" : "unavailable",
-        detail: clientOverlay ? null : "Roleplay HUD slots require the client overlay",
-      },
-      {
-        id: "agent.result-types",
-        status: agentResultPatchApplied ? "applied" : "unavailable",
-        detail: agentResultPatchApplied ? null : "Custom result parsing or application hooks are unavailable",
-      },
-      {
-        id: "tracker.context",
-        status: trackerContextPatchApplied ? "applied" : "unavailable",
-        detail: trackerContextPatchApplied ? null : "Committed tracker activation, committed sections, or agent tracker-context hooks are unavailable",
-      },
-      {
-        id: "group.selector",
-        status: groupSelectorPatchApplied ? "applied" : "unavailable",
-        detail: groupSelectorPatchApplied ? null : "Native smart group policy or selector callback hook is unavailable",
-      },
-      {
-        id: "client.active-chat",
-        status: clientOverlay?.patches?.includes("client.active-chat") ? "applied" : "unavailable",
-        detail: clientOverlay ? null : "Native active-chat events require the client overlay",
-      },
-      {
-        id: "client.generation-lifecycle",
-        status: clientOverlay?.patches?.includes("client.generation-lifecycle") ? "applied" : "unavailable",
-        detail: clientOverlay ? null : "Native generation events require the client overlay",
-      },
-      ...["client.command-drafts", "client.commands", "client.native-agent-settings", "client.quick-replies", "client.roleplay-background"].map((id) => ({
-        id,
-        status: clientOverlay?.patches?.includes(id) ? "applied" : "unavailable",
-        detail: clientOverlay ? null : `${id} requires the client overlay`,
-      })),
-    ],
-  });
-  activeRuntime = runtime;
-  globalThis[MARI_BRIDGE_SERVER_SYMBOL] = runtime;
-  try {
-    const cleanupRoutes = await context.api.registerPrivilegedRoutes(
-      createDiagnosticsRoutes(runtime),
-      { prefix: "/api/mari-bridge" },
-    );
-    runtime.markReady();
-    context.api.runtime.logger.info(
-      "Mari Bridge activated; bootstrap=%s restart=%s clientOverlay=%s",
-      bootstrapPath,
-      bootstrapRestart.reason,
-      clientOverlay?.fingerprint ?? "none",
-    );
-    return async () => {
-      await runtime.dispose("Mari Bridge package deactivated");
-      cleanupRoutes();
-      if (globalThis[MARI_BRIDGE_SERVER_SYMBOL] === runtime) delete globalThis[MARI_BRIDGE_SERVER_SYMBOL];
-      if (activeRuntime === runtime) activeRuntime = null;
-    };
-  } catch (error) {
-    await runtime.dispose("Mari Bridge activation failed");
-    if (globalThis[MARI_BRIDGE_SERVER_SYMBOL] === runtime) delete globalThis[MARI_BRIDGE_SERVER_SYMBOL];
-    activeRuntime = null;
-    throw error;
-  }
+  lastInstall = Object.freeze({ ...install, restart, kernelVersion: kernel?.version ?? null });
+  context.api.runtime.logger.info(
+    "Mari Bridge installer ready; bootstrap=%s changed=%s restart=%s injected=%s",
+    install.bootstrapPath,
+    install.changed,
+    restart.reason,
+    kernel?.active === true,
+  );
+  return () => {};
 }
 
 export async function selfCheck() {
-  const snapshot = activeRuntime?.getSnapshot();
-  if (!snapshot || snapshot.status !== "ready") throw new Error("Mari Bridge runtime did not become ready");
-  for (const capability of ["diagnostics", "runtime.health"]) {
-    if (!snapshot.capabilities.includes(capability)) throw new Error(`Mari Bridge is missing ${capability}`);
-  }
+  if (!lastInstall?.bootstrapPath) throw new Error("Mari Bridge stable runtime was not installed");
 }

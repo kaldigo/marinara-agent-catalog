@@ -864,7 +864,7 @@ function createClientRuntime(serverHealth) {
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.18",
+    implementationVersion: "1.0.19",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1027,41 +1027,13 @@ function createClientRuntime(serverHealth) {
   });
 }
 
-async function readServerHealth() {
-  const response = await fetch("/api/health", {
-    headers: { Accept: "application/json" },
-    credentials: "same-origin",
-  });
-  if (!response.ok) throw new Error(`Marinara health check failed while loading Mari Bridge (${response.status})`);
-  const health = await response.json();
-  const bridge = health?.capabilityPackages?.packages?.find((item) => item?.id === "mari-bridge");
-  if (!bridge?.ready || bridge?.readiness !== "ready") {
-    throw new Error(`Mari Bridge server package is ${bridge?.readiness ?? bridge?.status ?? "unavailable"}`);
-  }
-  return Object.freeze({
-    status: "ready",
-    engineVersion: health?.version ?? null,
-    packageVersion: bridge?.version ?? null,
-  });
-}
-
 if (!globalThis[CLIENT_SYMBOL]) {
-  const serverHealth = await readServerHealth();
-  globalThis[CLIENT_SYMBOL] = createClientRuntime(serverHealth);
+  globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
+    status: "injected",
+    engineVersion: "2.4.3",
+    implementationVersion: "1.0.19",
+  }));
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui);
   defineAgentSettingsElement(globalThis[CLIENT_SYMBOL].ui);
 }
 document.documentElement.dataset.mariBridgeClient = "ready";
-
-if (!customElements.get("marinara-capability-mari-bridge")) {
-  customElements.define(
-    "marinara-capability-mari-bridge",
-    class MariBridgeRuntimeElement extends HTMLElement {
-      connectedCallback() {
-        this.hidden = true;
-        this.setAttribute("aria-hidden", "true");
-        this.dataset.mariBridgeStatus = "ready";
-      }
-    },
-  );
-}

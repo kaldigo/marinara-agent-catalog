@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.18",
-  "description": "Shared patch host, health gate, and runtime SDK service for Marinara capability packages.",
+  "version": "1.0.19",
+  "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
   "engine": {
     "min": "2.4.3",
     "maxExclusive": "2.4.4"
@@ -12,24 +12,13 @@
     "agent"
   ],
   "entrypoints": {
-    "server": "server.mjs",
-    "client": "client.js"
-  },
-  "contributions": {
-    "slots": [
-      "chat-runtime"
-    ]
+    "server": "server.mjs"
   },
   "files": [
     {
       "path": "bootstrap/register.mjs",
-      "sha256": "685cd2ea03ea9feb34267f286504f4c4fabb88cfba985376d6291ae704803a16",
-      "bytes": 33948
-    },
-    {
-      "path": "client.js",
-      "sha256": "7f4ff9917098b1a4d8adaf796669b72dbbb0781b3660e1ad99836c7ecf8fdde0",
-      "bytes": 42782
+      "sha256": "6d86686e5de4cf9ec37248c4dd58ba93d2b4c16a4bbddbe81e1b0e5e939f069f",
+      "bytes": 39619
     },
     {
       "path": "server.mjs",
@@ -38,8 +27,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "7f4ff9917098b1a4d8adaf796669b72dbbb0781b3660e1ad99836c7ecf8fdde0",
-      "bytes": 42782
+      "sha256": "892f46bd8ddf83301aa701165f704c647c2182677dcf46c0476a0e97233ef583",
+      "bytes": 41732
     },
     {
       "path": "src/server/bootstrap-install.js",
@@ -53,8 +42,8 @@
     },
     {
       "path": "src/server/client-overlay.js",
-      "sha256": "0dcbb920dd13e3f908cea55f70151facbf896f8532293bf9f11076932fd32345",
-      "bytes": 32459
+      "sha256": "d4e47ce1f9b54a929e1ac76f2846e3d3e3736f0e0f5c1ab6406b54d954035810",
+      "bytes": 32787
     },
     {
       "path": "src/server/group-selector-registry.js",
@@ -68,8 +57,8 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "9952d1b774535e46c194243875d4dbe6a6deaa544e5dec2f156caf1156cef460",
-      "bytes": 12665
+      "sha256": "d528f2c9e5a6ed18ac0b7432dda5f71b8b01ea79298d740ef7f3399d59b18117",
+      "bytes": 2526
     },
     {
       "path": "src/server/prompt-registry.js",
@@ -98,16 +87,12 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "d38197f89e1818853582e13905a21b00e121d707387b11ea7458faf38348ae3d",
+      "sha256": "de98cdfcbcf4ab984c9b3c27e76c54bfdf9a46d1beb63292d74844c4acf61d95",
       "bytes": 1841
     }
   ],
   "permissions": [
-    "agent-runtime",
-    "prompt-context",
-    "routes",
-    "storage",
-    "ui"
+    "agent-runtime"
   ],
   "restartRequired": true
 }

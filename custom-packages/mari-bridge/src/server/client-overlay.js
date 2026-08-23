@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v16";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v17";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
@@ -458,10 +458,14 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   const patchedNativeMainModule = patchGenerationControllerEvents(
     patchActiveChatEvents(await readFile(mainModulePath, "utf8")),
   );
-  // The client runtime is part of Marinara's patched main module, not a
-  // separately loaded package or bootstrap dependency. Native capability
-  // loading therefore cannot begin until the bridge symbol is ready.
-  const patchedMainModule = ["{", bridgeClientRuntime, "}", patchedNativeMainModule, ""].join("\n");
+  // Make the bridge a static dependency of Marinara's entry module. Text
+  // prepended to the entry body still runs after all of its ESM dependencies,
+  // which lets imported application code start capability loading first.
+  // Dependency evaluation must finish before any of the native entry body can
+  // execute, so the injected registry exists before capability discovery.
+  const bridgeRuntimeName = `mari-bridge-runtime-${fingerprint}.js`;
+  await writeFile(join(dirname(mainModulePath), bridgeRuntimeName), bridgeClientRuntime);
+  const patchedMainModule = [`import "./${bridgeRuntimeName}";`, patchedNativeMainModule, ""].join("\n");
   await writeFile(mainModulePath, patchedMainModule);
   const assetsRoot = join(temporary, "assets");
   const assetEntries = await readdir(assetsRoot, { withFileTypes: true });
