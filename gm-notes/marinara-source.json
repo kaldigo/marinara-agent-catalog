@@ -12,8 +12,12 @@
     "id": "gm-notes",
     "name": "GM Notes",
     "description": "Tracks concise reminders, unresolved threads, and continuity diagnostics in GameState and committed tracker context.",
+    "engine": {
+      "min": "2.4.3",
+      "maxExclusive": "2.4.4"
+    },
     "kind": ["agent"],
-    "permissions": ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+    "permissions": ["agent-runtime", "chat-read", "ui"],
     "restartRequired": true
   }
 }

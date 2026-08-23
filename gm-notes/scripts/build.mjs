@@ -10,9 +10,12 @@ const version = JSON.parse(await fs.readFile(path.join(root, "package.json"), "u
 await fs.rm(path.join(root, "dist"), { recursive: true, force: true });
 await fs.mkdir(path.join(out, "src", "server"), { recursive: true });
 await fs.mkdir(path.join(out, "src", "shared"), { recursive: true });
-await fs.cp(sdkRoot, path.join(out, "bridge-sdk"), { recursive: true });
+await fs.mkdir(path.join(out, "bridge-sdk"), { recursive: true });
+for (const name of ["contracts.js", "server.js"]) {
+  await fs.copyFile(path.join(sdkRoot, name), path.join(out, "bridge-sdk", name));
+}
 
-for (const name of ["index.js", "routes.js"]) {
+for (const name of ["index.js"]) {
   const source = (await fs.readFile(path.join(root, "src", "server", name), "utf8"))
     .replace('../../../_mari-bridge/sdk/server.js', '../../bridge-sdk/server.js');
   await fs.writeFile(path.join(out, "src", "server", name), source);
@@ -39,7 +42,7 @@ const manifest = {
   name: "GM Notes",
   version,
   description: "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
-  engine: { min: "2.4.2", maxExclusive: "3.0.0" },
+  engine: { min: "2.4.3", maxExclusive: "2.4.4" },
   kind: ["agent"],
   entrypoints: { server: "server.mjs", client: "client.js", agents: "agents.json" },
   contributions: { slots: ["chat-runtime"] },
@@ -48,7 +51,7 @@ const manifest = {
     { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
     { path: "agents.json", sha256: "0".repeat(64), bytes: 0 },
   ],
-  permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context", "routes", "storage", "ui"],
+  permissions: ["agent-runtime", "chat-read", "ui"],
   restartRequired: true,
 };
 await fs.writeFile(path.join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
