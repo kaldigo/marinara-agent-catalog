@@ -12,8 +12,12 @@
     "id": "world-map-background",
     "name": "World Map Background",
     "description": "Uses the active World Maps location reference image as the Roleplay chat background.",
+    "engine": {
+      "min": "2.4.3",
+      "maxExclusive": "2.4.4"
+    },
     "kind": ["agent"],
-    "permissions": ["agent-runtime", "chat-read", "chat-write", "ui"],
+    "permissions": ["chat-read", "chat-write", "ui"],
     "restartRequired": false
   }
 }

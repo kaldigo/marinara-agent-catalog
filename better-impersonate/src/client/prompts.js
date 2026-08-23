@@ -30,11 +30,3 @@ const DEFAULT_IMPERSONATE_CONTINUE_TEMPLATE = [
     "Do not repeat any part of the draft.",
     "Do not explain.",
 ].join("\n").trim();
-
-function applyImpersonateModeTemplate(template, baseTemplate) {
-  const base = String(baseTemplate || "").trim();
-  const source = String(template || "").trim();
-  return source.includes("{{base_prompt}}")
-    ? source.replaceAll("{{base_prompt}}", base).trim()
-    : [base, source].filter(Boolean).join("\n\n");
-}

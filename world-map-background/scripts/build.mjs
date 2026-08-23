@@ -33,17 +33,17 @@ function manifest() {
     name: "World Map Background",
     version,
     description: "Uses the active World Maps location reference image as the Roleplay chat background.",
-    engine: { min: "2.4.2", maxExclusive: "3.0.0" },
+    engine: { min: "2.4.3", maxExclusive: "2.4.4" },
     kind: ["agent"],
     entrypoints: {
       client: "client.js",
       agents: "agents.json"
     },
     contributions: {
-      slots: ["chat-runtime", "chat-settings"]
+      slots: ["chat-runtime"]
     },
     files: [],
-    permissions: ["agent-runtime", "chat-read", "chat-write", "ui"],
+    permissions: ["chat-read", "chat-write", "ui"],
     restartRequired: false
   };
 }
@@ -83,7 +83,7 @@ async function copyTree(from, to, transform = (content) => content) {
 
 async function buildClientEntrypoint() {
   const chunks = [];
-  for (const file of ["contracts.js", "settings.js", "client.js"]) {
+  for (const file of ["contracts.js", "client.js"]) {
     const source = await fs.readFile(path.join(sdkRoot, file), "utf8");
     chunks.push(`// bridge-sdk/${file}\n${stripBrowserModuleSyntax(source).trim()}\n`);
   }

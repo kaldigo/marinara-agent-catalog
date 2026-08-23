@@ -13,11 +13,11 @@
     "name": "Better Impersonate",
     "description": "Adds slash commands for persona draft generation through system Quick Replies with {{input}}.",
     "engine": {
-      "min": "2.3.3",
-      "maxExclusive": "3.0.0"
+      "min": "2.4.3",
+      "maxExclusive": "2.4.4"
     },
     "kind": ["agent"],
-    "permissions": ["chat-read", "chat-write", "network", "storage", "ui"],
+    "permissions": ["storage", "ui"],
     "restartRequired": false
   }
 }

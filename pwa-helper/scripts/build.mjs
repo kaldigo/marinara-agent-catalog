@@ -29,7 +29,6 @@ await fs.rm(distRoot, { recursive: true, force: true });
 await fs.mkdir(packageRoot, { recursive: true });
 
 await fs.writeFile(path.join(packageRoot, "client.js"), await buildClientSource());
-await fs.writeFile(path.join(packageRoot, "agents.json"), `${JSON.stringify(agentDefinitions(), null, 2)}\n`);
 await fs.writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify(manifest(), null, 2)}\n`);
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
 
@@ -86,37 +85,16 @@ function manifest() {
     version,
     description:
       "Keeps mobile and tablet screens awake while Marinara generation is running and improves iOS home-screen metadata.",
-    engine: { min: "2.3.3", maxExclusive: "3.0.0" },
+    engine: { min: "2.4.3", maxExclusive: "2.4.4" },
     kind: ["agent"],
     entrypoints: {
       client: "client.js",
-      agents: "agents.json",
     },
+    contributions: { slots: ["chat-runtime"] },
     files: [
       { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
-      { path: "agents.json", sha256: "0".repeat(64), bytes: 0 },
     ],
     permissions: ["ui"],
     restartRequired: false,
   };
-}
-
-function agentDefinitions() {
-  return [
-    {
-      id: "pwa-helper",
-      name: "PWA Helper",
-      description: "Feature marker for PWA Helper client wake-lock and iOS home-screen behavior.",
-      category: "misc",
-      phase: "pre_generation",
-      execution: "feature",
-      enabledByDefault: false,
-      libraryHidden: true,
-      runtimeDisabled: true,
-      modeAllowlist: ["conversation", "roleplay", "visual_novel", "game"],
-      defaultTools: [],
-      defaultSettings: {},
-      defaultPromptTemplate: "",
-    },
-  ];
 }

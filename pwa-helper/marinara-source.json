@@ -13,8 +13,8 @@
     "name": "PWA Helper",
     "description": "Keeps mobile and tablet screens awake while Marinara generation is running and improves iOS home-screen metadata.",
     "engine": {
-      "min": "2.3.3",
-      "maxExclusive": "3.0.0"
+      "min": "2.4.3",
+      "maxExclusive": "2.4.4"
     },
     "kind": ["agent"],
     "permissions": ["ui"],

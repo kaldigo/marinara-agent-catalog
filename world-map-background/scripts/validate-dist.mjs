@@ -12,7 +12,7 @@ assert(manifest.entrypoints?.client === "client.js", "manifest has client entryp
 assert(manifest.entrypoints?.agents === "agents.json", "manifest has agent entrypoint");
 assert(!manifest.entrypoints?.server, "manifest has no server entrypoint");
 assert(manifest.contributions?.slots?.includes("chat-runtime"), "manifest declares chat-runtime slot");
-assert(manifest.contributions?.slots?.includes("chat-settings"), "manifest declares chat-settings slot");
+assert(!manifest.contributions?.slots?.includes("chat-settings"), "manifest does not request a replacement chat-settings surface");
 assert(manifest.permissions?.includes("chat-write"), "manifest includes chat-write permission");
 assert(manifest.restartRequired === false, "client-only package is ready immediately after install");
 
@@ -27,7 +27,9 @@ assert(client.includes("marinara-capability-world-map-background"), "client defi
 assert(client.includes("activateClientWithMariBridge"), "client activates through the Mari Bridge SDK");
 assert(client.includes('"chat.active"'), "client requires the native active-chat bridge capability");
 assert(client.includes("bridgeSession.chat.active.subscribe"), "client subscribes to native active-chat state");
-assert(client.includes("data-wmb-setting"), "client bundles per-chat display settings");
+assert(client.includes("data-wmb-blur"), "client contributes its per-chat blur control");
+assert(client.includes('slot: "agent.settings"'), "client extends the native agent card");
+assert(!client.includes("querySelector"), "client does not replace the native Roleplay background DOM");
 assert(!client.includes("watchActiveChatId"), "client does not bundle the legacy DOM active-chat watcher");
 assert(!/^import\s/m.test(client), "client bundle has no import statements");
 assert(!/^export\s/m.test(client), "client bundle has no export statements");
