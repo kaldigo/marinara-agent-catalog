@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gm-notes",
   "name": "GM Notes",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
   "engine": {
     "min": "2.4.3",
@@ -24,8 +24,8 @@
   "files": [
     {
       "path": "agents.json",
-      "sha256": "350c2481b4d9cbbb4c910fd878adeaf461bd674620c84b44de51b3d0a00613bb",
-      "bytes": 2538
+      "sha256": "aa5b334f3076e24c9927c46dbfc676495a17b206d32104a3269e98796c47fae7",
+      "bytes": 2508
     },
     {
       "path": "bridge-sdk/contracts.js",
@@ -39,8 +39,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "f4a32566e131d619c777953c98af4a41224b4cc0bee8a9704a56f3d8cb4a87d5",
-      "bytes": 38277
+      "sha256": "b6bf73e565bdc1b696e21c2632d5fb23c5457dc04c14e6b21d3dd9a59848841c",
+      "bytes": 40060
     },
     {
       "path": "server.mjs",
@@ -61,6 +61,7 @@
   "permissions": [
     "agent-runtime",
     "chat-read",
+    "chat-write",
     "ui"
   ],
   "restartRequired": true

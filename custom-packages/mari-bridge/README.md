@@ -41,9 +41,13 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.13` supports Marinara Engine 2.4.3 and adds package-owned structured
+Version `1.0.14` supports Marinara Engine 2.4.3 and adds package-owned structured
 agent result types, committed and agent-facing tracker-context sections, and
-native mount points for the docked Tracker panel and Roleplay HUD. It also
+native tracker-section contributions and Roleplay HUD mount points. Tracker
+contributions are inserted inside Marinara's ordered section list and receive
+the native section header, collapse behavior, edit mode, active-agent state,
+and rerun callback; consumers provide only descriptors and feature-specific
+body content. It also
 retains the package-owned loader, SDK dependency gate, prompt kernel, and first
 client lifecycle patches. Count-checked
 transforms make `mari-bridge` activate first, serve its client before the Engine

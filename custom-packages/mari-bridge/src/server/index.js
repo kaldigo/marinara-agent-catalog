@@ -200,9 +200,9 @@ export async function activate(context) {
         detail: clientOverlay ? clientOverlay.fingerprint : "Client overlay is unavailable until the preload is active",
       },
       {
-        id: "client.tracker-panel",
-        status: clientOverlay?.patches?.includes("client.tracker-panel") ? "applied" : "unavailable",
-        detail: clientOverlay ? null : "Docked Tracker panel slots require the client overlay",
+        id: "client.tracker-sections",
+        status: clientOverlay?.patches?.includes("client.tracker-sections") ? "applied" : "unavailable",
+        detail: clientOverlay ? null : "Native docked Tracker sections require the client overlay",
       },
       {
         id: "client.roleplay-hud",
