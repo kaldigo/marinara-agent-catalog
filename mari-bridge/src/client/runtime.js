@@ -269,8 +269,10 @@ async function readDraftEventStream(body, onEvent) {
 function createUiRegistry(activeChat) {
   const registrations = new Map();
   const subscribers = new Set();
+  let revision = 0;
 
   function publish() {
+    revision += 1;
     for (const subscriber of [...subscribers]) subscriber();
   }
   activeChat.subscribe(publish, { emitCurrent: false });
@@ -279,8 +281,11 @@ function createUiRegistry(activeChat) {
     register(ownerId, input = {}) {
       const id = String(input.id ?? "").trim();
       const slot = String(input.slot ?? "").trim();
-      if (!id || !["agent.settings", "composer.above-input", "tracker.panel", "roleplay.hud"].includes(slot)) {
+      if (!id || !["agent.settings", "composer.above-input", "tracker.section", "roleplay.hud"].includes(slot)) {
         throw new TypeError("Mari Bridge UI registration requires a supported slot and stable id");
+      }
+      if (slot === "tracker.section" && input.placement != null && input.placement !== "before:custom") {
+        throw new TypeError("Mari Bridge tracker sections currently support placement before:custom");
       }
       const key = `${ownerId}:${id}`;
       if (registrations.has(key)) throw new Error(`Duplicate Mari Bridge UI contribution ${key}`);
@@ -293,6 +298,10 @@ function createUiRegistry(activeChat) {
         agentIds: Object.freeze(
           [...new Set((input.agentIds ?? []).map((value) => String(value).trim()).filter(Boolean))],
         ),
+        title: String(input.title ?? "").trim(),
+        icon: String(input.icon ?? "extension").trim(),
+        placement: String(input.placement ?? "before:custom").trim(),
+        rerunAgentId: String(input.rerunAgentId ?? "").trim(),
         props: typeof input.props === "function" ? input.props : null,
       }));
       publish();
@@ -311,6 +320,9 @@ function createUiRegistry(activeChat) {
     subscribe(listener) {
       subscribers.add(listener);
       return () => subscribers.delete(listener);
+    },
+    getVersion() {
+      return revision;
     },
   });
 }
@@ -402,6 +414,178 @@ function defineNativeSlotElement(ui) {
       this.replaceChildren(...nodes);
     }
   });
+}
+
+function createNativeTrackerSectionRenderer(ui) {
+  const componentCache = new WeakMap();
+  const ROOT_CLASS = "relative z-10 overflow-hidden border-b border-[var(--border)] bg-[var(--tracker-panel-section-background,color-mix(in_srgb,var(--card)_10%,transparent))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--foreground)_5%,transparent)]";
+
+  function readCollapsed(key) {
+    try {
+      return globalThis.localStorage?.getItem(`mari-bridge:tracker-section-collapsed:${key}`) === "true";
+    } catch {
+      return false;
+    }
+  }
+
+  function writeCollapsed(key, value) {
+    try {
+      globalThis.localStorage?.setItem(`mari-bridge:tracker-section-collapsed:${key}`, String(value));
+    } catch {
+      // Collapsing remains available for the current session when storage is unavailable.
+    }
+  }
+
+  function trackerIcon(jsx, name) {
+    const common = {
+      xmlns: "http://www.w3.org/2000/svg",
+      width: "0.6875rem",
+      height: "0.6875rem",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": "true",
+    };
+    if (name === "notebook-pen") {
+      return jsx.jsxs("svg", {
+        ...common,
+        className: "lucide lucide-notebook-pen",
+        children: [
+          jsx.jsx("path", { d: "M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4" }),
+          jsx.jsx("path", { d: "M2 6h4M2 10h4M2 14h4M2 18h4" }),
+          jsx.jsx("path", { d: "M15.4 5.6 18.4 8.6" }),
+          jsx.jsx("path", { d: "m14 10 5.5-5.5a2.1 2.1 0 0 1 3 3L17 13l-4 1z" }),
+        ],
+      });
+    }
+    return jsx.jsxs("svg", {
+      ...common,
+      className: "lucide lucide-puzzle",
+      children: [
+        jsx.jsx("path", { d: "M19.439 7.85c-.049.322-.059.648-.028.972.036.67.294 1.458.79 1.954.496.496 1.284.754 1.954.79.324.031.65.021.972-.028V16a2 2 0 0 1-2 2h-3.536c.031-.322.021-.648-.028-.972-.036-.67-.294-1.458-.79-1.954-.496-.496-1.284-.754-1.954-.79a4.35 4.35 0 0 0-.972.028V18H9.312a4.35 4.35 0 0 0 .028-.972c-.036-.67-.294-1.458-.79-1.954-.496-.496-1.284-.754-1.954-.79a4.35 4.35 0 0 0-.972.028V10h3.536a4.35 4.35 0 0 1-.028-.972c.036-.67.294-1.458.79-1.954.496-.496 1.284-.754 1.954-.79.324-.031.65-.021.972.028V2h4.591a2 2 0 0 1 2 2z" }),
+      ],
+    });
+  }
+
+  function refreshIcon(jsx, busy) {
+    return jsx.jsxs("svg", {
+      xmlns: "http://www.w3.org/2000/svg",
+      width: "0.75rem",
+      height: "0.75rem",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      className: `lucide lucide-refresh-cw${busy ? " animate-spin" : ""}`,
+      "aria-hidden": "true",
+      children: [
+        jsx.jsx("path", { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" }),
+        jsx.jsx("path", { d: "M21 3v5h-5" }),
+        jsx.jsx("path", { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" }),
+        jsx.jsx("path", { d: "M8 16H3v5" }),
+      ],
+    });
+  }
+
+  function componentsFor(react, jsx) {
+    let cached = componentCache.get(react);
+    if (cached) return cached;
+
+    function CapabilityBody({ item, capabilityProps }) {
+      const ref = react.useRef(null);
+      react.useLayoutEffect(() => {
+        const node = ref.current;
+        if (!(node instanceof HTMLElement)) return;
+        node.capabilityProps = capabilityProps;
+        node.dispatchEvent(new CustomEvent("marinara-capability-props"));
+      }, [capabilityProps]);
+      return jsx.jsx(`marinara-capability-${item.ownerId}`, { ref, view: item.view });
+    }
+
+    function TrackerSection({ item, native, context }) {
+      const storageKey = `${item.ownerId}:${item.id}`;
+      const [collapsed, setCollapsed] = react.useState(() => readCollapsed(storageKey));
+      const rerunAgentId = item.rerunAgentId || item.agentIds[0] || "";
+      const canRerun = !!rerunAgentId && context.enabledAgentTypes?.has?.(rerunAgentId);
+      const rerunTitle = context.retryBusy
+        ? "A tracker or reply is already running"
+        : `Re-run ${item.title || item.ownerId} tracker`;
+      const action = canRerun
+        ? jsx.jsx(native.SectionIconButton, {
+            onClick: () => { void context.rerunTracker(rerunAgentId); },
+            disabled: context.retryBusy,
+            title: rerunTitle,
+            children: refreshIcon(jsx, context.retryBusy),
+          })
+        : null;
+      const capabilityProps = react.useMemo(() => Object.freeze({
+        ...item.capabilityProps,
+        chatId: context.activeChatId,
+        editMode: context.editMode,
+        nativeEnabled: true,
+      }), [item.capabilityProps, context.activeChatId, context.editMode]);
+      const toggle = () => setCollapsed((current) => {
+        const next = !current;
+        writeCollapsed(storageKey, next);
+        return next;
+      });
+      return jsx.jsxs("section", {
+        className: ROOT_CLASS,
+        "data-mari-bridge-tracker-section": storageKey,
+        children: [
+          native.TrackerReadabilityVeil ? jsx.jsx(native.TrackerReadabilityVeil, { strength: "strong" }) : null,
+          jsx.jsxs("div", {
+            className: "relative z-10",
+            children: [
+              jsx.jsx(native.SectionHeader, {
+                icon: trackerIcon(jsx, item.icon),
+                title: item.title || item.ownerId,
+                action,
+                collapsed,
+                onToggle: toggle,
+              }),
+              !collapsed && jsx.jsx(CapabilityBody, { item, capabilityProps }),
+            ],
+          }),
+        ],
+      }, storageKey);
+    }
+
+    function TrackerSections({ native, context }) {
+      react.useSyncExternalStore(ui.subscribe, ui.getVersion, ui.getVersion);
+      const items = ui.list("tracker.section").filter((item) => (
+        item.placement === "before:custom"
+        && (item.agentIds.length === 0 || item.agentIds.some((agentId) => context.enabledAgentTypes?.has?.(agentId)))
+      ));
+      if (items.length === 0 && context.nativeSectionCount === 0 && native.EmptySection) {
+        return jsx.jsx(native.EmptySection, { children: context.emptyLabel || "No enabled tracker panels." });
+      }
+      return items.map((item) => jsx.jsx(TrackerSection, { item, native, context }, `${item.ownerId}:${item.id}`));
+    }
+
+    cached = Object.freeze({ TrackerSections });
+    componentCache.set(react, cached);
+    return cached;
+  }
+
+  return function renderNativeTrackerSections(input = {}) {
+    const { react, jsx, native, sections, renderSection, context } = input;
+    if (!react?.useSyncExternalStore || !jsx?.jsx || typeof renderSection !== "function" || !Array.isArray(sections)) {
+      return null;
+    }
+    if (!native?.SectionHeader || !native?.SectionIconButton) return null;
+    const { TrackerSections } = componentsFor(react, jsx);
+    const rendered = sections.map((section) => renderSection(section));
+    const host = jsx.jsx(TrackerSections, { native, context: context ?? {} }, "mari-bridge:tracker-sections");
+    const customIndex = sections.indexOf("custom");
+    rendered.splice(customIndex >= 0 ? customIndex : rendered.length, 0, host);
+    return rendered;
+  };
 }
 
 function createGenerationLifecycle() {
@@ -512,6 +696,7 @@ function createClientRuntime(serverHealth) {
   const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
   const mountNativeSlot = createNativeSlotMounter();
+  const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui);
   const capabilities = new Set([
     "chat.active",
     "client.bridge-first",
@@ -525,12 +710,12 @@ function createClientRuntime(serverHealth) {
     "runtime.health",
     "ui.agent-settings",
     "ui.composer.above-input",
-    "ui.tracker-panel",
+    "ui.tracker-section",
     "ui.roleplay-hud",
   ]);
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.13",
+    implementationVersion: "1.0.14",
     status: "ready",
     capabilities,
     serverHealth,
@@ -612,7 +797,7 @@ function createClientRuntime(serverHealth) {
             const capability = ({
               "agent.settings": "ui.agent-settings",
               "composer.above-input": "ui.composer.above-input",
-              "tracker.panel": "ui.tracker-panel",
+              "tracker.section": "ui.tracker-section",
               "roleplay.hud": "ui.roleplay-hud",
             })[input?.slot];
             if (!capability) throw new Error(`${consumerId} requested an unsupported Mari Bridge UI slot`);
@@ -666,6 +851,7 @@ function createClientRuntime(serverHealth) {
     },
     ui,
     mountNativeSlot,
+    renderNativeTrackerSections,
   });
 }
 

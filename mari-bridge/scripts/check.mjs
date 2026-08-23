@@ -195,10 +195,12 @@ globalThis.document = {
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.13");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.14");
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("ui.tracker-section"), true);
+assert.equal(typeof globalThis[clientSymbol].renderNativeTrackerSections, "function");
 assert.equal(typeof customElements.get("marinara-capability-mari-bridge"), "function");
 assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
 const hudRoot = new HTMLElement();
@@ -226,7 +228,7 @@ await clientSession.close();
 const featureSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "feature-test",
   api: { major: 1, minMinor: 0 },
-  require: ["commands", "quick-replies.input-macro", "ui.agent-settings"],
+  require: ["commands", "quick-replies.input-macro", "ui.agent-settings", "ui.tracker-section"],
 });
 featureSession.commands.register({
   id: "probe",
@@ -250,7 +252,40 @@ assert.equal(globalThis[clientSymbol].resolveQuickReply("/probe {{input}} + {{in
 assert.equal(globalThis[clientSymbol].resolveQuickReply("unchanged", "draft"), "unchanged");
 featureSession.ui.register({ id: "settings", slot: "agent.settings", agentIds: ["feature-test"], view: "settings" });
 assert.equal(globalThis[clientSymbol].ui.list("agent.settings", { agentId: "feature-test" })[0].ownerId, "feature-test");
+let trackerUiPublishes = 0;
+const unsubscribeTrackerUi = globalThis[clientSymbol].ui.subscribe(() => { trackerUiPublishes += 1; });
+featureSession.ui.register({
+  id: "tracker",
+  slot: "tracker.section",
+  agentIds: ["feature-test"],
+  title: "Feature Test",
+  icon: "notebook-pen",
+  rerunAgentId: "feature-test",
+  view: "tracker-body",
+});
+assert.equal(globalThis[clientSymbol].ui.list("tracker.section")[0].title, "Feature Test");
+assert.equal(trackerUiPublishes, 1);
+const fakeJsx = {
+  jsx(type, props, key) {
+    return { type, props, key };
+  },
+  jsxs(type, props, key) {
+    return { type, props, key };
+  },
+};
+const nativeTrackerOrder = globalThis[clientSymbol].renderNativeTrackerSections({
+  react: { useSyncExternalStore() {} },
+  jsx: fakeJsx,
+  native: { SectionHeader() {}, SectionIconButton() {} },
+  sections: ["world", "custom"],
+  renderSection: (section) => section,
+  context: {},
+});
+assert.deepEqual([nativeTrackerOrder[0], nativeTrackerOrder[2]], ["world", "custom"]);
+assert.equal(nativeTrackerOrder[1].key, "mari-bridge:tracker-sections");
 await featureSession.close();
+assert.equal(trackerUiPublishes, 3);
+unsubscribeTrackerUi();
 globalThis.fetch = async (url) => {
   assert.equal(url, "/api/generate/dryRun");
   return new Response(
@@ -333,9 +368,20 @@ const chatSettingsFixture = [
 const patchedChatSettings = patchChatSettingsBridge(chatSettingsFixture);
 assert.equal((patchedChatSettings.match(/marinara-mari-bridge-agent-settings/gu) ?? []).length, 2);
 assert.match(patchedChatSettings, /"agent-id":agent\.id/u);
-const trackerPanelFixture = 'react.jsx("section",{"data-component":"TrackerDataSidebar",className:"panel"})';
+const trackerPanelFixture = [
+  'import{r as react,j as jsx}from"./vendor-react-test.js";',
+  'import{S as SectionHeader,L as SectionIconButton,f as ReadabilityVeil,E as EmptySection}from"./world-custom-field-icons-test.js";',
+  'function TrackerSectionList({activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,deleteMode:deleting,addMode:adding}){const{rerunTracker:rerun,trackerRetryBusy:busy}=useRerun();const renderSection=section=>section;return jsx.jsxs(jsx.Fragment,{children:[jsx.jsx("input",{type:"file",accept:"image/*"}),sections.map(section=>renderSection(section))]})}',
+  'function TrackerDataSidebar(){const[editMode,setEditMode]=react.useState(null),hasFixed=sections.length>0;return jsx.jsxs("section",{"data-component":"TrackerDataSidebar",children:[jsx.jsx(Header,{activeEditMode:editMode,onSetEditMode:setEditMode}),gameState&&hasFixed?jsx.jsx(Boundary,{children:jsx.jsx(TrackerSectionList,{activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,deleteMode:deleting,addMode:adding})}):null,chat?hasFixed?null:jsx.jsx(EmptySection,{children:t("ui.trackerPanel.trackerdatasidebar.noEnabledTrackerPanels")}):null]})}',
+].join("");
 const patchedTrackerPanel = patchTrackerPanelBridge(trackerPanelFixture);
-assert.match(patchedTrackerPanel, /mountNativeSlot\(Z,"tracker\.panel",\{target:"content"\}\)/u);
+assert.match(patchedTrackerPanel, /renderNativeTrackerSections/u);
+assert.match(patchedTrackerPanel, /mariBridgeEditMode:editMode/u);
+assert.match(patchedTrackerPanel, /mariBridgeEditMode:mariBridgeEditMode,mariBridgeEmptyLabel:mariBridgeEmptyLabel,deleteMode:deleting/u);
+assert.match(patchedTrackerPanel, /SectionHeader:SectionHeader/u);
+assert.match(patchedTrackerPanel, /SectionIconButton:SectionIconButton/u);
+assert.match(patchedTrackerPanel, /EmptySection:EmptySection/u);
+assert.match(patchedTrackerPanel, /gameState&&\(hasFixed\|\|globalThis/u);
 assert.equal(
   patchTrackerPanelBridge('const selector = \'[data-component="TrackerDataSidebarDesktop.right"]\';'),
   null,
@@ -377,7 +423,7 @@ const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.ro
 assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.equal(preparedOverlayMain.startsWith("{\nconst API_VERSION = Object.freeze"), true);
-assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.13"/u);
+assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.14"/u);
 assert.equal(
   preparedOverlayMain.indexOf("const API_VERSION") <
     preparedOverlayMain.indexOf('window.dispatchEvent(new CustomEvent("marinara:active-chat"'),
@@ -405,10 +451,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.13"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.13" }, false, "1.0.13"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.12" }, false, "1.0.13"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.13" }, true, "1.0.13"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.14"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.14" }, false, "1.0.14"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.13" }, false, "1.0.14"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.14" }, true, "1.0.14"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");

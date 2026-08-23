@@ -66,7 +66,7 @@ execution or public persistence APIs.
 - active-chat and generation lifecycle snapshots;
 - native Agent-card additions through `agent.settings`;
 - native composer additions through `composer.above-input`;
-- docked Tracker content through `tracker.panel`;
+- native docked Tracker sections through `tracker.section`;
 - Roleplay HUD content through `roleplay.hud`;
 - native background-value adaptation.
 

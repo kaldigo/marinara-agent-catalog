@@ -17,7 +17,7 @@
       "maxExclusive": "2.4.4"
     },
     "kind": ["agent"],
-    "permissions": ["agent-runtime", "chat-read", "ui"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "ui"],
     "restartRequired": true
   }
 }

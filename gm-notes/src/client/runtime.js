@@ -37,7 +37,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       "generation.lifecycle",
       "runtime.health",
       "ui.roleplay-hud",
-      "ui.tracker-panel",
+      "ui.tracker-section",
     ],
   },
   async (bridgeSession) => {
@@ -81,6 +81,14 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       }
 
       handleEvent(event) {
+        if (event.type === "marinara-capability-props") {
+          this._adding = false;
+          this._lockMode = false;
+          this._removeMode = false;
+          if (this.chatId && state.cache.has(this.chatId)) this.render();
+          else void this.refresh(true);
+          return;
+        }
         if (event.type === "click") {
           const action = event.target instanceof Element ? event.target.closest("[data-gm-notes-action]") : null;
           if (!action) return;
@@ -211,7 +219,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
 
       async refresh(force = false) {
         const view = this.getAttribute("view");
-        if (!this.chatId || !["tracker-panel", "hud"].includes(view)) {
+        if (!this.chatId || !["tracker-section-body", "hud"].includes(view)) {
           this.hidden = true;
           this.replaceChildren();
           this.closePopover();
@@ -223,7 +231,9 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
 
       render() {
         const data = state.cache.get(this.chatId);
-        this.hidden = data?.enabled !== true;
+        const nativeTracker = this.getAttribute("view") === "tracker-section-body"
+          && this.capabilityProps?.nativeEnabled === true;
+        this.hidden = nativeTracker ? !data : data?.enabled !== true;
         if (this.hidden) {
           this.replaceChildren();
           this.closePopover();
@@ -371,7 +381,16 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       }
     }
 
-    const disposeTracker = bridgeSession.ui.register({ id: "tracker", slot: "tracker.panel", view: "tracker-panel" });
+    const disposeTracker = bridgeSession.ui.register({
+      id: "tracker",
+      slot: "tracker.section",
+      view: "tracker-section-body",
+      title: "GM Notes",
+      icon: "notebook-pen",
+      placement: "before:custom",
+      agentIds: [PACKAGE_ID],
+      rerunAgentId: PACKAGE_ID,
+    });
     const disposeHud = bridgeSession.ui.register({ id: "hud", slot: "roleplay.hud", view: "hud" });
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
       if (chatId) void loadState(chatId, true);
@@ -410,7 +429,13 @@ function parseRecord(value) {
 }
 
 function renderTracker(element, data) {
-  return `<section class="gm-notes-native-panel" aria-label="GM Notes">${renderPanel(element, data.notes)}</section>`;
+  const editMode = String(element.capabilityProps?.editMode ?? "");
+  return renderPanelBody(element, data.notes, {
+    tracker: true,
+    addMode: editMode === "add",
+    lockMode: editMode === "lock",
+    removeMode: editMode === "delete",
+  });
 }
 
 function renderHud(element, data) {
@@ -426,7 +451,7 @@ function renderHud(element, data) {
 }
 
 function renderPanel(element, notes, { popover = false } = {}) {
-  return `<header class="gm-notes-panel-header">
+  return `<header class="gm-notes-popover-header">
     <span class="gm-notes-panel-title">${noteIcon("0.625rem")} GM Notes (${notes.length})</span>
     <span class="gm-notes-panel-actions">
       ${modeButton("add-mode", "Add note", plusIcon(), element._adding)}
@@ -434,23 +459,38 @@ function renderPanel(element, notes, { popover = false } = {}) {
       ${modeButton("remove-mode", "Remove notes", trashIcon(), element._removeMode, true)}
     </span>
   </header>
-  <div class="gm-notes-panel-body${popover ? " gm-notes-panel-body--popover" : ""}">
-    ${element._adding ? renderAddForm() : ""}
-    ${renderGroups(element, notes)}
+  ${renderPanelBody(element, notes, {
+    popover,
+    addMode: element._adding,
+    lockMode: element._lockMode,
+    removeMode: element._removeMode,
+  })}`;
+}
+
+function renderPanelBody(element, notes, {
+  popover = false,
+  tracker = false,
+  addMode = false,
+  lockMode = false,
+  removeMode = false,
+} = {}) {
+  return `<div class="gm-notes-panel-body${popover ? " gm-notes-panel-body--popover" : ""}${tracker ? " gm-notes-panel-body--tracker" : ""}">
+    ${addMode ? renderAddForm({ tracker }) : ""}
+    ${renderGroups(element, notes, { tracker, lockMode, removeMode })}
   </div>`;
 }
 
-function renderGroups(element, notes) {
+function renderGroups(element, notes, { tracker = false, lockMode = false, removeMode = false } = {}) {
   const labels = { reminder: "Reminders", thread: "Threads", debug: "Debug" };
   const groups = GM_NOTE_KINDS.map((kind) => [kind, notes.filter((note) => note.kind === kind)]).filter(([, items]) => items.length);
   if (!groups.length) return `<div class="gm-notes-empty">${noteIcon("0.875rem")}<span>No GM notes recorded yet.</span></div>`;
-  return groups.map(([kind, items]) => `<section class="gm-notes-group gm-notes-group--${kind}">
+  return groups.map(([kind, items]) => `<section class="gm-notes-group gm-notes-group--${kind}${tracker ? " gm-notes-group--tracker" : ""}">
     <header><span class="gm-notes-kind-dot" aria-hidden="true"></span><strong>${labels[kind]}</strong><span>${items.length}</span></header>
-    <ul>${items.map((note) => renderNoteRow(element, note)).join("")}</ul>
+    <ul>${items.map((note) => renderNoteRow(element, note, { lockMode, removeMode })).join("")}</ul>
   </section>`).join("");
 }
 
-function renderNoteRow(element, note) {
+function renderNoteRow(element, note, { lockMode = false, removeMode = false } = {}) {
   let content;
   if (element._editingId === note.id && note.locked !== true) {
     content = `<input class="gm-notes-inline-input" data-gm-note-edit-input data-note-id="${escapeHtml(note.id)}" value="${escapeHtml(note.text)}" aria-label="Edit GM note">`;
@@ -460,22 +500,22 @@ function renderNoteRow(element, note) {
     content = `<button type="button" class="gm-notes-note-text" data-gm-notes-action="edit" data-note-id="${escapeHtml(note.id)}" title="Edit note">${escapeHtml(note.text)}</button>`;
   }
   let control = note.locked === true ? `<span class="gm-notes-lock-status" title="Locked">${lockIcon(true)}</span>` : "";
-  if (element._lockMode) {
+  if (lockMode) {
     control = `<button type="button" class="gm-notes-row-action${note.locked ? " is-active" : ""}" data-gm-notes-action="toggle-lock" data-note-id="${escapeHtml(note.id)}" title="${note.locked ? "Unlock" : "Lock"} note">${lockIcon(note.locked)}</button>`;
-  } else if (element._removeMode) {
+  } else if (removeMode) {
     control = `<button type="button" class="gm-notes-row-action gm-notes-row-action--danger" data-gm-notes-action="remove" data-note-id="${escapeHtml(note.id)}" title="${note.locked ? "Unlock before removing" : "Remove note"}" ${note.locked ? "disabled" : ""}>${trashIcon()}</button>`;
   }
   return `<li><span class="gm-notes-row-icon" aria-hidden="true">${kindGlyph(note.kind)}</span>${content}${control}</li>`;
 }
 
-function renderAddForm() {
+function renderAddForm({ tracker = false } = {}) {
   return `<form class="gm-notes-add-form" data-gm-note-add-form>
     <select name="kind" aria-label="Note kind">
       <option value="reminder">Reminder</option><option value="thread">Thread</option><option value="debug">Debug</option>
     </select>
     <input name="text" data-gm-note-add-input aria-label="New GM note" placeholder="New note" autocomplete="off" required>
     <button type="submit" title="Add note">${plusIcon()}</button>
-    <button type="button" data-gm-notes-action="cancel-add" title="Cancel">×</button>
+    ${tracker ? "" : '<button type="button" data-gm-notes-action="cancel-add" title="Cancel">×</button>'}
   </form>`;
 }
 
@@ -519,12 +559,12 @@ function ensureStyles() {
   const style = document.createElement("style");
   style.id = "gm-notes-style";
   style.textContent = `
-    marinara-capability-gm-notes[view="tracker-panel"]{display:block;min-width:0}
+    marinara-capability-gm-notes[view="tracker-section-body"]{display:block;min-width:0}
     marinara-capability-gm-notes[view="hud"]{display:inline-flex;position:relative}
     marinara-capability-gm-notes[hidden]{display:none!important}
     .gm-notes-hud-preview{display:block;width:100%;padding:0 .125rem;text-align:center;font-weight:600;line-height:1.2;overflow-wrap:anywhere;animation:inventory-cycle .4s ease-out}
     @media(prefers-reduced-motion:reduce){.gm-notes-hud-preview{animation:none}}
-    .gm-notes-panel-header{display:flex;align-items:center;justify-content:space-between;gap:.25rem;border-bottom:1px solid var(--marinara-chat-chrome-panel-divider,var(--border));padding:.4rem .35rem}
+    .gm-notes-popover-header{display:flex;align-items:center;justify-content:space-between;gap:.25rem;border-bottom:1px solid var(--marinara-chat-chrome-panel-divider,var(--border));padding:.4rem .35rem}
     .gm-notes-panel-title{display:flex;min-width:0;align-items:center;gap:.25rem;color:var(--marinara-chat-chrome-panel-title,var(--foreground));font-size:.625rem;font-weight:600;line-height:1.25;white-space:nowrap}
     .gm-notes-panel-title svg{flex:none;color:var(--muted-foreground)}
     .gm-notes-panel-actions{display:flex;flex:none;align-items:center;gap:.0625rem}
@@ -532,8 +572,10 @@ function ensureStyles() {
     .gm-notes-mode-button:hover,.gm-notes-row-action:hover,.gm-notes-mode-button.is-active,.gm-notes-row-action.is-active{background:var(--accent);color:var(--foreground)}
     .gm-notes-mode-button--danger.is-active,.gm-notes-row-action--danger:hover{background:color-mix(in srgb,#ef4444 18%,transparent);color:#f87171}
     .gm-notes-panel-body{display:grid;gap:.5rem;padding:.5rem}
+    .gm-notes-panel-body--tracker{gap:.125rem;padding:.125rem .25rem .25rem}
     .gm-notes-panel-body--popover{max-height:22rem;overflow:auto}
     .gm-notes-group{overflow:hidden;border:1px solid var(--marinara-chat-chrome-panel-divider,var(--border));border-radius:.625rem;background:color-mix(in srgb,var(--muted) 8%,transparent)}
+    .gm-notes-group--tracker{border-color:color-mix(in srgb,var(--border) 30%,transparent);border-radius:.125rem;background:var(--tracker-panel-card-background,color-mix(in srgb,var(--background) 22%,transparent));box-shadow:inset 0 1px 0 color-mix(in srgb,var(--foreground) 5%,transparent)}
     .gm-notes-group>header{display:flex;align-items:center;gap:.375rem;padding:.4rem .5rem;color:var(--muted-foreground);font-size:.625rem;line-height:1;text-transform:uppercase;letter-spacing:.04em}
     .gm-notes-group>header strong{flex:1;font-weight:600}
     .gm-notes-group>header>span:last-child{font-variant-numeric:tabular-nums;opacity:.7}

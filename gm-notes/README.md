@@ -31,10 +31,9 @@ namespace. Manual changes update that same state and preserve unrelated native
 and package-owned GameState fields. Stored notes are included in Marinara's
 committed tracker context for subsequent generations.
 
-The prompt asks the agent to keep the notebook concise and normally maintain no
-more than 20 active notes. That is model guidance, not a deterministic storage
-cap. The result applier and manual editor preserve valid notes beyond 20 unless
-a future product requirement explicitly introduces a hard limit.
+The prompt asks the agent to keep each note concise and remove resolved or
+obsolete entries. There is no prompt-level or deterministic storage cap. The
+result applier and manual editor preserve every valid note.
 
 ## Native UI extensions
 
@@ -46,7 +45,11 @@ agents:
 - a compact Roleplay HUD item, based on the native tracker and quest HUD
   patterns.
 
-The UI follows native tracker behavior rather than a package-specific form:
+For the docked panel, Mari Bridge owns the direct native section element,
+`SectionHeader`, persisted collapse control, active-agent gating, edit-mode
+props, placement immediately before Custom Tracker, and native rerun action.
+GM Notes supplies only its note rows and mutations. The UI follows native
+tracker behavior rather than a package-specific form:
 
 - click note text to edit it inline;
 - enter Add mode to create notes;

@@ -423,7 +423,7 @@ Implemented native extension slots:
 
 - `agent.settings`
 - `composer.above-input`
-- `tracker.panel`
+- `tracker.section`
 - `roleplay.hud`
 
 Each slot is mounted at an exact native render site and exists because an active
@@ -446,7 +446,11 @@ card. Marinara still renders and saves the standard agent settings, prompt
 templates, connection/model, tools, and enablement. A consumer may not use this
 slot to replace the whole card.
 
-`tracker.panel` and `roleplay.hud` extend native tracker surfaces. Their
+`tracker.section` and `roleplay.hud` extend native tracker surfaces. A tracker
+section registration supplies its title, icon key, owning agent IDs, placement,
+rerun agent ID, and body view. Mari Bridge renders the native section shell,
+header, collapse control, active-agent gating, edit-mode props, and rerun action;
+the consumer must not render a second section header or panel shell. Their
 interactions must follow the closest native behavior: inline editing, explicit
 add/remove/lock modes where applicable, responsive clamped portals, and no
 browser alert/prompt/confirm workflow. `composer.above-input` is reserved for a

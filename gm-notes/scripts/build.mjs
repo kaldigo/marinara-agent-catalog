@@ -51,7 +51,7 @@ const manifest = {
     { path: "client.js", sha256: "0".repeat(64), bytes: 0 },
     { path: "agents.json", sha256: "0".repeat(64), bytes: 0 },
   ],
-  permissions: ["agent-runtime", "chat-read", "ui"],
+  permissions: ["agent-runtime", "chat-read", "chat-write", "ui"],
   restartRequired: true,
 };
 await fs.writeFile(path.join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

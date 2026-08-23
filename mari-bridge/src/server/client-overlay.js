@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v13";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v14";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 
 export function versionAssetReferences(source, assetNames, fingerprint) {
@@ -155,16 +155,108 @@ function findMatchingDelimiter(source, start, open, close) {
 }
 
 export function patchTrackerPanelBridge(source) {
-  if (!source.includes('"data-component":"TrackerDataSidebar"')) return null;
-  const pattern = /(?<open>\{)(?<component>"data-component":"TrackerDataSidebar")/gu;
+  if (!source.includes('"data-component":"TrackerDataSidebar"') || !source.includes('accept:"image/*"')) return null;
+  const identifier = "[A-Za-z_$][\\w$]*";
+  const listPattern = new RegExp(
+    `function (?<component>${identifier})\\(\\{(?<parameters>[^{}]*?activeChatId:(?<activeChat>${identifier})[^{}]*?enabledAgentTypes:(?<enabledAgents>${identifier})[^{}]*?orderedTrackerSections:(?<sections>${identifier})[^{}]*?deleteMode:(?<deleteMode>${identifier}),addMode:(?<addMode>${identifier})[^{}]*?)\\}\\)\\{`,
+    "gu",
+  );
+  const listMatches = [...source.matchAll(listPattern)];
+  if (listMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one TrackerSectionList component, found ${listMatches.length}`);
+  }
+  const list = listMatches[0];
+  const bodyStart = list.index + list[0].length - 1;
+  const bodyEnd = findMatchingDelimiter(source, bodyStart, "{", "}");
+  const body = source.slice(bodyStart, bodyEnd + 1);
+  const rerun = body.match(
+    new RegExp(`\\{rerunTracker:(?<rerun>${identifier}),trackerRetryBusy:(?<busy>${identifier})\\}=${identifier}\\(`, "u"),
+  )?.groups;
+  if (!rerun) throw new Error("Mari Bridge tracker-section patch could not identify native rerun state");
+  const mapPattern = new RegExp(
+    `${escapePattern(list.groups.sections)}\\.map\\((?<item>${identifier})=>(?<render>${identifier})\\(\\k<item>\\)\\)`,
+    "gu",
+  );
+  const mapMatches = [...body.matchAll(mapPattern)];
+  if (mapMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one native section map, found ${mapMatches.length}`);
+  }
+  const react = findNamedImportAlias(source, "vendor-react-", "r");
+  const jsx = findNamedImportAlias(source, "vendor-react-", "j");
+  const sectionHeader = findNamedImportAlias(source, "world-custom-field-icons-", "S");
+  const sectionIconButton = findNamedImportAlias(source, "world-custom-field-icons-", "L");
+  const readabilityVeil = findNamedImportAlias(source, "world-custom-field-icons-", "f");
+  const emptySection = findNamedImportAlias(source, "world-custom-field-icons-", "E");
+  const emptyPattern = new RegExp(
+    `(?<hasFixed>${identifier})\\?null:${escapePattern(jsx)}\\.jsx\\((?<empty>${identifier}),\\{children:(?<localize>${identifier})\\("ui\\.trackerPanel\\.trackerdatasidebar\\.noEnabledTrackerPanels"\\)\\}\\)`,
+    "gu",
+  );
+  const emptyMatches = [...source.matchAll(emptyPattern)];
+  if (emptyMatches.length !== 1 || emptyMatches[0].groups.empty !== emptySection) {
+    throw new Error(`Mari Bridge tracker-section patch expected one native empty state, found ${emptyMatches.length}`);
+  }
+  const empty = emptyMatches[0];
+  const renderGuardPattern = new RegExp(
+    `(?<gameState>${identifier})&&${escapePattern(empty.groups.hasFixed)}\\?${escapePattern(jsx)}\\.jsx\\(`,
+    "gu",
+  );
+  const renderGuardMatches = [...source.matchAll(renderGuardPattern)];
+  if (renderGuardMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one TrackerSectionList guard, found ${renderGuardMatches.length}`);
+  }
+  const nativeMap = mapMatches[0][0];
+  const bridgeMap = `(${CLIENT_SYMBOL_EXPRESSION}?.renderNativeTrackerSections({react:${react},jsx:${jsx},native:{SectionHeader:${sectionHeader},SectionIconButton:${sectionIconButton},TrackerReadabilityVeil:${readabilityVeil},EmptySection:${emptySection}},sections:${list.groups.sections},renderSection:${mapMatches[0].groups.render},context:{activeChatId:${list.groups.activeChat},enabledAgentTypes:${list.groups.enabledAgents},rerunTracker:${rerun.rerun},retryBusy:${rerun.busy},editMode:mariBridgeEditMode,emptyLabel:mariBridgeEmptyLabel,nativeSectionCount:${list.groups.sections}.length}})??${nativeMap})`;
+
+  const callPattern = new RegExp(`${escapePattern(jsx)}\\.jsx\\(${escapePattern(list.groups.component)},\\{`, "gu");
+  const callMatches = [...source.matchAll(callPattern)];
+  if (callMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one TrackerSectionList render, found ${callMatches.length}`);
+  }
+  const call = callMatches[0];
+  const propsStart = call.index + call[0].length - 1;
+  const propsEnd = findMatchingDelimiter(source, propsStart, "{", "}");
+  const callPrefix = source.slice(Math.max(0, call.index - 2_500), call.index);
+  const editModeMatches = [...callPrefix.matchAll(new RegExp(`activeEditMode:(?<editMode>${identifier}),onSetEditMode:`, "gu"))];
+  const editMode = editModeMatches.at(-1)?.groups?.editMode;
+  if (!editMode) throw new Error("Mari Bridge tracker-section patch could not identify native tracker edit mode");
+
+  const insertions = [
+    {
+      index: propsEnd,
+      text: `,mariBridgeEditMode:${editMode},mariBridgeEmptyLabel:${empty.groups.localize}("ui.trackerPanel.trackerdatasidebar.noEnabledTrackerPanels")`,
+    },
+  ];
+  let patched = source;
+  for (const insertion of insertions.sort((left, right) => right.index - left.index)) {
+    patched = `${patched.slice(0, insertion.index)}${insertion.text}${patched.slice(insertion.index)}`;
+  }
+  patched = patched.replace(list[0], list[0].replace(
+    `deleteMode:${list.groups.deleteMode}`,
+    `mariBridgeEditMode:mariBridgeEditMode,mariBridgeEmptyLabel:mariBridgeEmptyLabel,deleteMode:${list.groups.deleteMode}`,
+  ));
+  patched = patched.replace(nativeMap, bridgeMap);
+  patched = patched.replace(
+    renderGuardMatches[0][0],
+    `${renderGuardMatches[0].groups.gameState}&&(${empty.groups.hasFixed}||${CLIENT_SYMBOL_EXPRESSION})?${jsx}.jsx(`,
+  );
+  patched = patched.replace(
+    empty[0],
+    empty[0].replace(`${empty.groups.hasFixed}?null`, `(${empty.groups.hasFixed}||${CLIENT_SYMBOL_EXPRESSION})?null`),
+  );
+  return patched;
+}
+
+function findNamedImportAlias(source, moduleMarker, exportedName) {
+  const pattern = new RegExp(`import\\{(?<specifiers>[^}]+)\\}from"[^"]*${escapePattern(moduleMarker)}[^"]*"`, "gu");
   const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) {
-    throw new Error(`Mari Bridge tracker-panel slot expected one TrackerDataSidebar root, found ${matches.length}`);
+    throw new Error(`Mari Bridge native import patch expected one ${moduleMarker} module, found ${matches.length}`);
   }
-  return source.replace(
-    pattern,
-    `${matches[0].groups.open}ref:Z=>${CLIENT_SYMBOL_EXPRESSION}?.mountNativeSlot(Z,"tracker.panel",{target:"content"}),${matches[0].groups.component}`,
-  );
+  for (const specifier of matches[0].groups.specifiers.split(",")) {
+    const parsed = specifier.trim().match(/^(?<exported>[A-Za-z_$][\w$]*)(?:\s+as\s+(?<local>[A-Za-z_$][\w$]*))?$/u)?.groups;
+    if (parsed?.exported === exportedName) return parsed.local ?? parsed.exported;
+  }
+  throw new Error(`Mari Bridge native import patch could not find export ${exportedName} from ${moduleMarker}`);
 }
 
 export function patchRoleplayHudBridge(source) {
@@ -266,7 +358,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   try {
     await readFile(readyFile, "utf8");
     await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-    return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud", "client.roleplay-background"] };
+    return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
   } catch {
     // Build below.
   }
@@ -366,5 +458,5 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   await rm(target, { recursive: true, force: true });
   await rename(temporary, target);
   await persistClientOverlayPointer(dataDir, target, fingerprint, engineVersion);
-  return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-panel", "client.roleplay-hud", "client.roleplay-background"] };
+  return { root: target, fingerprint, patches: ["client.active-chat", "client.command-drafts", "client.commands", "client.generation-lifecycle", "client.native-agent-settings", "client.quick-replies", "client.tracker-sections", "client.roleplay-hud", "client.roleplay-background"] };
 }
