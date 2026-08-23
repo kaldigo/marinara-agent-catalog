@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.12` supports Marinara Engine 2.4.3 and adds package-owned structured
+Version `1.0.13` supports Marinara Engine 2.4.3 and adds package-owned structured
 agent result types, committed and agent-facing tracker-context sections, and
 native mount points for the docked Tracker panel and Roleplay HUD. It also
 retains the package-owned loader, SDK dependency gate, prompt kernel, and first
@@ -54,8 +54,21 @@ which writes through Marinara's persisted draft store after the originating
 screen unmounts. The isolated test instance verifies the bridge and its current
 consumers all reach `ready` after a restart.
 
+The version-bound preset-assembly patch extends Marinara's native macro context
+with `{{active-agents}}`, `{{group_scenario_override}}`, and `{{group_mode}}`.
+The scenario override resolves to the chat's trimmed Group Scenario Override or
+an empty string. Group mode resolves to exactly `SOLO`, `MERGED`, or
+`INDIVIDUAL`. Card fields remain owned by Marinara's native macro resolver; the
+bridge only makes preset assembly trigger the native lorebook scan when an
+Outlet macro is nested inside a character/persona field, then carries the
+native Outlet map into the deferred per-character resolution pass.
+
 Roleplay HUD hosts use a layout-transparent wrapper, so contributed widgets are
 native flex items and inherit the HUD's exact alignment and `gap-0.5` spacing.
+
+The client runtime is prepended directly to Marinara's patched main module. It
+is ready before Marinara can import any capability client, with no package-load
+ordering, polling delay, or separate bootstrap-module dependency.
 
 Before registering Node loader hooks, the preload requires an exact supported
 Engine version and preflights every target module and anchor. A version mismatch,

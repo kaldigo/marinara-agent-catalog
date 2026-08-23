@@ -212,9 +212,10 @@ installation order because consumers must not deadlock waiting for a bridge
 package scheduled later in the same sequential activation pass.
 
 The preload kernel exists before Engine imports; the installed server runtime
-is activated before consumers; the client overlay/runtime is ready before
-consumer client entrypoints execute. The SDK check is therefore deterministic,
-not a timing race or polling loop.
+is activated before consumers; and the client runtime is prepended directly to
+Marinara's fingerprinted patched main module. Consumer client entrypoints cannot
+execute first. The SDK check is therefore deterministic, not a timing race,
+polling loop, or separate bootstrap-module dependency.
 
 ## D-020: Native Marinara owns the default workflow
 
@@ -235,3 +236,19 @@ Consequences:
   explicit product rule;
 - screenshots are insufficient verification: persistence and interactions must
   be exercised in the harness.
+
+## D-021: Bridge macros extend the native resolver and preserve its passes
+
+Decision: bridge-owned prompt values are added to Marinara's existing preset
+macro context and resolver. Mari Bridge does not create a second macro engine.
+The current additions are `{{active-agents}}`,
+`{{group_scenario_override}}`, and `{{group_mode}}`; group mode has the exact
+values `SOLO`, `MERGED`, and `INDIVIDUAL`.
+
+Character and persona card fields continue to resolve through Marinara's
+recursive field pass. When an Outlet token exists only inside one of those
+fields, preset assembly triggers the native lorebook scan before resolving the
+section. Its native Outlet map is also propagated into the later known-speaker
+pass used by deferred group-character macros. This closes the two lifecycle
+gaps without duplicating Outlet matching, lorebook activation, or card-field
+resolution in the bridge.

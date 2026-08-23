@@ -18,6 +18,7 @@ import {
   patchRoleplayBackgroundBridge,
   patchSlashCommandListBridge,
   patchTrackerPanelBridge,
+  prepareClientOverlay,
   versionAssetReferences,
 } from "../src/server/client-overlay.js";
 import { schedulePackageBootstrapRestart } from "../src/server/bootstrap-restart.js";
@@ -194,7 +195,7 @@ globalThis.document = {
 const clientSource = await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.12");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.13");
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
@@ -348,6 +349,40 @@ assert.match(patchedRoleplayBackground, /resolveBackgroundProps\(metadata,bg,blu
 const clientOverlaySource = await fs.readFile(new URL("../src/server/client-overlay.js", import.meta.url), "utf8");
 assert.match(clientOverlaySource, /bridgeClientRuntime/u);
 assert.doesNotMatch(clientOverlaySource, /client\?preload=1/u);
+assert.doesNotMatch(clientOverlaySource, /mari-bridge-bootstrap\.js/u);
+
+const clientOverlayFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-client-overlay-"));
+const nativeClientRoot = path.join(clientOverlayFixtureRoot, "native");
+const nativeAssetsRoot = path.join(nativeClientRoot, "assets");
+await fs.mkdir(nativeAssetsRoot, { recursive: true });
+await fs.writeFile(
+  path.join(nativeClientRoot, "index.html"),
+  '<!doctype html><script type="module" crossorigin src="/assets/index-main.js"></script>\n',
+);
+await fs.writeFile(path.join(nativeAssetsRoot, "index-main.js"), `${compiledClientFixture}\n${currentGenerationFixture}\n`);
+await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-one.js"), chatInputFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-two.js"), chatInputFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "slash-commands.js"), slashCommandListFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "chat-settings.js"), chatSettingsFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanelFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background.js"), roleplayBackgroundFixture);
+const preparedClientOverlay = await prepareClientOverlay({
+  dataDir: path.join(clientOverlayFixtureRoot, "data"),
+  sourceRoot: nativeClientRoot,
+  engineVersion: "2.4.3",
+});
+const preparedOverlayIndex = await fs.readFile(path.join(preparedClientOverlay.root, "index.html"), "utf8");
+const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.root, "assets", "index-main.js"), "utf8");
+assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
+assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
+assert.equal(preparedOverlayMain.startsWith("{\nconst API_VERSION = Object.freeze"), true);
+assert.match(preparedOverlayMain, /implementationVersion: "1\.0\.13"/u);
+assert.equal(
+  preparedOverlayMain.indexOf("const API_VERSION") <
+    preparedOverlayMain.indexOf('window.dispatchEvent(new CustomEvent("marinara:active-chat"'),
+  true,
+);
 
 const bootstrapFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-check-"));
 const bootstrapSource = path.join(bootstrapFixtureRoot, "source.mjs");
@@ -370,10 +405,10 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.12"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.12" }, false, "1.0.12"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.11" }, false, "1.0.12"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.12" }, true, "1.0.12"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.13"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.13" }, false, "1.0.13"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.12" }, false, "1.0.13"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.13" }, true, "1.0.13"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
@@ -420,6 +455,11 @@ assert.match(bootstrapPatchSource, /prompt\.active-agents\.assembler/u);
 assert.match(bootstrapPatchSource, /prompt\.active-agents\.context/u);
 assert.match(bootstrapPatchSource, /prompt\.active-agents\.macro/u);
 assert.match(bootstrapPatchSource, /active-agents/u);
+assert.match(bootstrapPatchSource, /group_scenario_override/u);
+assert.match(bootstrapPatchSource, /group_mode/u);
+assert.match(bootstrapPatchSource, /prompt\.outlet-nested-fields\.scan-source/u);
+assert.match(bootstrapPatchSource, /prompt\.outlet-nested-fields\.main-final/u);
+assert.match(bootstrapPatchSource, /prompt\.outlet-nested-fields\.dry-run-final/u);
 assert.match(bootstrapPatchSource, /presetOwnsAgentPlacement/u);
 assert.match(bootstrapPatchSource, /bridgedMessagesForGen/u);
 assert.match(bootstrapPatchSource, /agent\.result-types/u);
@@ -449,6 +489,113 @@ assert.match(patchedPackageStartup, /bridgeStartupError/u);
 assert.match(patchedPackageStartup, /startsWith\("Mari Bridge "\)/u);
 assert.match(patchedPackageStartup, /this\.activateOne\(app, \{ installed \}, false, false\)/u);
 assert.equal(globalThis[kernelSymbol].patches["packages.client-only-updates"], "applied");
+
+const macroEngineFixture = `
+function replaceBalancedMacros(input, replacer) {
+  return input.replace(/\\{\\{([^{}]+)\\}\\}/g, (original, body) => replacer(body, original) ?? original);
+}
+export function resolveMacros(template, ctx) {
+  let result = template;
+  const resolveNestedFieldMacros = (value) => resolveMacros(value, ctx);
+  result = result.replace(/\\{\\{description\\}\\}/gi, () => resolveNestedFieldMacros(ctx.characterFields?.description ?? ""));
+  result = result.replace(/\\{\\{chatId\\}\\}/gi, ctx.chatId ?? "");
+  result = replaceBalancedMacros(result, (body) => {
+    const match = body.match(/^outlet::([\\s\\S]*)$/i);
+    if (!match) return undefined;
+    const name = (match[1] ?? "").trim();
+    return name && ctx.outlets && Object.prototype.hasOwnProperty.call(ctx.outlets, name) ? ctx.outlets[name] : "";
+  });
+  return result;
+}`;
+const patchedMacroEngineFixture = patchServerModule("file:///engine/utils/macro-engine.js", macroEngineFixture);
+const patchedMacroEngine = await import(
+  `data:text/javascript;base64,${Buffer.from(patchedMacroEngineFixture).toString("base64")}`
+);
+assert.equal(
+  patchedMacroEngine.resolveMacros(
+    "{{group_mode}}|{{group_scenario_override}}|{{active-agents}}|{{description}}",
+    {
+      groupMode: "INDIVIDUAL",
+      groupScenarioOverride: "At {{outlet::place}}",
+      activeAgents: ["gm-notes", "presence"],
+      characterFields: { description: "Clue: {{outlet::clue}}" },
+      outlets: { place: "the inn", clue: "the key is missing" },
+    },
+  ),
+  "INDIVIDUAL|At the inn|gm-notes,presence|Clue: the key is missing",
+);
+assert.equal(
+  patchedMacroEngine.resolveMacros("{{group_mode}}|{{group_scenario_override}}", {}),
+  "SOLO|",
+);
+
+const macroContextFixture = `export function build(input) {
+  return {
+    timeZone: input.timeZone,
+  };
+}`;
+const patchedMacroContextFixture = patchServerModule(
+  "file:///engine/services/prompt/macro-context.js",
+  macroContextFixture,
+);
+const patchedMacroContext = await import(
+  `data:text/javascript;base64,${Buffer.from(patchedMacroContextFixture).toString("base64")}`
+);
+assert.deepEqual(patchedMacroContext.build({
+  activeAgentIds: [" gm-notes ", "gm-notes", "presence"],
+  groupScenarioOverrideText: "Shared scenario",
+  groupMode: "merged",
+}), {
+  timeZone: undefined,
+  activeAgents: ["gm-notes", "presence"],
+  groupScenarioOverride: "Shared scenario",
+  groupMode: "MERGED",
+});
+
+const assemblerPatchFixture = [
+  "export async function assemblePrompt(input) {",
+  "    const macroCtx = await buildPromptMacroContext({",
+  "    timeZone: input.timeZone,",
+  "    });",
+  "    let outletScanAttempted = false;",
+  "    for (const section of input.sections) {",
+  "if (!outletScanAttempted && /\\{\\{\\s*outlet\\s*::/i.test(section.content)) {",
+  "outletScanAttempted = true;",
+  "}",
+  "}",
+  "let finalMessages = [];",
+  "finalMessages = finalMessages.filter((m) => m.content?.trim());",
+  "return finalMessages;",
+  "}",
+].join("\n");
+const patchedAssemblerFixture = patchServerModule(
+  "file:///engine/services/prompt/assembler.js",
+  assemblerPatchFixture,
+);
+assert.match(patchedAssemblerFixture, /groupMode: input\.groupMode/u);
+assert.match(patchedAssemblerFixture, /mariBridgeNestedOutletSources/u);
+assert.match(patchedAssemblerFixture, /mariBridgeSectionNeedsOutletScan\(section\)/u);
+assert.match(patchedAssemblerFixture, /group_scenario_override/u);
+
+const dryRunRouteFixture = [
+  "            idleDuration: promptIdleDuration,",
+  "        });",
+  "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+  "                idleDuration: promptIdleDuration,",
+  "                impersonate,",
+  "            promptMacroContext.agentData = {",
+  "                ...promptMacroContext.agentData,",
+  "                ...assembled.macroAgentData,",
+  "            };",
+  "            finalMessages = assembled.messages;",
+].join("\n");
+const patchedDryRunRouteFixture = patchServerModule(
+  "file:///engine/routes/generate/dry-run-route.js",
+  dryRunRouteFixture,
+);
+assert.equal((patchedDryRunRouteFixture.match(/dryRunGroupChatMode/gu) ?? []).length, 2);
+assert.match(patchedDryRunRouteFixture, /promptMacroContext\.outlets = assembled\.lorebookScanResult\?\.outlets/u);
+
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";
 const patchedLegacyCommittedGuard = patchCommittedTrackerActiveGuard(legacyCommittedGuard);

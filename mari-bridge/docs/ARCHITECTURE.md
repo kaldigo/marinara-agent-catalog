@@ -160,16 +160,17 @@ preload kernel and patch registry
   -> mark server registry ready
   -> activate consumer server packages through SDK checks
 
-patched client bootstrap
-  -> initialize mari-bridge client registry/store first
+patched Marinara client main module
+  -> initialize the injected mari-bridge client registry/store first
   -> mark client registry ready
   -> load consumer client entrypoints through SDK checks
 ```
 
 Waiting inside an arbitrarily ordered sequential package activation loop is not
 acceptable; it could deadlock when a consumer is encountered before Mari
-Bridge. The loader/client overlay must either reorder activation explicitly or
-initialize the complete required bridge kernel before consumer activation.
+Bridge. The loader reorders server activation explicitly. On the client, the
+overlay prepends the complete bridge runtime to Marinara's fingerprinted main
+module, so native capability imports cannot begin before the registry is ready.
 
 Health is capability-specific. A client UI patch failure does not necessarily
 disable a server-only consumer, but any consumer requiring that UI capability
