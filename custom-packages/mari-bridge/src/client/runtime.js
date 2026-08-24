@@ -209,6 +209,9 @@ function createDraftGenerationService() {
 
   return Object.freeze({
     generate,
+    isActive(chatId) {
+      return activeByChat.has(String(chatId ?? ""));
+    },
     abort(ownerId, chatId) {
       const run = activeByChat.get(String(chatId ?? ""));
       if (!run || run.ownerId !== ownerId) return false;
@@ -867,7 +870,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.20",
+    implementationVersion: "1.0.21",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1001,6 +1004,9 @@ function createClientRuntime(serverHealth) {
     stopDraft(chatId) {
       return drafts.abortChat(chatId);
     },
+    isDraftActive(chatId) {
+      return drafts.isActive(chatId);
+    },
     resolveQuickReply(template, input) {
       return String(template).replaceAll("{{input}}", String(input ?? ""));
     },
@@ -1034,7 +1040,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.3",
-    implementationVersion: "1.0.20",
+    implementationVersion: "1.0.21",
   }));
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui);
   defineAgentSettingsElement(globalThis[CLIENT_SYMBOL].ui);

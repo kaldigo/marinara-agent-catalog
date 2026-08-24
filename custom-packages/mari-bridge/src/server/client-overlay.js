@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v18";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v19";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 const CLIENT_RUNTIME_PATCH_TOKEN = '["__MARI_BRIDGE_NATIVE_PATCHES__"]';
 
@@ -347,10 +347,14 @@ export function patchRoleplayHudBridge(source) {
 }
 
 export function patchRoleplayBackgroundStoreBridge(source) {
-  if (!source.includes('"chat-area"')) return null;
+  if (
+    !source.includes('"chat-area"')
+    || !source.includes(".backgroundIllustrationChatIds")
+    || !source.includes(".chatBackground")
+  ) return null;
+  if (source.includes(".bindRoleplayBackgroundStore(")) return source;
   const storePattern = /(?<background>[A-Za-z_$][\w$]*)=(?<store>[A-Za-z_$][\w$]*)\((?<selector>[A-Za-z_$][\w$]*)=>\k<selector>\.chatBackground\)/gu;
   const storeMatches = [...source.matchAll(storePattern)];
-  if (storeMatches.length === 0) return null;
   if (storeMatches.length !== 1) {
     throw new Error(`Mari Bridge Roleplay background patch expected one native background store selector, found ${storeMatches.length}`);
   }
@@ -358,6 +362,29 @@ export function patchRoleplayBackgroundStoreBridge(source) {
   return source.replace(
     storePattern,
     `${storeMatch.groups.background}=(${CLIENT_SYMBOL_EXPRESSION}?.bindRoleplayBackgroundStore(${storeMatch.groups.store}),${storeMatch.groups.store}(${storeMatch.groups.selector}=>${storeMatch.groups.selector}.chatBackground))`,
+  );
+}
+
+export function patchRoleplayDraftPlaceholderBridge(source) {
+  if (
+    !source.includes('"chat-area"')
+    || !source.includes(".backgroundIllustrationChatIds")
+    || !source.includes(".streamingChatId")
+  ) return null;
+  if (source.includes(".isDraftActive(")) return source;
+  const identifier = "[A-Za-z_$][\\w$]*";
+  const pattern = new RegExp(
+    `const (?<active>${identifier})=(?<store>${identifier})\\((?<activeSelector>${identifier})=>\\k<activeSelector>\\.activeChatId\\),(?<streamingId>${identifier})=\\k<store>\\((?<streamingIdSelector>${identifier})=>\\k<streamingIdSelector>\\.streamingChatId\\),(?<streaming>${identifier})=\\k<store>\\((?<streamingSelector>${identifier})=>\\k<streamingSelector>\\.isStreaming\\)&&\\k<streamingId>===\\k<active>,(?<illustration>${identifier})=\\k<store>\\((?<illustrationSelector>${identifier})=>\\k<active>\\?\\k<illustrationSelector>\\.backgroundIllustrationChatIds\\.has\\(\\k<active>\\):!1\\),(?<textStreaming>${identifier})=\\k<streaming>&&!\\k<illustration>`,
+    "gu",
+  );
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`Mari Bridge draft placeholder patch expected one native ChatArea streaming selector, found ${matches.length}`);
+  }
+  const match = matches[0];
+  return source.replace(
+    pattern,
+    `${match[0]}&&!(${CLIENT_SYMBOL_EXPRESSION}?.isDraftActive(${match.groups.active})??false)`,
   );
 }
 
@@ -511,6 +538,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   let roleplayHudPatchCount = 0;
   let roleplayBackgroundStorePatchCount = 0;
   let roleplayBackgroundPatchCount = 0;
+  let roleplayDraftPlaceholderPatchCount = 0;
   const attemptAssetPatch = (patchId, patcher, source) => {
     if (failedPatches.has(patchId)) return null;
     try {
@@ -573,10 +601,17 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
       roleplayBackgroundPatchCount += 1;
       changed = true;
     }
+    const roleplayDraftPlaceholderPatched = attemptAssetPatch("client.command-drafts", patchRoleplayDraftPlaceholderBridge, assetSource);
+    if (roleplayDraftPlaceholderPatched !== null) {
+      assetSource = roleplayDraftPlaceholderPatched;
+      roleplayDraftPlaceholderPatchCount += 1;
+      changed = true;
+    }
     if (changed) await writeFile(assetPath, assetSource);
   }
   const patchExpectations = [
     ["client.command-drafts", chatInputPatchCount, 2, "chat input assets"],
+    ["client.command-drafts", roleplayDraftPlaceholderPatchCount, 1, "Roleplay draft placeholder asset"],
     ["client.native-agent-settings", chatSettingsPatchCount, 1, "chat settings asset"],
     ["client.agent-suite-tracker-data", agentSuitePatchCount, 1, "Agent Suite asset"],
     ["client.commands", slashCommandListPatchCount, 1, "slash command list asset"],

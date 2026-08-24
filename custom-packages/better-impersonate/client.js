@@ -187,8 +187,7 @@
     rememberGuidance(context.chatId, mode, guidance);
     let received = false;
     try {
-      context.setDraftGenerating?.(true);
-      const content = await bridgeSession.drafts.generate({
+      const generation = bridgeSession.drafts.generate({
         chatId: context.chatId,
         output: mode === "continue" ? "continuation" : "content",
         body: buildImpersonateDraftRequest(mode, guidance),
@@ -198,6 +197,8 @@
           context.setDraft(renderDraft(mode, guidance, next));
         },
       });
+      context.setDraftGenerating?.(true);
+      const content = await generation;
       const result = renderDraft(mode, guidance, content).trimEnd();
       context.setDraft(result);
       return { handled: true, draft: result };

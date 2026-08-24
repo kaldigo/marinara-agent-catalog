@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
   "engine": {
     "min": "2.4.3",
@@ -17,7 +17,7 @@
   "files": [
     {
       "path": "bootstrap/register.mjs",
-      "sha256": "f42d3031ac87808da6e60b2a73e4235a0c97d49f780bcd9279488a472257e50f",
+      "sha256": "578a90b1367a3dc9dbb5551a55a8f34ce52f6666298790f3a1adb3744b7270f1",
       "bytes": 40010
     },
     {
@@ -27,8 +27,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "bd2a60e15725019eef08339609318c74581b2900273dfc2876fe0d9d80a5c582",
-      "bytes": 42561
+      "sha256": "5865840d280922d10fbb59a76e6fa676205e1f93f888481b696bf34e541a5af3",
+      "bytes": 42717
     },
     {
       "path": "src/server/bootstrap-install.js",
@@ -42,8 +42,8 @@
     },
     {
       "path": "src/server/client-overlay.js",
-      "sha256": "61649f1e2f3bd6278cd47d32f84f344fb9452d98f218c38960525e19833b5c6e",
-      "bytes": 35269
+      "sha256": "0364906984766d66d6351e0f099fff0dafd537a84310f317692f6f60bb8fca5c",
+      "bytes": 37294
     },
     {
       "path": "src/server/group-selector-registry.js",
@@ -87,7 +87,7 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "2a5067d07f2086c301e071e66278d229be3fbeeb41b093451c5baf7e91b35312",
+      "sha256": "42087e628aad8a861567784fa74b21da11bb8bb3e26ca295d314e72a7cbe2fe6",
       "bytes": 1841
     }
   ],
