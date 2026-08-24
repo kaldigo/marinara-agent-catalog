@@ -1,8 +1,8 @@
 const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
   {
     consumerId: "world-map-background",
-    api: { major: 1, minMinor: 0 },
-    require: ["chat.active", "chat.background", "client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health", "ui.agent-settings"],
+    api: { major: 1, minMinor: 4 },
+    require: ["chat.active", "chat.background", "client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health", "spatial.context", "ui.agent-settings"],
   },
   async (bridgeSession) => {
     const PACKAGE_ID = "world-map-background";
@@ -70,36 +70,48 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
       if (state.activeChatId) void synchronize(state.activeChatId);
     });
     const disposeGeneration = bridgeSession.generation.subscribe((snapshot, event) => {
-      if (!snapshot.mainActive && event?.detail?.chatId) void synchronize(event.detail.chatId);
+      const chatId = event?.detail?.chatId;
+      if (!chatId) return;
+      if (event.source === "marinara:generation-controller" && event.detail.active === true) {
+        void synchronize(chatId);
+        return;
+      }
+      if (!snapshot.mainActive) void synchronize(chatId);
+    }, { emitCurrent: false });
+    const disposeSpatial = bridgeSession.chat.spatial.subscribe((snapshot) => {
+      if (snapshot?.chatId) void synchronize(snapshot.chatId, snapshot.data);
     }, { emitCurrent: false });
     const onCapabilityEvent = (event) => {
       const detail = record(event?.detail);
       if (detail.packageId !== WORLD_MAPS_AGENT_ID) return;
-      if (["spatial_transition_committed", "spatial_context_refresh"].includes(detail.type)) {
+      if (["spatial_transition_committed", "spatial_context_changed", "spatial_context_refresh"].includes(detail.type)) {
         void synchronize(detail.chatId || state.activeChatId);
       }
     };
     window.addEventListener(CAPABILITY_SERVER_EVENT, onCapabilityEvent);
 
-    async function synchronize(chatId) {
+    async function synchronize(chatId, spatial = null) {
       if (!chatId) return;
       const existing = state.syncing.get(chatId);
       if (existing) {
         existing.pending = true;
+        if (spatial) existing.spatial = spatial;
         return existing.promise;
       }
-      const entry = { pending: false, promise: null };
+      const entry = { pending: false, spatial, promise: null };
       entry.promise = (async () => {
         do {
           entry.pending = false;
-          await runSynchronization(chatId);
+          const nextSpatial = entry.spatial;
+          entry.spatial = null;
+          await runSynchronization(chatId, nextSpatial);
         } while (entry.pending);
       })().finally(() => state.syncing.delete(chatId));
       state.syncing.set(chatId, entry);
       return entry.promise;
     }
 
-    async function runSynchronization(chatId) {
+    async function runSynchronization(chatId, spatial) {
       const chat = await api(`/chats/${encodeURIComponent(chatId)}`).catch(() => null);
       if (!chat) return;
       const metadata = record(chat.metadata);
@@ -107,7 +119,7 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
       const activeIds = Array.isArray(metadata.activeAgentIds) ? metadata.activeAgentIds : [];
       const active = chat.mode === "roleplay" && metadata.enableAgents === true
         && activeIds.includes(PACKAGE_ID) && activeIds.includes(WORLD_MAPS_AGENT_ID);
-      const image = active ? await resolveCurrentLocationImage(chatId).catch(() => null) : null;
+      const image = active ? await resolveCurrentLocationImage(chatId, spatial).catch(() => null) : null;
 
       if (!image) {
         if (settings.currentUrl && metadata.background === settings.currentUrl) {
@@ -139,8 +151,8 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
       bridgeSession.chat.background.set({ chatId, url: image.url, blurPx: blur });
     }
 
-    async function resolveCurrentLocationImage(chatId) {
-      const spatial = await api(`/chats/${encodeURIComponent(chatId)}/spatial-context`);
+    async function resolveCurrentLocationImage(chatId, currentSpatial) {
+      const spatial = currentSpatial ?? await api(`/chats/${encodeURIComponent(chatId)}/spatial-context`);
       const definition = record(spatial?.definition);
       if (definition.enabled === false) return null;
       const currentLocationId = typeof spatial?.currentLocationId === "string" ? spatial.currentLocationId.trim() : "";
@@ -182,6 +194,7 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
 
     return () => {
       window.removeEventListener(CAPABILITY_SERVER_EVENT, onCapabilityEvent);
+      disposeSpatial();
       disposeGeneration();
       disposeChat();
       disposeSettings();

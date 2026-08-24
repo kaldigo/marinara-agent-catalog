@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.21` supports Marinara Engine 2.4.3 and keeps the injected client
+Version `1.0.22` supports Marinara Engine 2.4.3 and keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
 tracker-context sections, native Agent Suite tracker-data registrations, and
@@ -89,7 +89,11 @@ native flex items and inherit the HUD's exact alignment and `gap-0.5` spacing.
 The `chat.background` client capability binds Marinara's existing Roleplay
 background store at its native selector and lets an active-chat consumer apply
 an already-persisted URL and blur immediately. Consumers do not render a second
-background or own a competing cache.
+background or own a competing cache. An early active-chat write is retained and
+replayed as soon as the native store binds, so package activation order cannot
+drop the initial background. The `spatial.context` capability observes the
+shared native TanStack Query cache and publishes successful spatial-context
+updates from World Maps without intercepting requests or probing its UI.
 
 The client runtime is emitted inside the patched client overlay and imported as
 a static dependency of Marinara's main module. ESM dependency evaluation and

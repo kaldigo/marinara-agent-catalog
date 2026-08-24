@@ -1,6 +1,6 @@
 (async () => {
   "use strict";
-  const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 3 });
+  const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 4 });
   const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
   const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 

@@ -1,4 +1,4 @@
-const API_VERSION = Object.freeze({ major: 1, minor: 3 });
+const API_VERSION = Object.freeze({ major: 1, minor: 4 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
@@ -792,10 +792,29 @@ function createActiveChatLifecycle() {
 function createRoleplayBackgroundService(activeChat) {
   let nativeStore = null;
   let live = null;
+  let pending = null;
+  let pendingReplayScheduled = false;
+
+  function apply(input) {
+    const state = nativeStore?.getState?.();
+    if (typeof state?.setChatBackground !== "function") return false;
+    live = input;
+    pending = null;
+    state.setChatBackground(input.url);
+    return true;
+  }
 
   function bindStore(store) {
     if (typeof store !== "function" || typeof store.getState !== "function") return false;
     nativeStore = store;
+    if (pending?.chatId === activeChat.getSnapshot().chatId && !pendingReplayScheduled) {
+      pendingReplayScheduled = true;
+      // Store discovery runs inside ChatArea render; replay after that render stack.
+      queueMicrotask(() => {
+        pendingReplayScheduled = false;
+        if (pending?.chatId === activeChat.getSnapshot().chatId) apply(pending);
+      });
+    }
     return true;
   }
 
@@ -804,15 +823,18 @@ function createRoleplayBackgroundService(activeChat) {
     if (!chatId || activeChat.getSnapshot().chatId !== chatId) return false;
     const url = typeof input?.url === "string" && input.url.trim() ? input.url.trim() : null;
     const blurPx = Math.max(0, Math.min(24, Math.round(Number(input?.blurPx) || 0)));
-    const state = nativeStore?.getState?.();
-    if (typeof state?.setChatBackground !== "function") return false;
-    live = Object.freeze({ ownerId, chatId, url, blurPx });
-    state.setChatBackground(url);
+    const next = Object.freeze({ ownerId, chatId, url, blurPx });
+    if (!apply(next)) {
+      live = next;
+      pending = next;
+      return false;
+    }
     return true;
   }
 
   function release(ownerId) {
     if (live?.ownerId === ownerId) live = null;
+    if (pending?.ownerId === ownerId) pending = null;
   }
 
   function resolve(metadataValue, url, blurPx) {
@@ -837,11 +859,66 @@ function createRoleplayBackgroundService(activeChat) {
   return Object.freeze({ bindStore, set, release, resolve });
 }
 
+function createSpatialContextLifecycle() {
+  const subscribers = new Set();
+  const latestByChat = new Map();
+  let queryClient = null;
+  let unsubscribe = null;
+
+  function read(query) {
+    const queryKey = query?.queryKey;
+    if (!Array.isArray(queryKey) || queryKey.length !== 2 || queryKey[0] !== "spatial-context") return null;
+    const chatId = String(queryKey[1] ?? "").trim();
+    const data = query?.state?.data;
+    if (!chatId || !data || typeof data !== "object" || Array.isArray(data)) return null;
+    return Object.freeze({ chatId, data });
+  }
+
+  function publish(query, source) {
+    const current = read(query);
+    if (!current) return;
+    latestByChat.set(current.chatId, current);
+    const event = Object.freeze({ source, detail: current });
+    for (const subscriber of [...subscribers]) subscriber(current, event);
+  }
+
+  function bindQueryClient(next) {
+    if (next === queryClient) return true;
+    const cache = next?.getQueryCache?.();
+    if (!cache || typeof cache.subscribe !== "function") return false;
+    unsubscribe?.();
+    queryClient = next;
+    unsubscribe = cache.subscribe((event) => {
+      if (event?.type === "added" || (event?.type === "updated" && event?.action?.type === "success")) {
+        publish(event.query, `query-cache:${event.type}`);
+      }
+    });
+    for (const query of cache.findAll?.({ queryKey: ["spatial-context"] }) ?? []) publish(query, "query-cache:bound");
+    return true;
+  }
+
+  return Object.freeze({
+    bindQueryClient,
+    getSnapshot(chatId) {
+      return latestByChat.get(String(chatId ?? "").trim()) ?? null;
+    },
+    subscribe(listener, options = {}) {
+      if (typeof listener !== "function") throw new TypeError("Mari Bridge spatial-context listener must be a function");
+      subscribers.add(listener);
+      if (options.emitCurrent !== false) {
+        for (const current of latestByChat.values()) listener(current, Object.freeze({ source: "snapshot", detail: current }));
+      }
+      return () => subscribers.delete(listener);
+    },
+  });
+}
+
 function createClientRuntime(serverHealth) {
   const consumers = new Map();
   const generation = createGenerationLifecycle();
   const activeChat = createActiveChatLifecycle();
   const roleplayBackground = createRoleplayBackgroundService(activeChat);
+  const spatialContext = createSpatialContextLifecycle();
   const commands = createCommandRegistry();
   const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
@@ -856,6 +933,7 @@ function createClientRuntime(serverHealth) {
   ]);
   if (NATIVE_PATCHES.has("client.active-chat")) capabilities.add("chat.active");
   if (NATIVE_PATCHES.has("client.roleplay-background")) capabilities.add("chat.background");
+  if (NATIVE_PATCHES.has("client.spatial-context")) capabilities.add("spatial.context");
   if (NATIVE_PATCHES.has("client.agent-suite-tracker-data")) capabilities.add("agent-suite.tracker-data");
   if (NATIVE_PATCHES.has("client.command-drafts")) {
     capabilities.add("commands.draft-write");
@@ -870,7 +948,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.21",
+    implementationVersion: "1.0.22",
     status: "ready",
     capabilities,
     serverHealth,
@@ -916,6 +994,18 @@ function createClientRuntime(serverHealth) {
             set(input) {
               if (!required.includes("chat.background")) throw new Error(`${consumerId} did not require chat.background`);
               return roleplayBackground.set(consumerId, input);
+            },
+          }),
+          spatial: Object.freeze({
+            getSnapshot(chatId) {
+              if (!required.includes("spatial.context")) throw new Error(`${consumerId} did not require spatial.context`);
+              return spatialContext.getSnapshot(chatId);
+            },
+            subscribe(listener, options) {
+              if (!required.includes("spatial.context")) throw new Error(`${consumerId} did not require spatial.context`);
+              const unsubscribeSpatial = spatialContext.subscribe(listener, options);
+              cleanups.push(unsubscribeSpatial);
+              return unsubscribeSpatial;
             },
           }),
         }),
@@ -1016,6 +1106,9 @@ function createClientRuntime(serverHealth) {
     bindRoleplayBackgroundStore(store) {
       return roleplayBackground.bindStore(store);
     },
+    bindQueryClient(client) {
+      return spatialContext.bindQueryClient(client);
+    },
     resolveAgentSuiteTrackerSlice(agentId) {
       return agentSuiteTrackerData.resolve(agentId);
     },
@@ -1040,7 +1133,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.3",
-    implementationVersion: "1.0.21",
+    implementationVersion: "1.0.22",
   }));
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui);
   defineAgentSettingsElement(globalThis[CLIENT_SYMBOL].ui);
