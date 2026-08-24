@@ -30,6 +30,8 @@ const windowTarget = new EventTarget();
 const backgroundCalls = [];
 const metadataPatches = [];
 const cleanups = [];
+let generationListener = null;
+let spatialListener = null;
 let currentLocationId = "location-a";
 let chat = {
   id: "chat-1",
@@ -59,16 +61,7 @@ globalThis.fetch = async (url, options = {}) => {
   const path = String(url);
   if (path === "/api/chats/chat-1") return json(chat);
   if (path === "/api/chats/chat-1/spatial-context") {
-    return json({
-      currentLocationId,
-      definition: {
-        enabled: true,
-        locations: [
-          { id: "location-a", useReferenceImage: true, referenceImageId: "image-a" },
-          { id: "location-b", useReferenceImage: true, referenceImageId: "image-b" },
-        ],
-      },
-    });
+    return json(spatialResponse(currentLocationId));
   }
   if (path === "/api/gallery/chat-1") {
     return json([
@@ -90,7 +83,12 @@ const session = {
   addCleanup(cleanup) { cleanups.push(cleanup); },
   close: async () => {},
   ui: { register: () => () => {} },
-  generation: { subscribe: () => () => {} },
+  generation: {
+    subscribe(listener) {
+      generationListener = listener;
+      return () => { generationListener = null; };
+    },
+  },
   chat: {
     active: {
       getSnapshot: () => ({ chatId: "chat-1" }),
@@ -103,6 +101,13 @@ const session = {
       set(input) {
         backgroundCalls.push({ ...input });
         return true;
+      },
+    },
+    spatial: {
+      getSnapshot: () => null,
+      subscribe(listener) {
+        spatialListener = listener;
+        return () => { spatialListener = null; };
       },
     },
   },
@@ -118,6 +123,19 @@ try {
   assert.equal(chat.metadata.background, "/api/gallery/chat-1/image-a");
   assert.equal(chat.metadata.worldMapBackground.currentUrl, "/api/gallery/chat-1/image-a");
   assert.equal(documentAttributes.get("data-mari-bridge-consumer-world-map-background"), "ready");
+
+  spatialListener({ chatId: "chat-1", data: spatialResponse("location-b") }, { source: "query-cache:updated" });
+  await waitFor(() => backgroundCalls.at(-1)?.url === "/api/gallery/chat-1/image-b");
+  assert.equal(chat.metadata.background, "/api/gallery/chat-1/image-b");
+  assert.equal(chat.metadata.worldMapBackground.currentUrl, "/api/gallery/chat-1/image-b");
+
+  currentLocationId = "location-a";
+  generationListener(
+    { mainActive: true },
+    { source: "marinara:generation-controller", detail: { chatId: "chat-1", active: true } },
+  );
+  await waitFor(() => backgroundCalls.at(-1)?.url === "/api/gallery/chat-1/image-a");
+  assert.equal(chat.metadata.background, "/api/gallery/chat-1/image-a");
 
   currentLocationId = "location-b";
   windowTarget.dispatchEvent(new CustomEvent("marinara-capability-server-event", {
@@ -158,6 +176,19 @@ function json(value, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function spatialResponse(locationId) {
+  return {
+    currentLocationId: locationId,
+    definition: {
+      enabled: true,
+      locations: [
+        { id: "location-a", useReferenceImage: true, referenceImageId: "image-a" },
+        { id: "location-b", useReferenceImage: true, referenceImageId: "image-b" },
+      ],
+    },
+  };
 }
 
 async function waitFor(predicate, timeoutMs = 2_000) {

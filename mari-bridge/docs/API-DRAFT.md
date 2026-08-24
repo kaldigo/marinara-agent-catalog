@@ -396,6 +396,8 @@ Replace active-chat polling with events from exact native call sites:
 bridgeSession.chat.active.getSnapshot();
 bridgeSession.chat.active.subscribe(listener);
 bridgeSession.chat.background.set({ chatId, url, blurPx });
+bridgeSession.chat.spatial.getSnapshot(chatId);
+bridgeSession.chat.spatial.subscribe(listener);
 bridgeSession.lifecycle.register(listener);
 ```
 
@@ -408,9 +410,16 @@ message visibility fields. Presence does not observe or alter summaries.
 Roleplay background store at its native selector, and `set` delegates to the
 store's native `setChatBackground` action after the consumer has persisted its
 metadata. It returns `false` for a non-active chat or before the native store is
-available. The Bridge retains only the live blur associated with that owner and
-URL; it does not render a second background, persist metadata, or introduce a
-parallel background cache.
+available. An active-chat value received before store binding is retained and
+replayed once the store becomes available. The Bridge retains only the live
+blur associated with that owner and URL; it does not render a second
+background, persist metadata, or introduce a parallel background cache.
+
+`spatial.context` binds the shared native TanStack Query client and publishes
+successful updates to `["spatial-context", chatId]`. This includes manual World
+Maps saves, administrative current-location corrections, narrated travel,
+start-over, and shared-world mutations. It observes the native cache success
+boundary and does not intercept `fetch`, probe buttons, or poll.
 
 ## Slash commands and native composer actions
 

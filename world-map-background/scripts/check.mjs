@@ -5,6 +5,8 @@ assert(runtimeSource.includes("bridgeSession.chat.active.subscribe"), "client fo
 assert(runtimeSource.includes('"chat.background"'), "client requires the native live-background service");
 assert(runtimeSource.includes("bridgeSession.chat.background.set"), "client updates Marinara's native background store after persistence");
 assert(runtimeSource.includes("bridgeSession.generation.subscribe"), "client refreshes after the native generation lifecycle settles");
+assert(runtimeSource.includes("bridgeSession.chat.spatial.subscribe"), "client reacts to successful native spatial-context cache updates");
+assert(runtimeSource.includes('event.source === "marinara:generation-controller"'), "message submission is a fallback reconciliation trigger");
 assert(runtimeSource.includes("marinara-capability-server-event"), "client listens for committed World Maps changes");
 assert(runtimeSource.includes("spatial_transition_committed"), "client reacts to committed spatial transitions");
 assert(runtimeSource.includes("spatial_context_refresh"), "client reacts to reconciled spatial context");

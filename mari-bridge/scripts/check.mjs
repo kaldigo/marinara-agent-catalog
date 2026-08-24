@@ -15,6 +15,7 @@ import {
   patchChatInputBridge,
   patchChatSettingsBridge,
   patchGenerationControllerEvents,
+  patchQueryClientBridge,
   patchRoleplayHudBridge,
   patchRoleplayBackgroundBridge,
   patchRoleplayBackgroundStoreBridge,
@@ -205,17 +206,19 @@ const allNativeClientPatches = [
   "client.quick-replies",
   "client.roleplay-background",
   "client.roleplay-hud",
+  "client.spatial-context",
   "client.tracker-sections",
 ];
 const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8"))
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.21");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.22");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("spatial.context"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.tracker-section"), true);
 assert.equal(typeof globalThis[clientSymbol].renderNativeTrackerSections, "function");
@@ -236,7 +239,6 @@ const nativeBackgroundState = {
 };
 function nativeBackgroundStore(selector) { return selector(nativeBackgroundState); }
 nativeBackgroundStore.getState = () => nativeBackgroundState;
-assert.equal(globalThis[clientSymbol].bindRoleplayBackgroundStore(nativeBackgroundStore), true);
 dispatchClientEvent("marinara:active-chat", { chatId: "chat-1" });
 const backgroundSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "background-test",
@@ -244,13 +246,48 @@ const backgroundSession = globalThis[clientSymbol].registerConsumer({
   require: ["chat.background"],
 });
 assert.equal(backgroundSession.chat.background.set({ chatId: "chat-other", url: "/other.png", blurPx: 3 }), false);
-assert.equal(backgroundSession.chat.background.set({ chatId: "chat-1", url: "/location.png", blurPx: 7 }), true);
+assert.equal(backgroundSession.chat.background.set({ chatId: "chat-1", url: "/location.png", blurPx: 7 }), false);
+assert.equal(nativeBackgroundState.chatBackground, null);
+assert.equal(globalThis[clientSymbol].bindRoleplayBackgroundStore(nativeBackgroundStore), true);
+await new Promise((resolve) => queueMicrotask(resolve));
 assert.equal(nativeBackgroundState.chatBackground, "/location.png");
 assert.deepEqual(globalThis[clientSymbol].resolveBackgroundProps({}, "/location.png", 0), {
   url: "/location.png",
   blurPx: 7,
 });
 await backgroundSession.close();
+const queryListeners = new Set();
+const spatialQuery = {
+  queryKey: ["spatial-context", "chat-1"],
+  state: { data: { currentLocationId: "location-a", definition: { revision: 4, locations: [] } } },
+};
+const queryClient = {
+  getQueryCache() {
+    return {
+      subscribe(listener) { queryListeners.add(listener); return () => queryListeners.delete(listener); },
+      findAll() { return [spatialQuery]; },
+    };
+  },
+};
+assert.equal(globalThis[clientSymbol].bindQueryClient(queryClient), true);
+const spatialSession = globalThis[clientSymbol].registerConsumer({
+  consumerId: "spatial-test",
+  api: { major: 1, minMinor: 4 },
+  require: ["spatial.context"],
+});
+assert.equal(spatialSession.chat.spatial.getSnapshot("chat-1").data.currentLocationId, "location-a");
+const spatialSnapshots = [];
+spatialSession.chat.spatial.subscribe((snapshot) => spatialSnapshots.push(snapshot), { emitCurrent: false });
+spatialQuery.state.data = { ...spatialQuery.state.data, currentLocationId: "location-b" };
+for (const listener of queryListeners) listener({ type: "updated", action: { type: "success" }, query: spatialQuery });
+assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-b");
+spatialQuery.state.data = { ...spatialQuery.state.data, currentLocationId: "location-c" };
+for (const listener of queryListeners) listener({ type: "updated", action: { type: "fetch" }, query: spatialQuery });
+assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-b");
+spatialQuery.queryKey = ["spatial-context", "chat-1", "game-map-reconciliation"];
+for (const listener of queryListeners) listener({ type: "updated", action: { type: "success" }, query: spatialQuery });
+assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-b");
+await spatialSession.close();
 const clientSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "client-test",
   api: { major: 1, minMinor: 0 },
@@ -502,6 +539,10 @@ assert.equal(
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
+const queryClientFixture = 'Object.assign(globalThis,{React:react,ReactDOM:reactDom});const queryClient=new QueryClient({defaultOptions:{queries:{staleTime:3e4,retry:1,refetchOnWindowFocus:!1}}});';
+const patchedQueryClient = patchQueryClientBridge(queryClientFixture);
+assert.match(patchedQueryClient, /bindQueryClient\(mariBridgeQueryClient\)/u);
+assert.equal(patchQueryClientBridge('const queryClient = true;'), null);
 const roleplayBackgroundStoreFixture = 'const component="chat-area",chat=store(state=>state.activeChatId),illustrated=store(state=>chat?state.backgroundIllustrationChatIds.has(chat):!1),bg=uiStore(state=>state.chatBackground),weather=uiStore(state=>state.weatherEffects);';
 const roleplayBackgroundFixture = 'react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
 const roleplayDraftPlaceholderFixture = 'const component="chat-area";const chat=store(state=>state.activeChatId),streamingChat=store(state=>state.streamingChatId),streaming=store(state=>state.isStreaming)&&streamingChat===chat,illustrated=store(state=>chat?state.backgroundIllustrationChatIds.has(chat):!1),textStreaming=streaming&&!illustrated,pageActive=true;';
@@ -534,6 +575,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "chat-settings.js"), chatSettings
 await fs.writeFile(path.join(nativeAssetsRoot, "agent-suite.js"), agentSuiteFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanelFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "query-client.js"), queryClientFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background-store.js"), roleplayBackgroundStoreFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background.js"), roleplayBackgroundFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-draft-placeholder.js"), roleplayDraftPlaceholderFixture);
@@ -555,7 +597,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.21"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.22"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -609,12 +651,12 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.21"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.21" }, false, "1.0.21"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.20" }, false, "1.0.21"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.21" }, true, "1.0.21"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.22"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.22" }, false, "1.0.22"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.21" }, false, "1.0.22"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.22" }, true, "1.0.22"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
-globalThis[kernelSymbol] = { active: true, version: "1.0.21", failures: [] };
+globalThis[kernelSymbol] = { active: true, version: "1.0.22", failures: [] };
 const installerHooks = [];
 const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
 await installer.activate({

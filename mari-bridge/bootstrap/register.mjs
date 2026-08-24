@@ -40,7 +40,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.21";
+kernel.version = "1.0.22";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,

@@ -8,7 +8,12 @@ If the agent is removed or the current location has no usable reference image, t
 
 The native agent card contains one package-specific per-chat control: background blur. Fit, position, opacity, rendering, and agent enable/disable remain native Marinara behavior.
 
-The client reconciles from Mari Bridge active-chat and generation lifecycle events and from World Maps spatial-state events. It does not poll, scan the DOM, create a second background overlay, or validate media through hidden image elements.
+The client reconciles from Mari Bridge active-chat events, successful native
+spatial-context query updates, and World Maps transition events. Starting a
+message submission performs a fallback reconciliation in case an external
+spatial mutation did not publish its normal cache update. It does not poll,
+scan the DOM, create a second background overlay, or validate media through
+hidden image elements.
 
 ## Native boundary
 
@@ -17,5 +22,6 @@ background renderer. World Maps owns the active location and reference-image
 choice. This package only translates that choice into Marinara's native
 background metadata, delegates the live value to Marinara's own background
 store, and contributes the one missing blur field to its existing native agent
-card. Mari Bridge supplies lifecycle, `chat.background`, and `agent.settings`
-seams; it does not supply a replacement background or settings system.
+card. Mari Bridge supplies lifecycle, `spatial.context`, `chat.background`, and
+`agent.settings` seams; it does not supply a replacement background or settings
+system.

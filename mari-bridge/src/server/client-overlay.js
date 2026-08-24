@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v19";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v20";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 const CLIENT_RUNTIME_PATCH_TOKEN = '["__MARI_BRIDGE_NATIVE_PATCHES__"]';
 
@@ -346,6 +346,21 @@ export function patchRoleplayHudBridge(source) {
   );
 }
 
+export function patchQueryClientBridge(source) {
+  if (!source.includes("refetchOnWindowFocus:!1") || !source.includes("staleTime:3e4,retry:1")) return null;
+  if (source.includes(".bindQueryClient(")) return source;
+  const pattern = /const (?<client>[A-Za-z_$][\w$]*)=new (?<constructor>[A-Za-z_$][\w$]*)\((?<options>\{defaultOptions:\{queries:\{staleTime:3e4,retry:1,refetchOnWindowFocus:!1\}\}\})\);/gu;
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`Mari Bridge QueryClient patch expected one native client construction, found ${matches.length}`);
+  }
+  const { client, constructor, options } = matches[0].groups;
+  return source.replace(
+    pattern,
+    `const ${client}=((mariBridgeQueryClient)=>(${CLIENT_SYMBOL_EXPRESSION}?.bindQueryClient(mariBridgeQueryClient),mariBridgeQueryClient))(new ${constructor}(${options}));`,
+  );
+}
+
 export function patchRoleplayBackgroundStoreBridge(source) {
   if (
     !source.includes('"chat-area"')
@@ -539,6 +554,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   let roleplayBackgroundStorePatchCount = 0;
   let roleplayBackgroundPatchCount = 0;
   let roleplayDraftPlaceholderPatchCount = 0;
+  let queryClientPatchCount = 0;
   const attemptAssetPatch = (patchId, patcher, source) => {
     if (failedPatches.has(patchId)) return null;
     try {
@@ -589,6 +605,12 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
       roleplayHudPatchCount += 1;
       changed = true;
     }
+    const queryClientPatched = attemptAssetPatch("client.spatial-context", patchQueryClientBridge, assetSource);
+    if (queryClientPatched !== null) {
+      assetSource = queryClientPatched;
+      queryClientPatchCount += 1;
+      changed = true;
+    }
     const roleplayBackgroundStorePatched = attemptAssetPatch("client.roleplay-background", patchRoleplayBackgroundStoreBridge, assetSource);
     if (roleplayBackgroundStorePatched !== null) {
       assetSource = roleplayBackgroundStorePatched;
@@ -617,6 +639,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     ["client.commands", slashCommandListPatchCount, 1, "slash command list asset"],
     ["client.tracker-sections", trackerPanelPatchCount, 1, "Tracker panel asset"],
     ["client.roleplay-hud", roleplayHudPatchCount, 1, "Roleplay HUD asset"],
+    ["client.spatial-context", queryClientPatchCount, 1, "native QueryClient asset"],
     ["client.roleplay-background", roleplayBackgroundStorePatchCount, 1, "Roleplay background store asset"],
     ["client.roleplay-background", roleplayBackgroundPatchCount, 1, "Roleplay background render asset"],
   ];
