@@ -18,6 +18,7 @@ import {
   patchRoleplayHudBridge,
   patchRoleplayBackgroundBridge,
   patchRoleplayBackgroundStoreBridge,
+  patchRoleplayDraftPlaceholderBridge,
   patchSlashCommandListBridge,
   patchTrackerPanelBridge,
   prepareClientOverlay,
@@ -210,7 +211,7 @@ const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", impo
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.20");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.21");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -387,14 +388,14 @@ const draftSession = globalThis[clientSymbol].registerConsumer({
   require: ["generation.draft"],
 });
 const draftUpdates = [];
-assert.equal(
-  await draftSession.drafts.generate({
+const activeDraft = draftSession.drafts.generate({
     chatId: "chat-1",
     body: { impersonate: true },
     onUpdate: (content) => draftUpdates.push(content),
-  }),
-  "Hello world",
-);
+  });
+assert.equal(globalThis[clientSymbol].isDraftActive("chat-1"), true);
+assert.equal(await activeDraft, "Hello world");
+assert.equal(globalThis[clientSymbol].isDraftActive("chat-1"), false);
 assert.equal(draftUpdates.at(-1), "Hello world");
 assert.deepEqual(
   await draftSession.drafts.generate({
@@ -501,12 +502,17 @@ assert.equal(
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
-const roleplayBackgroundStoreFixture = 'const component="chat-area",bg=uiStore(state=>state.chatBackground),weather=uiStore(state=>state.weatherEffects);';
+const roleplayBackgroundStoreFixture = 'const component="chat-area",chat=store(state=>state.activeChatId),illustrated=store(state=>chat?state.backgroundIllustrationChatIds.has(chat):!1),bg=uiStore(state=>state.chatBackground),weather=uiStore(state=>state.weatherEffects);';
 const roleplayBackgroundFixture = 'react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
+const roleplayDraftPlaceholderFixture = 'const component="chat-area";const chat=store(state=>state.activeChatId),streamingChat=store(state=>state.streamingChatId),streaming=store(state=>state.isStreaming)&&streamingChat===chat,illustrated=store(state=>chat?state.backgroundIllustrationChatIds.has(chat):!1),textStreaming=streaming&&!illustrated,pageActive=true;';
 const patchedRoleplayBackgroundStore = patchRoleplayBackgroundStoreBridge(roleplayBackgroundStoreFixture);
 const patchedRoleplayBackground = patchRoleplayBackgroundBridge(roleplayBackgroundFixture);
+const patchedRoleplayDraftPlaceholder = patchRoleplayDraftPlaceholderBridge(roleplayDraftPlaceholderFixture);
 assert.match(patchedRoleplayBackgroundStore, /bindRoleplayBackgroundStore\(uiStore\)/u);
 assert.match(patchedRoleplayBackground, /resolveBackgroundProps\(metadata,bg,blur\)/u);
+assert.match(patchedRoleplayDraftPlaceholder, /isDraftActive\(chat\)/u);
+assert.equal(patchRoleplayBackgroundStoreBridge('const label="chat-area";'), null);
+assert.equal(patchRoleplayDraftPlaceholderBridge('const label="chat-area";'), null);
 const clientOverlaySource = await fs.readFile(new URL("../src/server/client-overlay.js", import.meta.url), "utf8");
 assert.match(clientOverlaySource, /bridgeClientRuntime/u);
 assert.doesNotMatch(clientOverlaySource, /client\?preload=1/u);
@@ -530,6 +536,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanel
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background-store.js"), roleplayBackgroundStoreFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background.js"), roleplayBackgroundFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-draft-placeholder.js"), roleplayDraftPlaceholderFixture);
 const preparedClientOverlay = await prepareClientOverlay({
   dataDir: path.join(clientOverlayFixtureRoot, "data"),
   sourceRoot: nativeClientRoot,
@@ -548,7 +555,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.20"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.21"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -602,12 +609,12 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.20"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.20" }, false, "1.0.20"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.19" }, false, "1.0.20"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.20" }, true, "1.0.20"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.21"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.21" }, false, "1.0.21"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.20" }, false, "1.0.21"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.21" }, true, "1.0.21"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
-globalThis[kernelSymbol] = { active: true, version: "1.0.20", failures: [] };
+globalThis[kernelSymbol] = { active: true, version: "1.0.21", failures: [] };
 const installerHooks = [];
 const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
 await installer.activate({
