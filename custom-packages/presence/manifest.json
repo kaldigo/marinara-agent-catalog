@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
-    "min": "2.4.3",
-    "maxExclusive": "2.4.4"
+    "min": "2.4.4",
+    "maxExclusive": "2.4.5"
   },
   "kind": [
     "agent"
@@ -29,7 +29,7 @@
     },
     {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "5d21347eeb46e2132dd5e5f85376bb49b447065a1bdfb3ef6ea11521e1bca759",
+      "sha256": "a6c45f1ca945ce5da3138255392b21a899301e0b82324f5ea665bbe8fcce9d02",
       "bytes": 1748
     },
     {
@@ -39,7 +39,7 @@
     },
     {
       "path": "client.js",
-      "sha256": "da1a6628ae99afce038af23c26ddfb284a2b11896ad1d651e89258a74b0a9c5e",
+      "sha256": "08356889b7ae94e80a7641fa063492eb8035eaa9e737cdba22bac99d359507bf",
       "bytes": 10106
     },
     {

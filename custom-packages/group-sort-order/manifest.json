@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "group-sort-order",
   "name": "Group Sort Order",
-  "version": "1.2.5",
-  "description": "Uses a configurable agent model to choose Marinara's native smart group response queue.",
+  "version": "1.3.1",
+  "description": "Tracks the next roleplay participant across turns using native prompt, generation, and composer hooks.",
   "engine": {
-    "min": "2.4.3",
-    "maxExclusive": "2.4.4"
+    "min": "2.4.4",
+    "maxExclusive": "2.4.5"
   },
   "kind": [
     "agent"
@@ -18,12 +18,12 @@
   "files": [
     {
       "path": "agents.json",
-      "sha256": "9feec63198fece57dac4b8fb4a3e38e81f69e83607f10abe63a2eb97e4fcedcd",
-      "bytes": 1131
+      "sha256": "b5cbf0c8b9b345af24e3a848180ec119f05cda27bad2aa3d422ad40db08a53dc",
+      "bytes": 1449
     },
     {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "5d21347eeb46e2132dd5e5f85376bb49b447065a1bdfb3ef6ea11521e1bca759",
+      "sha256": "a6c45f1ca945ce5da3138255392b21a899301e0b82324f5ea665bbe8fcce9d02",
       "bytes": 1748
     },
     {
@@ -38,17 +38,20 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "1c21bda8a0d0dc770fa58e784b33b0b799e602c4e21ea5bca88b0390abd9c46e",
-      "bytes": 4896
+      "sha256": "0775e5b50369fd37ac9044dd4333dcf7ec5f1416c236b3feca8dafd2333302f6",
+      "bytes": 14408
     },
     {
       "path": "src/shared/state.js",
-      "sha256": "d334a4016600994bc67408311a6a9cdfb19ced182d77753e7417fdc4591e2ae4",
-      "bytes": 1656
+      "sha256": "42de0822544e3df7d07132c511865b06b6f03f00b9f62441370a1d72e0d760c5",
+      "bytes": 8277
     }
   ],
   "permissions": [
-    "agent-runtime"
+    "agent-runtime",
+    "chat-read",
+    "chat-write",
+    "prompt-context"
   ],
   "restartRequired": true
 }

@@ -2,7 +2,7 @@
   {
     "id": "group-sort-order",
     "name": "Group Sort Order",
-    "description": "Replaces the native smart group selector model while leaving Marinara's queueing and generation flow intact.",
+    "description": "Tracks the next character or persona, displays the handoff above the composer, and provides a fallback selector when the main response omits it.",
     "category": "misc",
     "phase": "pre_generation",
     "enabledByDefault": false,
@@ -13,9 +13,10 @@
     ],
     "defaultTools": [],
     "defaultSettings": {
-      "maxTokens": 256,
-      "temperature": 0.2
+      "maxTokens": 128,
+      "temperature": 0.2,
+      "selectorPrompt": "You are a hidden next-participant selector for a roleplay group chat.\nChoose exactly one supplied candidate to speak next using the current scene, relevance, personality, talkativeness, and who spoke recently.\nNever choose the participant who just spoke.\nReturn ONLY a valid JSON array containing one candidate ID, such as [\"candidate-id\"]. No prose or markdown."
     },
-    "defaultPromptTemplate": "You are a hidden response orchestrator for a roleplay group chat.\nChoose which character or characters should respond next from the supplied candidates.\nUse the latest message, recent scene context, relevance, personality, talkativeness, and who spoke recently.\nUsually choose one character. Choose multiple only when several characters have a strong immediate reason to respond.\nDo not always choose the first candidate, and avoid choosing the character who just spoke unless the context requires it.\nReturn ONLY a valid JSON array of character IDs, such as [\"character-id\"]. No prose or markdown."
+    "defaultPromptTemplate": "At the very end of your response, choose exactly one participant who should speak next in this roleplay group chat.\nChoose from the supplied candidates using the current scene, relevance, personality, and who has spoken recently.\nNever choose the participant who is currently responding.\nCandidates:\n{{candidates}}\nAppend exactly one terminal marker after the response text:\n{{marker}}\nPut only the selected candidate ID inside the marker. Do not add prose, JSON, or markdown after it."
   }
 ]

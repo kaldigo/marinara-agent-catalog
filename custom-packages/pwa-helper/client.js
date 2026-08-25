@@ -1,5 +1,5 @@
 // bridge-sdk/contracts.js
-const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 4 });
+const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 5 });
 const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
 const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 
@@ -71,7 +71,7 @@ async function activateClientWithMariBridge(input, activateConsumer) {
 // src/client/constants.js
 const PACKAGE_ID = "pwa-helper";
 const PACKAGE_NAME = "PWA Helper";
-const PACKAGE_VERSION = "1.0.7";
+const PACKAGE_VERSION = "1.0.8";
 const ELEMENT_TAG = "marinara-capability-pwa-helper";
 const RUNTIME_KEY = "__marinaraPwaHelperRuntime";
 const PUBLIC_API_KEY = "marinaraPwaHelper";

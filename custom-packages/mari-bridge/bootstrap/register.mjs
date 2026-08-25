@@ -7,12 +7,13 @@ import { createPromptRegistry } from "../src/server/prompt-registry.js";
 import { createAgentResultRegistry } from "../src/server/result-registry.js";
 import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
 import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
+import { createTurnHandoffRegistry } from "../src/server/turn-handoff-registry.js";
 import { createHostLifecycleRegistry } from "../src/server/host-lifecycle-registry.js";
 import { prepareClientOverlay } from "../src/server/client-overlay.js";
 
 const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
 const SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
-export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.3"]);
+export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.4"]);
 const disabled = process.env.MARI_BRIDGE_DISABLE === "1";
 
 export function detectMarinaraEngine(entry = process.argv[1], cwd = process.cwd()) {
@@ -40,7 +41,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.22";
+kernel.version = "1.0.24";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -58,6 +59,7 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
   const agentResultRegistry = createAgentResultRegistry();
   const trackerContextRegistry = createTrackerContextRegistry();
   const groupSelectorRegistry = createGroupSelectorRegistry();
+  const turnHandoffRegistry = createTurnHandoffRegistry();
   const hostLifecycleRegistry = createHostLifecycleRegistry();
   const host = { app: null, hooksInstalled: false, diagnosticsInstalled: false };
   const promptPatchApplied =
@@ -74,6 +76,18 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
   const groupSelectorPatchApplied =
     kernel.patches["group.selector-policy"] === "applied" &&
     kernel.patches["group.selector-call"] === "applied";
+  const turnHandoffPatchApplied = groupSelectorPatchApplied && [
+    "turn.handoff-queue-state",
+    "turn.handoff-persona-fallback",
+    "turn.handoff-persona-no-failure",
+    "turn.handoff-persona-return",
+    "turn.handoff-stream-filter",
+    "turn.handoff-stream-push",
+    "turn.handoff-stream-flush",
+    "turn.handoff-response-state",
+    "turn.handoff-response-process",
+    "turn.handoff-commit",
+  ].every((patchId) => kernel.patches[patchId] === "applied");
   const hostRequest = async (consumerId, input = {}) => {
     if (!host.app) throw new Error("Mari Bridge host is not bound to Marinara yet");
     const method = String(input.method ?? "GET").toUpperCase();
@@ -118,11 +132,13 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
       ...(agentResultPatchApplied ? ["agent.result-types"] : []),
       ...(trackerContextPatchApplied ? ["tracker.context"] : []),
       ...(groupSelectorPatchApplied ? ["group.selector"] : []),
+      ...(turnHandoffPatchApplied ? ["turn.handoff"] : []),
     ],
     promptRegistry,
     agentResultRegistry,
     trackerContextRegistry,
     groupSelectorRegistry,
+    turnHandoffRegistry,
     hostLifecycleRegistry,
     hostRequest,
     patches: Object.entries(kernel.patches).map(([id, status]) => ({ id, status })),
@@ -141,6 +157,18 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
       app.get("/api/mari-bridge/consumers", { onRequest }, async () => ({
         consumers: runtime.getSnapshot().consumers,
       }));
+      app.get("/api/mari-bridge/turn-handoff/:chatId", async (request, reply) => {
+        const view = await turnHandoffRegistry.view({ chatId: request.params.chatId });
+        return view ?? reply.status(404).send({ error: "No active turn handoff for this chat" });
+      });
+      app.patch("/api/mari-bridge/turn-handoff/:chatId", async (request, reply) => {
+        const view = await turnHandoffRegistry.update({ chatId: request.params.chatId, patch: request.body ?? {} });
+        return view ?? reply.status(404).send({ error: "No active turn handoff for this chat" });
+      });
+      app.post("/api/mari-bridge/turn-handoff/:chatId/refresh", async (request, reply) => {
+        const view = await turnHandoffRegistry.refresh({ chatId: request.params.chatId });
+        return view ?? reply.status(404).send({ error: "No active turn handoff for this chat" });
+      });
     }
     app.addHook("preHandler", async (request, reply) => {
       try { await hostLifecycleRegistry.dispatch("preHandler", request, reply); }
@@ -172,6 +200,21 @@ function replaceExact(source, anchor, replacement, patchId) {
   }
   kernel.patches[patchId] = "applied";
   return source.replace(anchor, replacement);
+}
+
+function replaceSupportedExact(source, variants, patchId) {
+  const matches = variants.map((variant) => ({
+    ...variant,
+    count: source.split(variant.anchor).length - 1,
+  }));
+  const total = matches.reduce((sum, variant) => sum + variant.count, 0);
+  if (total !== 1) {
+    recordPatchFailure(patchId, `${patchId} expected one supported anchor, found ${total}`);
+    return source;
+  }
+  const selected = matches.find((variant) => variant.count === 1);
+  kernel.patches[patchId] = "applied";
+  return source.replace(selected.anchor, selected.replacement);
 }
 
 const COMMITTED_TRACKER_ACTIVE_GUARD = /if\s*\(\s*!hasWorldState\s*&&\s*!hasCharTracker\s*&&\s*!hasPersonaStats\s*&&\s*!hasQuest\s*&&\s*!hasCustomTracker(?:\s*&&\s*!hasInventoryTracker\s*&&\s*!hasBeholder)?\s*\)/gu;
@@ -389,21 +432,32 @@ export function patchServerModule(url, inputSource) {
         return source;
       }
       if (url.endsWith("/routes/generate.routes.js")) {
-        source = replaceExact(
-          source,
-          [
-            "                    timeZone: promptTimeZone,",
-            "                });",
-            "                const conversationMacroFieldsByCharacterId = new Map();",
-          ].join("\n"),
-          [
-            "                    timeZone: promptTimeZone,",
-            "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
-            "                });",
-            "                const conversationMacroFieldsByCharacterId = new Map();",
-          ].join("\n"),
-          "prompt.group-macros.main-context",
-        );
+        source = replaceSupportedExact(source, [
+          {
+            anchor: [
+              "                    timeZone: promptTimeZone,",
+              "                });",
+              "                const conversationMacroFieldsByCharacterId = new Map();",
+            ].join("\n"),
+            replacement: [
+              "                    timeZone: promptTimeZone,",
+              "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+              "                });",
+              "                const conversationMacroFieldsByCharacterId = new Map();",
+            ].join("\n"),
+          },
+          {
+            anchor: [
+              "                    timeZone: promptTimeZone,",
+              "                    macroSources: [",
+            ].join("\n"),
+            replacement: [
+              "                    timeZone: promptTimeZone,",
+              "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+              "                    macroSources: [",
+            ].join("\n"),
+          },
+        ], "prompt.group-macros.main-context");
         source = replaceExact(
           source,
           [
@@ -444,7 +498,8 @@ export function patchServerModule(url, inputSource) {
           ].join("\n"),
           [
             'const nativeGroupPolicy = { groupResponseOrder: chatMeta.groupResponseOrder ?? "sequential", groupChatMode: resolveGroupGenerationMode(chatMode, chatMeta.groupChatMode) };',
-            "                const bridgedGroupPolicy = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.groupSelectorHooks?.resolvePolicy({ chatId: input.chatId, chatMetadata: chatMeta, chatMode }, nativeGroupPolicy) ?? nativeGroupPolicy;",
+            "                const selectorGroupPolicy = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.groupSelectorHooks?.resolvePolicy({ chatId: input.chatId, chatMetadata: chatMeta, chatMode }, nativeGroupPolicy) ?? nativeGroupPolicy;",
+            "                const bridgedGroupPolicy = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.resolvePolicy({ chatId: input.chatId, chatMetadata: chatMeta, chatMode }, selectorGroupPolicy) ?? selectorGroupPolicy;",
             "                const groupResponseOrder = bridgedGroupPolicy.groupResponseOrder;",
             "                const groupChatMode = bridgedGroupPolicy.groupChatMode;",
           ].join("\n"),
@@ -452,20 +507,180 @@ export function patchServerModule(url, inputSource) {
         );
         source = replaceExact(
           source,
+          "let smartResponseQueue =",
+          [
+            "let bridgedTurnHandoffToPersona = false;",
+            "        let smartResponseQueue =",
+          ].join("\n"),
+          "turn.handoff-queue-state",
+        );
+        source = replaceExact(
+          source,
           "                        : await selectSmartGroupResponders()",
           [
-            "                        : await (globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.groupSelectorHooks?.select({",
-            "                            chatId: input.chatId,",
-            "                            chatMetadata: chatMeta,",
-            "                            chatMode,",
-            "                            chatConnectionId: chat.connectionId,",
-            "                            personaName,",
-            "                            messages: chatMessages,",
-            "                            candidates: availableGroupCharacters,",
-            "                          }, selectSmartGroupResponders) ?? selectSmartGroupResponders())",
+            "                        : await (async () => {",
+            "                            const mariBridgeGroupScope = {",
+            "                              chatId: input.chatId,",
+            "                              chatMetadata: chatMeta,",
+            "                              chatMode,",
+            "                              chatConnectionId: chat.connectionId,",
+            "                              personaName,",
+            "                              messages: chatMessages,",
+            "                              candidates: availableGroupCharacters,",
+            "                              hasIncomingUserTurn: Boolean((typeof input.userMessage === \"string\" && input.userMessage.trim()) || input.attachments?.length || input.pendingSpatialTransition),",
+            "                            };",
+            "                            const mariBridgeFallback = () => globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.groupSelectorHooks?.select(mariBridgeGroupScope, selectSmartGroupResponders) ?? selectSmartGroupResponders();",
+            "                            const mariBridgeSelection = await (globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.select(mariBridgeGroupScope, mariBridgeFallback) ?? mariBridgeFallback());",
+            "                            bridgedTurnHandoffToPersona = mariBridgeSelection?.participantKind === \"persona\";",
+            "                            return Array.isArray(mariBridgeSelection) ? mariBridgeSelection : mariBridgeSelection?.characterIds ?? [];",
+            "                          })()",
           ].join("\n"),
           "group.selector-call",
         );
+        source = replaceExact(
+          source,
+          "if (needsSmartResponseQueue && (!smartResponseQueue || smartResponseQueue.length === 0)) {",
+          "if (!bridgedTurnHandoffToPersona && needsSmartResponseQueue && (!smartResponseQueue || smartResponseQueue.length === 0)) {",
+          "turn.handoff-persona-fallback",
+        );
+        source = replaceSupportedExact(source, [
+          {
+            anchor: [
+              "          useIndividualLoop &&",
+              "          groupResponseOrder === \"smart\" &&",
+              "          !input.forCharacterId &&",
+              "          (!smartResponseQueue || smartResponseQueue.length === 0)",
+            ].join("\n"),
+            replacement: [
+              "          !bridgedTurnHandoffToPersona &&",
+              "          useIndividualLoop &&",
+              "          groupResponseOrder === \"smart\" &&",
+              "          !input.forCharacterId &&",
+              "          (!smartResponseQueue || smartResponseQueue.length === 0)",
+            ].join("\n"),
+          },
+          {
+            anchor: [
+              "if (useIndividualLoop &&",
+              "                    groupResponseOrder === \"smart\" &&",
+              "                    !input.forCharacterId &&",
+              "                    (!smartResponseQueue || smartResponseQueue.length === 0)) {",
+            ].join("\n"),
+            replacement: [
+              "if (!bridgedTurnHandoffToPersona &&",
+              "                    useIndividualLoop &&",
+              "                    groupResponseOrder === \"smart\" &&",
+              "                    !input.forCharacterId &&",
+              "                    (!smartResponseQueue || smartResponseQueue.length === 0)) {",
+            ].join("\n"),
+          },
+        ], "turn.handoff-persona-no-failure");
+        source = replaceExact(
+          source,
+          "        // Turn-game board awareness is injected per responding character inside",
+          [
+            "        if (bridgedTurnHandoffToPersona) {",
+            "          sendSseEvent(reply, { type: \"turn_handoff\", data: { kind: \"persona\" } });",
+            "          sendSseEvent(reply, { type: \"done\", data: \"\" });",
+            "          return;",
+            "        }",
+            "",
+            "        // Turn-game board awareness is injected per responding character inside",
+          ].join("\n"),
+          "turn.handoff-persona-return",
+        );
+        source = replaceExact(
+          source,
+          "        const spatialDirectiveStreamFilter =",
+          [
+            "        const turnHandoffStreamFilter = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.createStreamFilter({",
+            "          chatId: input.chatId, chatMetadata: chatMeta, chatMode, targetCharacterId: targetCharId, impersonate: input.impersonate === true,",
+            "        }) ?? null;",
+            "        const spatialDirectiveStreamFilter =",
+          ].join("\n"),
+          "turn.handoff-stream-filter",
+        );
+        source = replaceExact(
+          source,
+          "          const visibleText = spatialDirectiveStreamFilter?.push(text) ?? text;",
+          [
+            "          const handoffVisibleText = turnHandoffStreamFilter?.push(text) ?? text;",
+            "          const visibleText = spatialDirectiveStreamFilter?.push(handoffVisibleText) ?? handoffVisibleText;",
+          ].join("\n"),
+          "turn.handoff-stream-push",
+        );
+        source = replaceExact(
+          source,
+          "            const pendingSpatialText = spatialDirectiveStreamFilter?.flush() ?? \"\";",
+          [
+            "            const pendingTurnHandoffText = turnHandoffStreamFilter?.flush() ?? \"\";",
+            "            const pendingSpatialText = (pendingTurnHandoffText ? spatialDirectiveStreamFilter?.push(pendingTurnHandoffText) ?? pendingTurnHandoffText : \"\") + (spatialDirectiveStreamFilter?.flush() ?? \"\");",
+          ].join("\n"),
+          "turn.handoff-stream-flush",
+        );
+        source = replaceExact(
+          source,
+          "          let contentReplaced = false;",
+          [
+            "          let contentReplaced = false;",
+            "          let bridgedTurnHandoffResult = null;",
+          ].join("\n"),
+          "turn.handoff-response-state",
+        );
+        source = replaceExact(
+          source,
+          "          if (contentReplaced) {",
+          [
+            "          bridgedTurnHandoffResult = await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.processResponse({",
+            "            chatId: input.chatId, chatMetadata: chatMeta, chatMode, targetCharacterId: targetCharId, impersonate: input.impersonate === true,",
+            "          }, fullResponse) ?? null;",
+            "          if (bridgedTurnHandoffResult && bridgedTurnHandoffResult.content !== fullResponse) {",
+            "            fullResponse = bridgedTurnHandoffResult.content;",
+            "            contentReplaced = true;",
+            "          }",
+            "",
+            "          if (contentReplaced) {",
+          ].join("\n"),
+          "turn.handoff-response-process",
+        );
+        source = replaceSupportedExact(source, [
+          {
+            anchor: [
+              "          if (",
+              "            savedMsg?.id &&",
+              "            savedSwipeIndex !== null &&",
+              "            !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+            replacement: [
+              "          if (savedMsg?.id && savedSwipeIndex !== null && bridgedTurnHandoffResult?.participant) {",
+              "            await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.commit({",
+              "              chatId: input.chatId, chatMetadata: chatMeta, chatMode, messageId: savedMsg.id, swipeIndex: savedSwipeIndex, messageSpeakerId: targetCharId,",
+              "            }, bridgedTurnHandoffResult);",
+              "          }",
+              "          if (",
+              "            savedMsg?.id &&",
+              "            savedSwipeIndex !== null &&",
+              "            !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+          },
+          {
+            anchor: [
+              "                    if (savedMsg?.id &&",
+              "                        savedSwipeIndex !== null &&",
+              "                        !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+            replacement: [
+              "                    if (savedMsg?.id && savedSwipeIndex !== null && bridgedTurnHandoffResult?.participant) {",
+              "                        await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.commit({",
+              "                            chatId: input.chatId, chatMetadata: chatMeta, chatMode, messageId: savedMsg.id, swipeIndex: savedSwipeIndex, messageSpeakerId: targetCharId,",
+              "                        }, bridgedTurnHandoffResult);",
+              "                    }",
+              "                    if (savedMsg?.id &&",
+              "                        savedSwipeIndex !== null &&",
+              "                        !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+          },
+        ], "turn.handoff-commit");
         source = replaceExact(
           source,
           "const preparedMessagesForGen = resolvePromptMessageMacros(macroScopedMessagesForGen, providerMacroContext, historyMacroProfilesById);",
@@ -656,21 +871,32 @@ export function patchServerModule(url, inputSource) {
           ].join("\n"),
           "dry-run.nonstream-structured-result",
         );
-        source = replaceExact(
-          source,
-          [
-            "            idleDuration: promptIdleDuration,",
-            "        });",
-            "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
-          ].join("\n"),
-          [
-            "            idleDuration: promptIdleDuration,",
-            "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
-            "        });",
-            "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
-          ].join("\n"),
-          "prompt.group-macros.dry-run-context",
-        );
+        source = replaceSupportedExact(source, [
+          {
+            anchor: [
+              "            idleDuration: promptIdleDuration,",
+              "        });",
+              "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+            ].join("\n"),
+            replacement: [
+              "            idleDuration: promptIdleDuration,",
+              "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+              "        });",
+              "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+            ].join("\n"),
+          },
+          {
+            anchor: [
+              "            idleDuration: promptIdleDuration,",
+              "            macroSources: [",
+            ].join("\n"),
+            replacement: [
+              "            idleDuration: promptIdleDuration,",
+              "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+              "            macroSources: [",
+            ].join("\n"),
+          },
+        ], "prompt.group-macros.dry-run-context");
         source = replaceExact(
           source,
           [
