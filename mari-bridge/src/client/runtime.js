@@ -1109,7 +1109,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.23",
+    implementationVersion: "1.0.24",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1294,8 +1294,8 @@ function createClientRuntime(serverHealth) {
 if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
-    engineVersion: "2.4.3",
-    implementationVersion: "1.0.23",
+    engineVersion: "2.4.4",
+    implementationVersion: "1.0.24",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);

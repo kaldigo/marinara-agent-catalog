@@ -33,7 +33,7 @@ function manifest() {
     name: "World Map Background",
     version,
     description: "Uses the active World Maps location reference image as the Roleplay chat background.",
-    engine: { min: "2.4.3", maxExclusive: "2.4.4" },
+    engine: { min: "2.4.4", maxExclusive: "2.4.5" },
     kind: ["agent"],
     entrypoints: {
       client: "client.js",

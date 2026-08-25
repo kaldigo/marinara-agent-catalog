@@ -2,7 +2,7 @@
 
 ## Current status
 
-The foundation is implemented for Marinara Engine 2.4.3. The installed
+The foundation is implemented for Marinara Engine 2.4.4. The installed
 `mari-bridge` runtime owns the version-bound preload/client overlay and shared
 registries. `_mari-bridge` is the thin SDK bundled into consumers.
 

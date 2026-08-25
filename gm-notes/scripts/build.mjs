@@ -42,7 +42,7 @@ const manifest = {
   name: "GM Notes",
   version,
   description: "Tracks reminders, unresolved threads, and diagnostics in committed GameState context.",
-  engine: { min: "2.4.3", maxExclusive: "2.4.4" },
+  engine: { min: "2.4.4", maxExclusive: "2.4.5" },
   kind: ["agent"],
   entrypoints: { server: "server.mjs", client: "client.js", agents: "agents.json" },
   contributions: { slots: ["chat-runtime"] },

@@ -13,8 +13,8 @@
     "name": "Mari Bridge",
     "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
     "engine": {
-      "min": "2.4.3",
-      "maxExclusive": "2.4.4"
+      "min": "2.4.4",
+      "maxExclusive": "2.4.5"
     },
     "kind": ["agent"],
     "permissions": ["agent-runtime"],

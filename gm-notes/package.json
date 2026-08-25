@@ -1,6 +1,6 @@
 {
   "name": "marinara-gm-notes-package",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "type": "module",
   "description": "GM Notes tracker package for Marinara Engine.",

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v21";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v22";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 const CLIENT_RUNTIME_PATCH_TOKEN = '["__MARI_BRIDGE_NATIVE_PATCHES__"]';
 
@@ -178,10 +178,16 @@ export function patchTrackerPanelBridge(source) {
     `${escapePattern(list.groups.sections)}\\.map\\((?<item>${identifier})=>(?<render>${identifier})\\(\\k<item>\\)\\)`,
     "gu",
   );
-  const mapMatches = [...body.matchAll(mapPattern)];
-  if (mapMatches.length !== 1) {
-    throw new Error(`Mari Bridge tracker-section patch expected one native section map, found ${mapMatches.length}`);
+  const wrappedMapPattern = new RegExp(
+    `${escapePattern(list.groups.sections)}\\.map\\((?<item>${identifier})=>${identifier}\\.jsxs\\("div",\\{className:"contents",children:\\[\\k<item>==="custom"\\?(?<beforeCustom>${identifier}):null,(?<render>${identifier})\\(\\k<item>\\)\\]\\},\\k<item>\\)\\)`,
+    "gu",
+  );
+  const legacyMapMatches = [...body.matchAll(mapPattern)];
+  const wrappedMapMatches = [...body.matchAll(wrappedMapPattern)];
+  if (legacyMapMatches.length + wrappedMapMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one native section map, found ${legacyMapMatches.length + wrappedMapMatches.length}`);
   }
+  const mapMatch = legacyMapMatches[0] ?? wrappedMapMatches[0];
   const react = findNamedImportAlias(source, "vendor-react-", "r");
   const jsx = findNamedImportAlias(source, "vendor-react-", "j");
   const sectionHeader = findNamedImportAlias(source, "world-custom-field-icons-", "S");
@@ -197,16 +203,9 @@ export function patchTrackerPanelBridge(source) {
     throw new Error(`Mari Bridge tracker-section patch expected one native empty state, found ${emptyMatches.length}`);
   }
   const empty = emptyMatches[0];
-  const renderGuardPattern = new RegExp(
-    `(?<gameState>${identifier})&&${escapePattern(empty.groups.hasFixed)}\\?${escapePattern(jsx)}\\.jsx\\(`,
-    "gu",
-  );
-  const renderGuardMatches = [...source.matchAll(renderGuardPattern)];
-  if (renderGuardMatches.length !== 1) {
-    throw new Error(`Mari Bridge tracker-section patch expected one TrackerSectionList guard, found ${renderGuardMatches.length}`);
-  }
-  const nativeMap = mapMatches[0][0];
-  const bridgeMap = `(${CLIENT_SYMBOL_EXPRESSION}?.renderNativeTrackerSections({react:${react},jsx:${jsx},native:{SectionHeader:${sectionHeader},SectionIconButton:${sectionIconButton},TrackerReadabilityVeil:${readabilityVeil},EmptySection:${emptySection}},sections:${list.groups.sections},renderSection:${mapMatches[0].groups.render},context:{activeChatId:${list.groups.activeChat},enabledAgentTypes:${list.groups.enabledAgents},rerunTracker:${rerun.rerun},retryBusy:${rerun.busy},editMode:mariBridgeEditMode,emptyLabel:mariBridgeEmptyLabel,nativeSectionCount:${list.groups.sections}.length}})??${nativeMap})`;
+  const nativeMap = mapMatch[0];
+  const bridgeSectionsExpression = `${CLIENT_SYMBOL_EXPRESSION}?.renderNativeTrackerSections({react:${react},jsx:${jsx},native:{SectionHeader:${sectionHeader},SectionIconButton:${sectionIconButton},TrackerReadabilityVeil:${readabilityVeil},EmptySection:${emptySection}},sections:[],renderSection:()=>null,context:{activeChatId:${list.groups.activeChat},enabledAgentTypes:${list.groups.enabledAgents},rerunTracker:${rerun.rerun},retryBusy:${rerun.busy},editMode:mariBridgeEditMode,emptyLabel:mariBridgeEmptyLabel,nativeSectionCount:${list.groups.sections}.length}})`;
+  const bridgeMap = `(${CLIENT_SYMBOL_EXPRESSION}?.renderNativeTrackerSections({react:${react},jsx:${jsx},native:{SectionHeader:${sectionHeader},SectionIconButton:${sectionIconButton},TrackerReadabilityVeil:${readabilityVeil},EmptySection:${emptySection}},sections:${list.groups.sections},renderSection:${mapMatch.groups.render},context:{activeChatId:${list.groups.activeChat},enabledAgentTypes:${list.groups.enabledAgents},rerunTracker:${rerun.rerun},retryBusy:${rerun.busy},editMode:mariBridgeEditMode,emptyLabel:mariBridgeEmptyLabel,nativeSectionCount:${list.groups.sections}.length}})??${nativeMap})`;
 
   const callPattern = new RegExp(`${escapePattern(jsx)}\\.jsx\\(${escapePattern(list.groups.component)},\\{`, "gu");
   const callMatches = [...source.matchAll(callPattern)];
@@ -235,16 +234,60 @@ export function patchTrackerPanelBridge(source) {
     `deleteMode:${list.groups.deleteMode}`,
     `mariBridgeEditMode:mariBridgeEditMode,mariBridgeEmptyLabel:mariBridgeEmptyLabel,deleteMode:${list.groups.deleteMode}`,
   ));
-  patched = patched.replace(nativeMap, bridgeMap);
-  patched = patched.replace(
-    renderGuardMatches[0][0],
-    `${renderGuardMatches[0].groups.gameState}&&(${empty.groups.hasFixed}||${CLIENT_SYMBOL_EXPRESSION})?${jsx}.jsx(`,
-  );
+  if (legacyMapMatches.length === 1) {
+    patched = patched.replace(nativeMap, bridgeMap);
+  } else {
+    const beforeCustom = mapMatch.groups.beforeCustom;
+    const bridgedBeforeCustom = `[${beforeCustom},${bridgeSectionsExpression}]`;
+    patched = patched.replace(
+      nativeMap,
+      nativeMap.replace(`${mapMatch.groups.item}==="custom"?${beforeCustom}:null`, `${mapMatch.groups.item}==="custom"?${bridgedBeforeCustom}:null`),
+    );
+    const beforeFallback = `${list.groups.sections}.includes("custom")?null:${beforeCustom}`;
+    if (!patched.includes(beforeFallback)) {
+      throw new Error("Mari Bridge tracker-section patch could not identify native pre-custom fallback");
+    }
+    patched = patched.replace(beforeFallback, `${list.groups.sections}.includes("custom")?null:${bridgedBeforeCustom}`);
+  }
+  patched = patchTrackerPanelRenderGuard({
+    source: patched,
+    jsx,
+    empty,
+    identifier,
+  });
   patched = patched.replace(
     empty[0],
     empty[0].replace(`${empty.groups.hasFixed}?null`, `(${empty.groups.hasFixed}||${CLIENT_SYMBOL_EXPRESSION})?null`),
   );
   return patched;
+}
+
+function patchTrackerPanelRenderGuard({ source, jsx, empty, identifier }) {
+  const legacyRenderGuardPattern = new RegExp(
+    `(?<gameState>${identifier})&&${escapePattern(empty.groups.hasFixed)}\\?${escapePattern(jsx)}\\.jsx\\(`,
+    "gu",
+  );
+  const legacyRenderGuardMatches = [...source.matchAll(legacyRenderGuardPattern)];
+  if (legacyRenderGuardMatches.length === 1) {
+    return source.replace(
+      legacyRenderGuardMatches[0][0],
+      `${legacyRenderGuardMatches[0].groups.gameState}&&(${empty.groups.hasFixed}||${CLIENT_SYMBOL_EXPRESSION})?${jsx}.jsx(`,
+    );
+  }
+
+  const expressionRenderGuardPattern = new RegExp(
+    `(?<gameState>${identifier})&&\\((?<nativeSections>${identifier})\\.length>0\\|\\|(?<packages>${identifier})\\.length>0\\)\\?${escapePattern(jsx)}\\.jsx\\(`,
+    "gu",
+  );
+  const expressionRenderGuardMatches = [...source.matchAll(expressionRenderGuardPattern)];
+  if (legacyRenderGuardMatches.length + expressionRenderGuardMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one TrackerSectionList guard, found ${legacyRenderGuardMatches.length + expressionRenderGuardMatches.length}`);
+  }
+  const match = expressionRenderGuardMatches[0];
+  return source.replace(
+    match[0],
+    `${match.groups.gameState}&&(${match.groups.nativeSections}.length>0||${match.groups.packages}.length>0||${CLIENT_SYMBOL_EXPRESSION})?${jsx}.jsx(`,
+  );
 }
 
 export function patchAgentSuiteBridge(source) {

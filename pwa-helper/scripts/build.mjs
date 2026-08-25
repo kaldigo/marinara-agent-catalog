@@ -85,7 +85,7 @@ function manifest() {
     version,
     description:
       "Keeps mobile and tablet screens awake while Marinara generation is running and improves iOS home-screen metadata.",
-    engine: { min: "2.4.3", maxExclusive: "2.4.4" },
+    engine: { min: "2.4.4", maxExclusive: "2.4.5" },
     kind: ["agent"],
     entrypoints: {
       client: "client.js",

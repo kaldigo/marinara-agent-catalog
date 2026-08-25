@@ -13,8 +13,8 @@
     "name": "Presence",
     "description": "Per-message character presence for Roleplay chats.",
     "engine": {
-      "min": "2.4.3",
-      "maxExclusive": "2.4.4"
+      "min": "2.4.4",
+      "maxExclusive": "2.4.5"
     },
     "kind": ["agent"],
     "permissions": ["agent-runtime", "chat-read", "chat-write", "routes", "ui"],

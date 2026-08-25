@@ -13,7 +13,7 @@ import { prepareClientOverlay } from "../src/server/client-overlay.js";
 
 const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
 const SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
-export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.3"]);
+export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.4"]);
 const disabled = process.env.MARI_BRIDGE_DISABLE === "1";
 
 export function detectMarinaraEngine(entry = process.argv[1], cwd = process.cwd()) {
@@ -41,7 +41,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.23";
+kernel.version = "1.0.24";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -432,21 +432,32 @@ export function patchServerModule(url, inputSource) {
         return source;
       }
       if (url.endsWith("/routes/generate.routes.js")) {
-        source = replaceExact(
-          source,
-          [
-            "                    timeZone: promptTimeZone,",
-            "                });",
-            "                const conversationMacroFieldsByCharacterId = new Map();",
-          ].join("\n"),
-          [
-            "                    timeZone: promptTimeZone,",
-            "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
-            "                });",
-            "                const conversationMacroFieldsByCharacterId = new Map();",
-          ].join("\n"),
-          "prompt.group-macros.main-context",
-        );
+        source = replaceSupportedExact(source, [
+          {
+            anchor: [
+              "                    timeZone: promptTimeZone,",
+              "                });",
+              "                const conversationMacroFieldsByCharacterId = new Map();",
+            ].join("\n"),
+            replacement: [
+              "                    timeZone: promptTimeZone,",
+              "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+              "                });",
+              "                const conversationMacroFieldsByCharacterId = new Map();",
+            ].join("\n"),
+          },
+          {
+            anchor: [
+              "                    timeZone: promptTimeZone,",
+              "                    macroSources: [",
+            ].join("\n"),
+            replacement: [
+              "                    timeZone: promptTimeZone,",
+              "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
+              "                    macroSources: [",
+            ].join("\n"),
+          },
+        ], "prompt.group-macros.main-context");
         source = replaceExact(
           source,
           [
@@ -860,21 +871,32 @@ export function patchServerModule(url, inputSource) {
           ].join("\n"),
           "dry-run.nonstream-structured-result",
         );
-        source = replaceExact(
-          source,
-          [
-            "            idleDuration: promptIdleDuration,",
-            "        });",
-            "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
-          ].join("\n"),
-          [
-            "            idleDuration: promptIdleDuration,",
-            "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
-            "        });",
-            "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
-          ].join("\n"),
-          "prompt.group-macros.dry-run-context",
-        );
+        source = replaceSupportedExact(source, [
+          {
+            anchor: [
+              "            idleDuration: promptIdleDuration,",
+              "        });",
+              "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+            ].join("\n"),
+            replacement: [
+              "            idleDuration: promptIdleDuration,",
+              "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+              "        });",
+              "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+            ].join("\n"),
+          },
+          {
+            anchor: [
+              "            idleDuration: promptIdleDuration,",
+              "            macroSources: [",
+            ].join("\n"),
+            replacement: [
+              "            idleDuration: promptIdleDuration,",
+              "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
+              "            macroSources: [",
+            ].join("\n"),
+          },
+        ], "prompt.group-macros.dry-run-context");
         source = replaceExact(
           source,
           [

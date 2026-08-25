@@ -217,7 +217,7 @@ globalThis.fetch = async () => ({
   async json() {
     return {
       status: "ok",
-      version: "2.4.2",
+      version: "2.4.4",
       capabilityPackages: {
         packages: [{ id: "mari-bridge", version: "0.2.0", readiness: "ready", ready: true }],
       },
@@ -273,7 +273,7 @@ const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", impo
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.23");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.24");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -581,17 +581,19 @@ assert.throws(() => patchAgentSuiteBridge('const value=["agent-suite","game-stat
 const trackerPanelFixture = [
   'import{r as react,j as jsx}from"./vendor-react-test.js";',
   'import{S as SectionHeader,L as SectionIconButton,f as ReadabilityVeil,E as EmptySection}from"./world-custom-field-icons-test.js";',
-  'function TrackerSectionList({activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,deleteMode:deleting,addMode:adding}){const{rerunTracker:rerun,trackerRetryBusy:busy}=useRerun();const renderSection=section=>section;return jsx.jsxs(jsx.Fragment,{children:[jsx.jsx("input",{type:"file",accept:"image/*"}),sections.map(section=>renderSection(section))]})}',
-  'function TrackerDataSidebar(){const[editMode,setEditMode]=react.useState(null),hasFixed=sections.length>0;return jsx.jsxs("section",{"data-component":"TrackerDataSidebar",children:[jsx.jsx(Header,{activeEditMode:editMode,onSetEditMode:setEditMode}),gameState&&hasFixed?jsx.jsx(Boundary,{children:jsx.jsx(TrackerSectionList,{activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,deleteMode:deleting,addMode:adding})}):null,chat?hasFixed?null:jsx.jsx(EmptySection,{children:t("ui.trackerPanel.trackerdatasidebar.noEnabledTrackerPanels")}):null]})}',
+  'function TrackerSectionList({activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,beforeCustomSections:beforeCustom,afterCustomSections:afterCustom,deleteMode:deleting,addMode:adding}){const{rerunTracker:rerun,trackerRetryBusy:busy}=useRerun();const renderSection=section=>section;return jsx.jsxs(jsx.Fragment,{children:[jsx.jsx("input",{type:"file",accept:"image/*"}),sections.map(section=>jsx.jsxs("div",{className:"contents",children:[section==="custom"?beforeCustom:null,renderSection(section)]},section)),sections.includes("custom")?null:beforeCustom,afterCustom]})}',
+  'function TrackerDataSidebar(){const[editMode,setEditMode]=react.useState(null),nativePackages=[],hasFixed=sections.length>0||nativePackages.length>0;return jsx.jsxs("section",{"data-component":"TrackerDataSidebar",children:[jsx.jsx(Header,{activeEditMode:editMode,onSetEditMode:setEditMode}),gameState&&(sections.length>0||nativePackages.length>0)?jsx.jsx(Boundary,{children:jsx.jsx(TrackerSectionList,{activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,beforeCustomSections:chat?nativePackages.map(renderPackage):null,afterCustomSections:chat?nativePackages.map(renderPackage):null,deleteMode:deleting,addMode:adding})}):null,chat?hasFixed?null:jsx.jsx(EmptySection,{children:t("ui.trackerPanel.trackerdatasidebar.noEnabledTrackerPanels")}):null]})}',
 ].join("");
 const patchedTrackerPanel = patchTrackerPanelBridge(trackerPanelFixture);
 assert.match(patchedTrackerPanel, /renderNativeTrackerSections/u);
 assert.match(patchedTrackerPanel, /mariBridgeEditMode:editMode/u);
 assert.match(patchedTrackerPanel, /mariBridgeEditMode:mariBridgeEditMode,mariBridgeEmptyLabel:mariBridgeEmptyLabel,deleteMode:deleting/u);
+assert.match(patchedTrackerPanel, /beforeCustomSections:chat\?nativePackages\.map\(renderPackage\):null/u);
+assert.match(patchedTrackerPanel, /section==="custom"\?\[beforeCustom,globalThis/u);
 assert.match(patchedTrackerPanel, /SectionHeader:SectionHeader/u);
 assert.match(patchedTrackerPanel, /SectionIconButton:SectionIconButton/u);
 assert.match(patchedTrackerPanel, /EmptySection:EmptySection/u);
-assert.match(patchedTrackerPanel, /gameState&&\(hasFixed\|\|globalThis/u);
+assert.match(patchedTrackerPanel, /gameState&&\(sections\.length>0\|\|nativePackages\.length>0\|\|globalThis/u);
 assert.equal(
   patchTrackerPanelBridge('const selector = \'[data-component="TrackerDataSidebarDesktop.right"]\';'),
   null,
@@ -642,7 +644,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-draft-placeholder.js"),
 const preparedClientOverlay = await prepareClientOverlay({
   dataDir: path.join(clientOverlayFixtureRoot, "data"),
   sourceRoot: nativeClientRoot,
-  engineVersion: "2.4.3",
+  engineVersion: "2.4.4",
 });
 const preparedOverlayIndex = await fs.readFile(path.join(preparedClientOverlay.root, "index.html"), "utf8");
 const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.root, "assets", "index-main.js"), "utf8");
@@ -657,7 +659,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.23"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.24"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -672,7 +674,7 @@ await fs.writeFile(
 const degradedClientOverlay = await prepareClientOverlay({
   dataDir: path.join(clientOverlayFixtureRoot, "data-degraded"),
   sourceRoot: degradedNativeRoot,
-  engineVersion: "2.4.3",
+  engineVersion: "2.4.4",
 });
 assert.equal(degradedClientOverlay.patches.includes("client.roleplay-background"), false);
 assert.equal(degradedClientOverlay.patches.includes("client.bridge-first"), false);
@@ -711,12 +713,12 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.23"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.23" }, false, "1.0.23"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.22" }, false, "1.0.23"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.23" }, true, "1.0.23"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.24"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.24" }, false, "1.0.24"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.23" }, false, "1.0.24"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.24" }, true, "1.0.24"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
-globalThis[kernelSymbol] = { active: true, version: "1.0.23", failures: [] };
+globalThis[kernelSymbol] = { active: true, version: "1.0.24", failures: [] };
 const installerHooks = [];
 const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
 await installer.activate({
@@ -1071,11 +1073,11 @@ async function runBootstrapFixture(version) {
   return JSON.parse(result.stdout.trim());
 }
 
-const wrongVersionKernel = await runBootstrapFixture("2.4.4");
+const wrongVersionKernel = await runBootstrapFixture("2.4.3");
 assert.equal(wrongVersionKernel.active, false);
 assert.equal(wrongVersionKernel.engineCompatibility.compatible, false);
 assert.equal(wrongVersionKernel.patches["engine.version"], "failed");
-const failedPreflightKernel = await runBootstrapFixture("2.4.3");
+const failedPreflightKernel = await runBootstrapFixture("2.4.4");
 assert.equal(failedPreflightKernel.active, false);
 assert.equal(failedPreflightKernel.engineCompatibility.compatible, true);
 assert.equal(failedPreflightKernel.patches["engine.preflight"], "failed");

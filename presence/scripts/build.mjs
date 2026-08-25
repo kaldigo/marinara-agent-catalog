@@ -37,7 +37,7 @@ function manifest() {
     name: "Presence",
     version,
     description: "Tracks per-message character presence with native per-character Hide From AI state.",
-    engine: { min: "2.4.3", maxExclusive: "2.4.4" },
+    engine: { min: "2.4.4", maxExclusive: "2.4.5" },
     kind: ["agent"],
     entrypoints: {
       server: "server.mjs",
