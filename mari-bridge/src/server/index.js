@@ -10,6 +10,7 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/server/result-registry.js",
   "src/server/tracker-context-registry.js",
   "src/server/group-selector-registry.js",
+  "src/server/turn-handoff-registry.js",
   "src/server/host-lifecycle-registry.js",
   "src/server/client-overlay.js",
   "src/client/runtime.js",

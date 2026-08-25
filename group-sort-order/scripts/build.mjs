@@ -37,7 +37,7 @@ function manifest() {
     id: "group-sort-order",
     name: "Group Sort Order",
     version,
-    description: "Uses a configurable agent model to choose Marinara's native smart group response queue.",
+    description: "Tracks the next roleplay participant across turns using native prompt, generation, and composer hooks.",
     engine: { min: "2.4.3", maxExclusive: "2.4.4" },
     kind: ["agent"],
     entrypoints: {
@@ -48,7 +48,7 @@ function manifest() {
       { path: "server.mjs", sha256: "0".repeat(64), bytes: 0 },
       { path: "agents.json", sha256: "0".repeat(64), bytes: 0 }
     ],
-    permissions: ["agent-runtime"],
+    permissions: ["agent-runtime", "chat-read", "chat-write", "prompt-context"],
     restartRequired: true
   };
 }
@@ -58,21 +58,32 @@ function agentDefinitions() {
     {
       id: "group-sort-order",
       name: "Group Sort Order",
-      description: "Replaces the native smart group selector model while leaving Marinara's queueing and generation flow intact.",
+      description: "Tracks the next character or persona, displays the handoff above the composer, and provides a fallback selector when the main response omits it.",
       category: "misc",
       phase: "pre_generation",
       enabledByDefault: false,
       runtimeDisabled: true,
       modeAllowlist: ["roleplay", "visual_novel"],
       defaultTools: [],
-      defaultSettings: { maxTokens: 256, temperature: 0.2 },
+      defaultSettings: {
+        maxTokens: 128,
+        temperature: 0.2,
+        selectorPrompt: [
+          "You are a hidden next-participant selector for a roleplay group chat.",
+          "Choose exactly one supplied candidate to speak next using the current scene, relevance, personality, talkativeness, and who spoke recently.",
+          "Never choose the participant who just spoke.",
+          "Return ONLY a valid JSON array containing one candidate ID, such as [\"candidate-id\"]. No prose or markdown."
+        ].join("\n")
+      },
       defaultPromptTemplate: [
-        "You are a hidden response orchestrator for a roleplay group chat.",
-        "Choose which character or characters should respond next from the supplied candidates.",
-        "Use the latest message, recent scene context, relevance, personality, talkativeness, and who spoke recently.",
-        "Usually choose one character. Choose multiple only when several characters have a strong immediate reason to respond.",
-        "Do not always choose the first candidate, and avoid choosing the character who just spoke unless the context requires it.",
-        "Return ONLY a valid JSON array of character IDs, such as [\"character-id\"]. No prose or markdown."
+        "At the very end of your response, choose exactly one participant who should speak next in this roleplay group chat.",
+        "Choose from the supplied candidates using the current scene, relevance, personality, and who has spoken recently.",
+        "Never choose the participant who is currently responding.",
+        "Candidates:",
+        "{{candidates}}",
+        "Append exactly one terminal marker after the response text:",
+        "{{marker}}",
+        "Put only the selected candidate ID inside the marker. Do not add prose, JSON, or markdown after it."
       ].join("\n")
     }
   ];

@@ -1,7 +1,8 @@
-const API_VERSION = Object.freeze({ major: 1, minor: 4 });
+const API_VERSION = Object.freeze({ major: 1, minor: 5 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
+const TURN_HANDOFF_TAG = "marinara-mari-bridge-turn-handoff";
 const NATIVE_PATCHES = new Set(["__MARI_BRIDGE_NATIVE_PATCHES__"]);
 
 function setClientDiagnostic(name, value) {
@@ -490,7 +491,7 @@ function createNativeSlotMounter() {
   };
 }
 
-function defineNativeSlotElement(ui) {
+function defineNativeSlotElement(ui, turnHandoff) {
   if (!globalThis.customElements || customElements.get(NATIVE_SLOT_TAG)) return;
   customElements.define(NATIVE_SLOT_TAG, class MariBridgeNativeSlot extends HTMLElement {
     connectedCallback() {
@@ -505,14 +506,173 @@ function defineNativeSlotElement(ui) {
     attributeChangedCallback() { if (this.isConnected) this.render(); }
     render() {
       const slot = this.getAttribute("name") ?? "";
-      const nodes = ui.list(slot).map((item) => {
+      const nodes = [];
+      if (slot === "composer.above-input") nodes.push(document.createElement(TURN_HANDOFF_TAG));
+      nodes.push(...ui.list(slot).map((item) => {
         const node = document.createElement(`marinara-capability-${item.ownerId}`);
         node.setAttribute("view", item.view);
         node.capabilityProps = item.capabilityProps;
         queueMicrotask(() => node.dispatchEvent(new CustomEvent("marinara-capability-props")));
         return node;
-      });
+      }));
       this.replaceChildren(...nodes);
+    }
+  });
+}
+
+function createTurnHandoffClient(activeChat, generation) {
+  const subscribers = new Set();
+  let view = Object.freeze({ hidden: true });
+  let busy = false;
+  let activeGenerationChats = new Set();
+  let controller = null;
+
+  function publish() {
+    for (const subscriber of [...subscribers]) subscriber();
+  }
+
+  async function request(path = "", options = {}) {
+    const chatId = activeChat.getSnapshot().chatId;
+    if (!chatId) {
+      view = Object.freeze({ hidden: true });
+      publish();
+      return view;
+    }
+    controller?.abort();
+    const requestController = new AbortController();
+    controller = requestController;
+    if (view?.chatId && view.chatId !== chatId) view = Object.freeze({ hidden: true });
+    busy = true;
+    publish();
+    try {
+      const response = await fetch(`/api/mari-bridge/turn-handoff/${encodeURIComponent(chatId)}${path}`, {
+        credentials: "same-origin",
+        headers: { Accept: "application/json", ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) },
+        signal: requestController.signal,
+        ...options,
+      });
+      if (response.status === 404) {
+        view = Object.freeze({ hidden: true });
+      } else {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || `Turn handoff request failed with HTTP ${response.status}`);
+        if (activeChat.getSnapshot().chatId === chatId) view = Object.freeze({ ...data });
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        console.warn("[Mari Bridge] Turn handoff refresh failed", error);
+        view = Object.freeze({ ...view, error: error instanceof Error ? error.message : String(error) });
+      }
+    } finally {
+      if (controller === requestController) {
+        busy = false;
+        controller = null;
+        publish();
+      }
+    }
+    return view;
+  }
+
+  activeChat.subscribe(() => { void request(); }, { emitCurrent: false });
+  generation.subscribe((snapshot) => {
+    const next = new Set(snapshot.active.map((run) => run.chatId));
+    const chatId = activeChat.getSnapshot().chatId;
+    if (chatId && activeGenerationChats.has(chatId) && !next.has(chatId)) void request();
+    activeGenerationChats = next;
+  });
+
+  return Object.freeze({
+    getSnapshot() { return Object.freeze({ view, busy }); },
+    subscribe(listener) {
+      subscribers.add(listener);
+      return () => subscribers.delete(listener);
+    },
+    load() { return request(); },
+    togglePersona() {
+      return request("", {
+        method: "PATCH",
+        body: JSON.stringify({ includePersonaCandidate: view.includePersonaCandidate !== true }),
+      });
+    },
+    refresh() { return request("/refresh", { method: "POST", body: "{}" }); },
+  });
+}
+
+function createSvgIcon(paths) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [name, value] of Object.entries({
+    width: "0.875rem", height: "0.875rem", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+    "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true",
+  })) svg.setAttribute(name, value);
+  for (const d of paths) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  }
+  return svg;
+}
+
+function defineTurnHandoffElement(turnHandoff) {
+  if (!globalThis.customElements || customElements.get(TURN_HANDOFF_TAG)) return;
+  customElements.define(TURN_HANDOFF_TAG, class MariBridgeTurnHandoff extends HTMLElement {
+    connectedCallback() {
+      this.unsubscribe = turnHandoff.subscribe(() => this.render());
+      void turnHandoff.load();
+      this.render();
+    }
+    disconnectedCallback() {
+      this.unsubscribe?.();
+      this.unsubscribe = null;
+    }
+    render() {
+      const { view, busy } = turnHandoff.getSnapshot();
+      this.hidden = view?.hidden !== false;
+      this.className = "block w-full";
+      if (this.hidden) {
+        this.replaceChildren();
+        return;
+      }
+      const bar = document.createElement("section");
+      bar.setAttribute("aria-label", "Group turn order");
+      bar.dataset.mariBridgeTurnHandoff = "true";
+      bar.className = "relative mb-2 flex min-h-11 w-full items-center gap-1.5 overflow-hidden rounded-xl border border-[var(--marinara-chat-chrome-panel-border)] bg-[var(--marinara-chat-chrome-panel-bg)] px-2 text-[var(--marinara-chat-chrome-panel-text)] shadow-sm";
+
+      const label = document.createElement("span");
+      label.className = "shrink-0 text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-[var(--marinara-chat-chrome-panel-muted)]";
+      label.textContent = "Next";
+      const name = document.createElement("strong");
+      name.className = "min-w-0 flex-1 truncate text-xs font-medium text-[var(--marinara-chat-chrome-panel-text)]";
+      name.textContent = busy ? "Checking…" : view?.nextParticipant?.name || "Unknown";
+      bar.append(label, name);
+
+      if (view?.nextParticipant?.kind === "persona") {
+        const badge = document.createElement("span");
+        badge.className = "shrink-0 rounded-md border border-[var(--marinara-chat-chrome-button-border-active)] bg-[var(--marinara-chat-chrome-highlight-bg)] px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-[var(--marinara-chat-chrome-accent)]";
+        badge.textContent = "Your turn";
+        bar.appendChild(badge);
+      }
+
+      const persona = document.createElement("button");
+      persona.type = "button";
+      persona.className = "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[var(--marinara-chat-chrome-button-text)] transition-colors hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)] disabled:opacity-40";
+      persona.title = view?.includePersonaCandidate === true ? "Exclude persona from turn order" : "Include persona in turn order";
+      persona.setAttribute("aria-label", persona.title);
+      persona.setAttribute("aria-pressed", view?.includePersonaCandidate === true ? "true" : "false");
+      if (view?.includePersonaCandidate === true) persona.classList.add("bg-[var(--marinara-chat-chrome-button-bg-active)]", "text-[var(--marinara-chat-chrome-button-text-active)]");
+      persona.disabled = busy || view?.hasPersona !== true;
+      persona.appendChild(createSvgIcon(["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10"]));
+      persona.addEventListener("click", () => { void turnHandoff.togglePersona(); });
+
+      const refresh = document.createElement("button");
+      refresh.type = "button";
+      refresh.className = "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[var(--marinara-chat-chrome-button-text)] transition-colors hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)] disabled:opacity-40";
+      refresh.title = "Check who should speak next";
+      refresh.setAttribute("aria-label", refresh.title);
+      refresh.disabled = busy || view?.canRefresh !== true;
+      refresh.appendChild(createSvgIcon(["M21 12a9 9 0 0 1-15.36 6.36L4 16", "M4 21v-5h5", "M3 12A9 9 0 0 1 18.36 5.64L20 8", "M20 3v5h-5"]));
+      refresh.addEventListener("click", () => { void turnHandoff.refresh(); });
+      bar.append(persona, refresh);
+      this.replaceChildren(bar);
     }
   });
 }
@@ -917,6 +1077,7 @@ function createClientRuntime(serverHealth) {
   const consumers = new Map();
   const generation = createGenerationLifecycle();
   const activeChat = createActiveChatLifecycle();
+  const turnHandoff = createTurnHandoffClient(activeChat, generation);
   const roleplayBackground = createRoleplayBackgroundService(activeChat);
   const spatialContext = createSpatialContextLifecycle();
   const commands = createCommandRegistry();
@@ -948,7 +1109,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.22",
+    implementationVersion: "1.0.23",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1126,6 +1287,7 @@ function createClientRuntime(serverHealth) {
     ui,
     mountNativeSlot,
     renderNativeTrackerSections,
+    turnHandoff,
   });
 }
 
@@ -1133,9 +1295,10 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.3",
-    implementationVersion: "1.0.22",
+    implementationVersion: "1.0.23",
   }));
-  defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui);
+  defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
+  defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);
   defineAgentSettingsElement(globalThis[CLIENT_SYMBOL].ui);
 }
 document.documentElement.dataset.mariBridgeClient = "ready";

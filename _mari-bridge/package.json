@@ -1,6 +1,6 @@
 {
   "name": "marinara-mari-bridge",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "description": "Shared SDK for Marinara capability packages that depend on Mari Bridge.",

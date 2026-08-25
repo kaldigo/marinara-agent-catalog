@@ -8,6 +8,7 @@ import { createPromptRegistry } from "../src/server/prompt-registry.js";
 import { createAgentResultRegistry } from "../src/server/result-registry.js";
 import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
 import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
+import { createTurnHandoffRegistry, __test as turnHandoffTest } from "../src/server/turn-handoff-registry.js";
 import { createHostLifecycleRegistry } from "../src/server/host-lifecycle-registry.js";
 import {
   patchActiveChatEvents,
@@ -128,6 +129,65 @@ assert.deepEqual(
   ["char-2"],
 );
 
+const turnHandoffRegistry = createTurnHandoffRegistry();
+const turnHandoffCalls = [];
+turnHandoffRegistry.register("turn-owner", {
+  id: "next-participant",
+  agentTypes: ["group-sort-order"],
+  resolve: async () => ({ id: "char-2", name: "Alice", kind: "character" }),
+  validate: async (scope) => scope.participantId === "persona-1"
+    ? { id: "persona-1", name: "Player", kind: "persona" }
+    : null,
+  commit: async (scope) => turnHandoffCalls.push(scope),
+  view: async () => ({ status: "known" }),
+  update: async (scope) => ({ includePersonaCandidate: scope.patch.includePersonaCandidate }),
+  refresh: async () => ({ status: "refreshed" }),
+});
+const handoffScope = {
+  chatMetadata: { enableAgents: true, activeAgentIds: ["group-sort-order"] },
+};
+assert.deepEqual(
+  turnHandoffRegistry.resolvePolicy(handoffScope, { groupChatMode: "merged", groupResponseOrder: "sequential" }),
+  { groupChatMode: "individual", groupResponseOrder: "smart" },
+);
+assert.deepEqual(await turnHandoffRegistry.select(handoffScope, async () => ["native"]), {
+  characterIds: ["char-2"],
+  participant: { id: "char-2", name: "Alice", kind: "character" },
+  participantKind: "character",
+  source: "stored",
+});
+const processedHandoff = await turnHandoffRegistry.processResponse(
+  handoffScope,
+  "Visible response\n<next_speaker>persona-1</next_speaker>",
+);
+assert.deepEqual(processedHandoff, {
+  ownerId: "turn-owner",
+  registrationId: "next-participant",
+  content: "Visible response",
+  participant: { id: "persona-1", name: "Player", kind: "persona" },
+});
+await turnHandoffRegistry.commit({ ...handoffScope, messageId: "message-1", swipeIndex: 2 }, processedHandoff);
+assert.equal(turnHandoffCalls[0].messageId, "message-1");
+assert.equal(turnHandoffCalls[0].swipeIndex, 2);
+assert.deepEqual(await turnHandoffRegistry.view(handoffScope), { status: "known" });
+assert.deepEqual(
+  await turnHandoffRegistry.update({ ...handoffScope, patch: { includePersonaCandidate: false } }),
+  { includePersonaCandidate: false },
+);
+assert.deepEqual(await turnHandoffRegistry.refresh(handoffScope), { status: "refreshed" });
+assert.deepEqual(
+  turnHandoffTest.extractTerminalMarker("Reply &lt;next_speaker&gt;char-2&lt;/next_speaker&gt;"),
+  { participantId: "char-2", content: "Reply" },
+);
+const markerFilter = turnHandoffTest.createTerminalMarkerStreamFilter();
+assert.equal(markerFilter.push("Visible <next_spea"), "Vis");
+assert.equal(markerFilter.push("ker>char-2</next_speaker>"), "ible ");
+assert.equal(markerFilter.flush(), "");
+const escapedMarkerFilter = turnHandoffTest.createTerminalMarkerStreamFilter();
+assert.equal(escapedMarkerFilter.push("Visible &lt;next_spea"), "Visibl");
+assert.equal(escapedMarkerFilter.push("ker&gt;char-2&lt;/next_speaker&gt;"), "e ");
+assert.equal(escapedMarkerFilter.flush(), "");
+
 const lifecycleRegistry = createHostLifecycleRegistry();
 const lifecycleCalls = [];
 lifecycleRegistry.register("presence", {
@@ -213,7 +273,7 @@ const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", impo
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.22");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.23");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -597,7 +657,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.22"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.23"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -651,12 +711,12 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.22"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.22" }, false, "1.0.22"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.21" }, false, "1.0.22"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.22" }, true, "1.0.22"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.23"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.23" }, false, "1.0.23"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.22" }, false, "1.0.23"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.23" }, true, "1.0.23"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
-globalThis[kernelSymbol] = { active: true, version: "1.0.22", failures: [] };
+globalThis[kernelSymbol] = { active: true, version: "1.0.23", failures: [] };
 const installerHooks = [];
 const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
 await installer.activate({
@@ -669,6 +729,7 @@ for (const relativePath of [
   "bootstrap/register.mjs",
   "src/shared/contracts.js",
   "src/server/runtime.js",
+  "src/server/turn-handoff-registry.js",
   "src/server/client-overlay.js",
   "src/client/runtime.js",
 ]) {
@@ -742,6 +803,14 @@ assert.match(bootstrapPatchSource, /tracker\.context-committed/u);
 assert.match(bootstrapPatchSource, /tracker\.context-agent/u);
 assert.match(bootstrapPatchSource, /group\.selector-policy/u);
 assert.match(bootstrapPatchSource, /group\.selector-call/u);
+assert.match(bootstrapPatchSource, /turn\.handoff-queue-state/u);
+assert.match(bootstrapPatchSource, /turn\.handoff-persona-return/u);
+assert.match(bootstrapPatchSource, /turn\.handoff-stream-filter/u);
+assert.match(bootstrapPatchSource, /turn\.handoff-response-process/u);
+assert.match(bootstrapPatchSource, /turn\.handoff-commit/u);
+assert.match(bootstrapPatchSource, /const turnHandoffPatchApplied = groupSelectorPatchApplied/u);
+assert.match(bootstrapPatchSource, /turnHandoffPatchApplied \? \["turn\.handoff"\]/u);
+assert.match(bootstrapPatchSource, /\/api\/mari-bridge\/turn-handoff\/:chatId/u);
 const { decodeModuleSource, patchCommittedTrackerActiveGuard, patchServerModule } = await import(
   new URL(`../bootstrap/register.mjs?check=${Date.now()}`, import.meta.url)
 );

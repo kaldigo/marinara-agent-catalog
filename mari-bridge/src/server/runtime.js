@@ -24,6 +24,7 @@ export function createBridgeRuntime(options = {}) {
   const agentResultRegistry = options.agentResultRegistry ?? null;
   const trackerContextRegistry = options.trackerContextRegistry ?? null;
   const groupSelectorRegistry = options.groupSelectorRegistry ?? null;
+  const turnHandoffRegistry = options.turnHandoffRegistry ?? null;
   const hostLifecycleRegistry = options.hostLifecycleRegistry ?? null;
   const hostRequest = typeof options.hostRequest === "function" ? options.hostRequest : null;
 
@@ -46,6 +47,7 @@ export function createBridgeRuntime(options = {}) {
       agentResultRegistrations: agentResultRegistry?.snapshot?.() ?? null,
       trackerContextRegistrations: trackerContextRegistry?.snapshot?.() ?? null,
       groupSelectorRegistrations: groupSelectorRegistry?.snapshot?.() ?? null,
+      turnHandoffRegistrations: turnHandoffRegistry?.snapshot?.() ?? null,
       hostLifecycleRegistrations: hostLifecycleRegistry?.snapshot?.() ?? null,
     });
   }
@@ -185,6 +187,16 @@ export function createBridgeRuntime(options = {}) {
           },
         })
       : null;
+    const turnHandoffs = turnHandoffRegistry
+      ? Object.freeze({
+          register(input) {
+            if (!ownsCapability("turn.handoff")) {
+              throw new Error(`${requirements.consumerId} did not require turn.handoff`);
+            }
+            return registerOwnedCleanup(turnHandoffRegistry.register(requirements.consumerId, input));
+          },
+        })
+      : null;
     const lifecycle = hostLifecycleRegistry
       ? Object.freeze({
           register(input) {
@@ -205,6 +217,7 @@ export function createBridgeRuntime(options = {}) {
       agentResults,
       trackerContext,
       groupSelectors,
+      turnHandoffs,
       lifecycle,
       host,
       addCleanup(cleanup) {
@@ -266,6 +279,15 @@ export function createBridgeRuntime(options = {}) {
           select: groupSelectorRegistry.select,
         })
       : null,
+    turnHandoffHooks: turnHandoffRegistry
+      ? Object.freeze({
+          resolvePolicy: turnHandoffRegistry.resolvePolicy,
+          select: turnHandoffRegistry.select,
+          createStreamFilter: turnHandoffRegistry.createStreamFilter,
+          processResponse: turnHandoffRegistry.processResponse,
+          commit: turnHandoffRegistry.commit,
+        })
+      : null,
     getSnapshot: snapshot,
     markReady() {
       if (disposed) throw new Error("Cannot ready a disposed Mari Bridge runtime");
@@ -288,6 +310,7 @@ export function createBridgeRuntime(options = {}) {
       agentResultRegistry?.clear?.();
       trackerContextRegistry?.clear?.();
       groupSelectorRegistry?.clear?.();
+      turnHandoffRegistry?.clear?.();
       hostLifecycleRegistry?.clear?.();
     },
   });

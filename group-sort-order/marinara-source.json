@@ -11,13 +11,13 @@
   "package": {
     "id": "group-sort-order",
     "name": "Group Sort Order",
-    "description": "Configurable model override for Marinara's native smart group responder selector.",
+    "description": "Tracks and displays the next character or persona using Marinara's native generation and composer flow.",
     "engine": {
       "min": "2.4.3",
       "maxExclusive": "2.4.4"
     },
     "kind": ["agent"],
-    "permissions": ["agent-runtime"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "prompt-context"],
     "restartRequired": true
   }
 }

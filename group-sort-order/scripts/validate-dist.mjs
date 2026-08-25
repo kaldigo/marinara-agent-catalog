@@ -11,11 +11,17 @@ assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint is decl
 assert(manifest.entrypoints?.agents === "agents.json", "agent definitions are declared");
 assert(!manifest.entrypoints?.client, "no client runtime is shipped");
 assert(!manifest.contributions?.agentDetail, "native agent detail is not replaced");
-assert(JSON.stringify(manifest.permissions) === JSON.stringify(["agent-runtime"]), "only agent runtime permission remains");
+assert(JSON.stringify(manifest.permissions) === JSON.stringify([
+  "agent-runtime",
+  "chat-read",
+  "chat-write",
+  "prompt-context",
+]), "turn handoff declares only the permissions used by its native hosts");
 assert(agents[0]?.id === "group-sort-order", "agent id matches package");
 assert(agents[0]?.runtimeDisabled === true, "native executor skips the selector definition");
 assert(agents[0]?.execution !== "feature", "definition uses the normal native agent editor");
-assert(agents[0]?.defaultPromptTemplate?.includes("valid JSON array"), "native prompt editor receives the selector prompt");
+assert(agents[0]?.defaultPromptTemplate?.includes("{{marker}}"), "native prompt editor receives the response handoff prompt");
+assert(agents[0]?.defaultSettings?.selectorPrompt?.includes("valid JSON array"), "fallback selector prompt remains editable in native settings");
 
 for (const relativePath of Object.values(manifest.entrypoints)) {
   assert(fs.existsSync(path.join(packageRoot, relativePath)), `entrypoint exists: ${relativePath}`);
@@ -24,7 +30,6 @@ for (const file of listFiles(packageRoot)) {
   if (!/\.(?:mjs|js)$/u.test(file)) continue;
   const content = fs.readFileSync(path.join(packageRoot, file), "utf8");
   assert(!content.includes("../../../_mari-bridge"), `${file} does not reference source-only bridge paths`);
-  assert(!content.includes("<next_speaker>"), `${file} contains no legacy main-response marker handling`);
 }
 await import(pathToFileURL(path.join(packageRoot, "server.mjs")));
 

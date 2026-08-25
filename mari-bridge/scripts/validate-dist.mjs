@@ -17,6 +17,7 @@ for (const required of [
   "src/server/runtime.js",
   "src/server/result-registry.js",
   "src/server/tracker-context-registry.js",
+  "src/server/turn-handoff-registry.js",
   "src/client/runtime.js",
 ]) {
   await fs.access(path.join(root, required));
