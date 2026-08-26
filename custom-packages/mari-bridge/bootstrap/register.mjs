@@ -41,7 +41,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.24";
+kernel.version = "1.0.25";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -159,7 +159,16 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
       }));
       app.get("/api/mari-bridge/turn-handoff/:chatId", async (request, reply) => {
         const view = await turnHandoffRegistry.view({ chatId: request.params.chatId });
-        return view ?? reply.status(404).send({ error: "No active turn handoff for this chat" });
+        if (view) return view;
+        const initializing = turnHandoffRegistry.snapshot().length === 0;
+        return {
+          chatId: request.params.chatId,
+          hidden: true,
+          nextParticipant: null,
+          status: initializing ? "initializing" : "unavailable",
+          canRefresh: false,
+          ...(initializing ? { retryAfterMs: 250 } : {}),
+        };
       });
       app.patch("/api/mari-bridge/turn-handoff/:chatId", async (request, reply) => {
         const view = await turnHandoffRegistry.update({ chatId: request.params.chatId, patch: request.body ?? {} });
@@ -594,7 +603,7 @@ export function patchServerModule(url, inputSource) {
           "        const spatialDirectiveStreamFilter =",
           [
             "        const turnHandoffStreamFilter = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.createStreamFilter({",
-            "          chatId: input.chatId, chatMetadata: chatMeta, chatMode, targetCharacterId: targetCharId, impersonate: input.impersonate === true,",
+            "          chatId: input.chatId, chatMetadata: chatMeta, chatMode, impersonate: input.impersonate === true,",
             "        }) ?? null;",
             "        const spatialDirectiveStreamFilter =",
           ].join("\n"),
