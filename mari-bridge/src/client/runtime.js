@@ -521,19 +521,44 @@ function defineNativeSlotElement(ui, turnHandoff) {
 }
 
 function createTurnHandoffClient(activeChat, generation) {
+  const MAX_INITIALIZATION_RETRIES = 6;
   const subscribers = new Set();
   let view = Object.freeze({ hidden: true });
   let busy = false;
   let activeGenerationChats = new Set();
   let controller = null;
+  let retryTimer = null;
+  let retryAttempt = 0;
 
   function publish() {
     for (const subscriber of [...subscribers]) subscriber();
   }
 
+  function clearRetry({ resetAttempt = false } = {}) {
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    if (resetAttempt) retryAttempt = 0;
+  }
+
+  function scheduleInitializationRetry(chatId, retryAfterMs) {
+    clearRetry();
+    if (retryAttempt >= MAX_INITIALIZATION_RETRIES) return;
+    const attempt = retryAttempt++;
+    const requestedDelay = Number(retryAfterMs);
+    const baseDelay = Number.isFinite(requestedDelay) && requestedDelay > 0 ? requestedDelay : 250;
+    const delay = Math.min(baseDelay * (2 ** attempt), 2_000);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      if (activeChat.getSnapshot().chatId === chatId) void request();
+    }, delay);
+  }
+
   async function request(path = "", options = {}) {
     const chatId = activeChat.getSnapshot().chatId;
     if (!chatId) {
+      clearRetry({ resetAttempt: true });
       view = Object.freeze({ hidden: true });
       publish();
       return view;
@@ -556,7 +581,11 @@ function createTurnHandoffClient(activeChat, generation) {
       } else {
         const data = await response.json();
         if (!response.ok) throw new Error(data?.error || `Turn handoff request failed with HTTP ${response.status}`);
-        if (activeChat.getSnapshot().chatId === chatId) view = Object.freeze({ ...data });
+        if (activeChat.getSnapshot().chatId === chatId) {
+          view = Object.freeze({ ...data });
+          if (data?.status === "initializing") scheduleInitializationRetry(chatId, data.retryAfterMs);
+          else clearRetry({ resetAttempt: true });
+        }
       }
     } catch (error) {
       if (error?.name !== "AbortError") {
@@ -573,7 +602,10 @@ function createTurnHandoffClient(activeChat, generation) {
     return view;
   }
 
-  activeChat.subscribe(() => { void request(); }, { emitCurrent: false });
+  activeChat.subscribe(() => {
+    clearRetry({ resetAttempt: true });
+    void request();
+  }, { emitCurrent: false });
   generation.subscribe((snapshot) => {
     const next = new Set(snapshot.active.map((run) => run.chatId));
     const chatId = activeChat.getSnapshot().chatId;
@@ -1109,7 +1141,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.24",
+    implementationVersion: "1.0.25",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1295,7 +1327,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.4",
-    implementationVersion: "1.0.24",
+    implementationVersion: "1.0.25",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);

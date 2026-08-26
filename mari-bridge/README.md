@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.24` supports Marinara Engine 2.4.4 and keeps the injected client
+Version `1.0.25` supports Marinara Engine 2.4.4 and keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
 tracker-context sections, native Agent Suite tracker-data registrations, and

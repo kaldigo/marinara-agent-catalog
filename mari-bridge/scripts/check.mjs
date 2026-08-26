@@ -273,7 +273,7 @@ const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", impo
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.24");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.25");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -300,6 +300,32 @@ const nativeBackgroundState = {
 function nativeBackgroundStore(selector) { return selector(nativeBackgroundState); }
 nativeBackgroundStore.getState = () => nativeBackgroundState;
 dispatchClientEvent("marinara:active-chat", { chatId: "chat-1" });
+await new Promise((resolve) => setTimeout(resolve, 0));
+let turnHandoffFetches = 0;
+globalThis.fetch = async (url) => {
+  assert.match(String(url), /\/api\/mari-bridge\/turn-handoff\/chat-1/u);
+  turnHandoffFetches += 1;
+  return {
+    ok: true,
+    status: 200,
+    async json() {
+      if (turnHandoffFetches === 1) {
+        return { chatId: "chat-1", hidden: true, status: "initializing", retryAfterMs: 5 };
+      }
+      return {
+        chatId: "chat-1",
+        hidden: false,
+        status: "known",
+        nextParticipant: { id: "char-2", name: "Alice", kind: "character" },
+      };
+    },
+  };
+};
+await globalThis[clientSymbol].turnHandoff.load();
+await new Promise((resolve) => setTimeout(resolve, 25));
+assert.equal(turnHandoffFetches, 2);
+assert.equal(globalThis[clientSymbol].turnHandoff.getSnapshot().view.status, "known");
+assert.equal(globalThis[clientSymbol].turnHandoff.getSnapshot().view.nextParticipant.id, "char-2");
 const backgroundSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "background-test",
   api: { major: 1, minMinor: 0 },
@@ -659,7 +685,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.24"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.25"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -713,12 +739,12 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.24"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.24" }, false, "1.0.24"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.23" }, false, "1.0.24"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.24" }, true, "1.0.24"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.25"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.25" }, false, "1.0.25"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.24" }, false, "1.0.25"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.25" }, true, "1.0.25"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
-globalThis[kernelSymbol] = { active: true, version: "1.0.24", failures: [] };
+globalThis[kernelSymbol] = { active: true, version: "1.0.25", failures: [] };
 const installerHooks = [];
 const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
 await installer.activate({
@@ -813,6 +839,15 @@ assert.match(bootstrapPatchSource, /turn\.handoff-commit/u);
 assert.match(bootstrapPatchSource, /const turnHandoffPatchApplied = groupSelectorPatchApplied/u);
 assert.match(bootstrapPatchSource, /turnHandoffPatchApplied \? \["turn\.handoff"\]/u);
 assert.match(bootstrapPatchSource, /\/api\/mari-bridge\/turn-handoff\/:chatId/u);
+assert.match(bootstrapPatchSource, /status: initializing \? "initializing" : "unavailable"/u);
+assert.match(
+  bootstrapPatchSource,
+  /chatId: input\.chatId, chatMetadata: chatMeta, chatMode, impersonate: input\.impersonate === true/u,
+);
+assert.doesNotMatch(
+  bootstrapPatchSource,
+  /"          chatId: input\.chatId, chatMetadata: chatMeta, chatMode, targetCharacterId: targetCharId/u,
+);
 const { decodeModuleSource, patchCommittedTrackerActiveGuard, patchServerModule } = await import(
   new URL(`../bootstrap/register.mjs?check=${Date.now()}`, import.meta.url)
 );
