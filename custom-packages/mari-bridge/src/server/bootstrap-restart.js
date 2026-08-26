@@ -9,6 +9,21 @@ function sanitizedEnvironment(extra) {
   );
 }
 
+function withoutMariBridgeImports(value) {
+  const tokens = String(value ?? "").trim().split(/\s+/u).filter(Boolean);
+  const retained = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token === "--import" && tokens[index + 1]?.toLowerCase().includes("mari-bridge")) {
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--import=") && token.toLowerCase().includes("mari-bridge")) continue;
+    retained.push(token);
+  }
+  return retained.join(" ");
+}
+
 export async function schedulePackageBootstrapRestart(context, bootstrapPath, options = {}) {
   const attemptFile = join(context.dataDir, "mari-bridge", "bootstrap-attempt.json");
   await mkdir(dirname(attemptFile), { recursive: true });
@@ -41,7 +56,10 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
     if (!entry) throw new Error("Mari Bridge cannot reconstruct the Marinara entrypoint");
     await context.app.close();
     const args = [...inheritedExecArgs, `--import=${pathToFileURL(bootstrapPath).href}`, entry, ...process.argv.slice(2)];
-    const environment = sanitizedEnvironment({ MARI_BRIDGE_BOOTSTRAPPED: "1" });
+    const environment = sanitizedEnvironment({
+      MARI_BRIDGE_BOOTSTRAPPED: "1",
+      NODE_OPTIONS: withoutMariBridgeImports(process.env.NODE_OPTIONS),
+    });
     if (process.platform === "win32") {
       spawn(process.execPath, args, {
         env: environment,
@@ -62,3 +80,5 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
   });
   return { scheduled: true, reason: options.reason ?? "first-start" };
 }
+
+export const __test = Object.freeze({ withoutMariBridgeImports });

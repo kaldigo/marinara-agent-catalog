@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.4.6",
+  "version": "1.4.8",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
     "min": "2.4.4",
@@ -29,7 +29,7 @@
     },
     {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "a6c45f1ca945ce5da3138255392b21a899301e0b82324f5ea665bbe8fcce9d02",
+      "sha256": "7a25487f8798b9249566e8a9839c949ac56a095158e99712dc1f5a25ca60ee1e",
       "bytes": 1748
     },
     {
@@ -39,7 +39,7 @@
     },
     {
       "path": "client.js",
-      "sha256": "08356889b7ae94e80a7641fa063492eb8035eaa9e737cdba22bac99d359507bf",
+      "sha256": "0f4ddcc5e652c076a4509d918a8ab33e55a2ff195545d831fe3def1a25a6e934",
       "bytes": 10106
     },
     {
@@ -59,13 +59,13 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "81dae92f27ffd96506d51d586283f629a0586481013126c296f2b5f2118c091f",
-      "bytes": 1300
+      "sha256": "0dff820bcf4906e6719ba4a57d22a20b07a4c66136e5823718462cda9ef22636",
+      "bytes": 1282
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "008b5f6487006cc6cc07f971c3149586095033d5568e3472a56a339a42b250a1",
-      "bytes": 24992
+      "sha256": "fd3ab74c10bef00963a63e2ae0652eab1f634b01477dc664a143b4b71fcffe7d",
+      "bytes": 18721
     },
     {
       "path": "src/shared/chat-state.js",

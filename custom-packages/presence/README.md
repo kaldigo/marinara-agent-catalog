@@ -11,8 +11,8 @@ The positive record remains authoritative when the roster changes. A character a
 ## Lifecycle
 
 - Existing messages are initialized when Presence is first enabled, and older package-era chats adopt their native per-character visibility when positive records are missing.
-- Post-only and generation-created messages are stamped with the active roster.
-- Generated user messages are stamped as soon as their row appears, with generation completion retained as a fallback.
+- Post-only and generation-created messages are stamped with the active roster through Mari Bridge's native pre-save message hook.
+- Regenerate and continue operations are reconciled from Mari Bridge's exact native post-persistence message callback because they update an existing message instead of creating one.
 - Newly added characters are hidden from historical messages using the stored positive attendance records.
 - Regenerate and continue preserve existing attendance instead of replacing it with the current active roster.
 
@@ -37,9 +37,10 @@ The package does not replace Marinara's agent editor or settings layout. Mari Br
 ## Native boundary
 
 Marinara owns agent membership, the agent settings card, message persistence,
-and prompt-history filtering through `hiddenFromAICharacterIds`. Presence owns
+and prompt-history filtering through `hiddenFromAICharacterIds`. Mari Bridge
+exposes the native pre-save message hook; Presence owns
 only the positive attendance record and its projection into those native IDs.
-Mari Bridge supplies the missing active-chat/lifecycle events, command routing,
-and one package-specific field inside the native agent card. Presence does not
+Mari Bridge supplies exact native message/chat persistence events, command
+routing, and one package-specific field inside the native agent card. Presence does not
 read or modify summaries and does not provide a parallel history or settings
 system.

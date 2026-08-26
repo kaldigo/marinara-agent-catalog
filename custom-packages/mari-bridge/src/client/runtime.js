@@ -1,4 +1,4 @@
-const API_VERSION = Object.freeze({ major: 1, minor: 5 });
+const API_VERSION = Object.freeze({ major: 1, minor: 7 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
@@ -1141,7 +1141,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.25",
+    implementationVersion: "1.0.27",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1327,7 +1327,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.4",
-    implementationVersion: "1.0.25",
+    implementationVersion: "1.0.27",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);

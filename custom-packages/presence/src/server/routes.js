@@ -5,20 +5,17 @@ import { planRosterBackfill } from "../shared/roster.js";
 import { parseMessageRange } from "../shared/message-range.js";
 import { createPresenceCommandRouter } from "./command-router.js";
 
-const GENERATE_REQUEST_STATE = new WeakMap();
-const EARLY_USER_STAMP_TIMEOUT_MS = 5_000;
-const EARLY_USER_STAMP_INTERVAL_MS = 50;
+const PRESENCE_CHAT_KEYS = new Set(["characterIds", "inactiveCharacterIds", "activeAgentIds", "enableAgents"]);
 
-export function registerPresenceMessageCreateHook({ app, runtime, bridgeSession }) {
-  return bridgeSession.lifecycle.register({
-    id: "message-visibility",
-    preHandler: (request) => captureGenerationRequestState({ app, runtime, bridgeSession, request }),
-    async onSend(request, reply, payload) {
-      await stampCreatedMessage({ app, runtime, bridgeSession, request, reply, payload });
-      await ensureAfterChatSettingsChange({ app, runtime, bridgeSession, request, reply });
-      return payload;
-    },
-    onResponse: (request, reply) => finishGenerationLifecycle({ app, runtime, bridgeSession, request, reply }),
+export function registerPresenceHooks({ runtime, bridgeSession }) {
+  bridgeSession.messages.register({
+    id: "active-presence",
+    prepare: ({ input }) => prepareCreatedMessage({ runtime, input }),
+    afterPersist: (event) => applyPersistedMessagePresence({ runtime, bridgeSession, event }),
+  });
+  return bridgeSession.chats.register({
+    id: "presence-roster",
+    onChanged: (event) => applyChangedChatPresence({ runtime, bridgeSession, event }),
   });
 }
 
@@ -113,107 +110,26 @@ export function createPresenceRoutes({ app, runtime, bridgeSession }) {
   });
 }
 
-async function captureGenerationRequestState({ bridgeSession, runtime, request }) {
-  if (isPresenceInternalRequest(request)) return;
-  if (String(request.method || "").toUpperCase() !== "POST" || !isNormalGenerateUrl(request.url)) return;
-  const body = normalizeObject(request.body);
-  const chatId = typeof body.chatId === "string" ? body.chatId : "";
-  if (!chatId) return;
-  const chat = await runtime.persistence.getChat(chatId);
+async function prepareCreatedMessage({ runtime, input }) {
+  if (!input?.chatId || !isStampableMessageRole(input.role)) return null;
+  const chat = await runtime.persistence.getChat(input.chatId);
+  if (!chat || !isPresenceTrackerEnabled(chat)) return null;
+  const extra = normalizeObject(input.extra);
+  const patch = buildPresenceExtraPatch({
+    extra,
+    rosterIds: uniqueStrings(chat.characterIds),
+    presentCharacterIds: resolveActiveRosterIds(chat),
+    alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
+  });
+  return { extra: { ...extra, ...patch } };
+}
+
+async function applyPersistedMessagePresence({ bridgeSession, runtime, event }) {
+  if (event.kind !== "regenerate" && event.kind !== "continue") return;
+  if (!event.chatId || !event.message?.id || !isStampableMessageRole(event.message.role)) return;
+  const chat = await runtime.persistence.getChat(event.chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  const messages = await runtime.persistence.listMessages(chatId);
-  const beforeMessageIds = new Set(messages.map((message) => message.id).filter(Boolean));
-  const state = {
-    chatId,
-    beforeMessageIds,
-    regenerateMessageId: typeof body.regenerateMessageId === "string" ? body.regenerateMessageId : "",
-    continueMessageId: typeof body.continueMessageId === "string" ? body.continueMessageId : "",
-    earlyUserStampPromise: null,
-  };
-  if (shouldWatchGeneratedUserMessage(body)) {
-    state.earlyUserStampPromise = stampGeneratedUserMessageSoon({
-      bridgeSession,
-      runtime,
-      chatId,
-      beforeMessageIds,
-      submissionId: typeof body.submissionId === "string" ? body.submissionId : "",
-    }).catch((error) => {
-      runtime.logger.warn(error, "[Presence] Could not early-stamp generated user message");
-      return { stamped: false };
-    });
-  }
-  GENERATE_REQUEST_STATE.set(request, state);
-}
-
-async function stampCreatedMessage({ bridgeSession, runtime, request, reply, payload }) {
-  if (request.method !== "POST" || reply.statusCode < 200 || reply.statusCode >= 300) return;
-  const url = String(request.url || "");
-  if (!/^\/api\/chats\/[^/]+\/messages(?:[?#].*)?$/u.test(url)) return;
-  const created = parsePayloadObject(payload);
-  if (!created?.id || !isStampableMessageRole(created.role)) return;
-  const chatId = typeof created.chatId === "string" && created.chatId ? created.chatId : extractMessageCreateChatId(url);
-  if (!chatId) return;
-  const chat = await runtime.persistence.getChat(chatId);
-  if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  await stampMessageWithActivePresence({ bridgeSession, chat, message: created, overwriteExisting: true });
-}
-
-async function finishGenerationLifecycle({ bridgeSession, runtime, request, reply }) {
-  const state = GENERATE_REQUEST_STATE.get(request);
-  if (!state) return;
-  GENERATE_REQUEST_STATE.delete(request);
-  if (reply.statusCode < 200 || reply.statusCode >= 300) return;
-  const chat = await runtime.persistence.getChat(state.chatId);
-  if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  await stampGeneratedMessages({ bridgeSession, runtime, chat, state });
-}
-
-async function stampGeneratedMessages({ bridgeSession, runtime, chat, state }) {
-  const messages = await runtime.persistence.listMessages(state.chatId);
-  const createdMessages = messages.filter((message) => !state.beforeMessageIds.has(message.id));
-  const createdMessageIds = new Set(createdMessages.map((message) => message.id).filter(Boolean));
-  const targetIds = new Set([
-    ...createdMessages.filter((message) => isStampableMessageRole(message.role)).map((message) => message.id),
-    state.regenerateMessageId,
-    state.continueMessageId,
-  ].filter(Boolean));
-  for (const message of messages) {
-    if (!targetIds.has(message.id)) continue;
-    await stampMessageWithActivePresence({
-      bridgeSession,
-      chat,
-      message,
-      overwriteExisting: createdMessageIds.has(message.id),
-    });
-  }
-  return [...targetIds];
-}
-
-async function stampGeneratedUserMessageSoon({ bridgeSession, runtime, chatId, beforeMessageIds, submissionId }) {
-  const deadline = Date.now() + EARLY_USER_STAMP_TIMEOUT_MS;
-  do {
-    const messages = await runtime.persistence.listMessages(chatId);
-    const message = findGeneratedUserMessage(messages, beforeMessageIds, submissionId);
-    if (message) {
-      const chat = await runtime.persistence.getChat(chatId);
-      if (!chat || !isPresenceTrackerEnabled(chat)) return { stamped: false };
-      await stampMessageWithActivePresence({ bridgeSession, chat, message, overwriteExisting: true });
-      return { stamped: true, messageId: message.id };
-    }
-    await delay(EARLY_USER_STAMP_INTERVAL_MS);
-  } while (Date.now() < deadline);
-  return { stamped: false };
-}
-
-function findGeneratedUserMessage(messages, beforeMessageIds, submissionId) {
-  const createdUsers = (Array.isArray(messages) ? messages : []).filter(
-    (message) => message?.id && message.role === "user" && !beforeMessageIds.has(message.id),
-  );
-  if (!createdUsers.length) return null;
-  if (submissionId) {
-    return createdUsers.find((message) => normalizeObject(message.extra).submissionId === submissionId) || null;
-  }
-  return createdUsers[createdUsers.length - 1];
+  await stampMessageWithActivePresence({ bridgeSession, chat, message: event.message, overwriteExisting: true });
 }
 
 async function stampMessageWithActivePresence({ bridgeSession, chat, message, overwriteExisting }) {
@@ -233,21 +149,9 @@ async function stampMessageWithActivePresence({ bridgeSession, chat, message, ov
   await patchMessageExtra(bridgeSession, chat.id, message.id, patch);
 }
 
-async function ensureAfterChatSettingsChange({ bridgeSession, runtime, request, reply }) {
-  if (reply.statusCode < 200 || reply.statusCode >= 300 || isPresenceInternalRequest(request)) return;
-  const method = String(request.method || "").toUpperCase();
-  if (method !== "PATCH" && method !== "PUT") return;
-  const url = String(request.url || "");
-  if (!/^\/api\/chats\/[^/?#]+(?:\/metadata)?(?:[?#].*)?$/u.test(url)) return;
-  const body = normalizeObject(request.body);
-  const touchesPresenceSettings =
-    Array.isArray(body.characterIds) ||
-    Object.prototype.hasOwnProperty.call(body, "activeAgentIds") ||
-    Object.prototype.hasOwnProperty.call(body, "enableAgents");
-  if (!touchesPresenceSettings) return;
-  const chatId = extractChatRootId(url) || extractChatMetadataRouteId(url);
-  if (!chatId) return;
-  const chat = await runtime.persistence.getChat(chatId);
+async function applyChangedChatPresence({ bridgeSession, runtime, event }) {
+  if (!event.chatId || !event.changedKeys?.some((key) => PRESENCE_CHAT_KEYS.has(key))) return;
+  const chat = event.chat ?? await runtime.persistence.getChat(event.chatId);
   if (chat && isPresenceTrackerEnabled(chat)) await ensurePresenceChatLifecycle({ bridgeSession, runtime, chat });
 }
 
@@ -509,19 +413,6 @@ function normalizeLookup(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function parsePayloadObject(payload) {
-  if (!payload) return null;
-  if (typeof payload === "string") return normalizeObject(payload);
-  if (Buffer.isBuffer(payload)) return normalizeObject(payload.toString("utf8"));
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) return payload;
-  return null;
-}
-
-function extractMessageCreateChatId(url) {
-  const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)\/messages(?:[?#].*)?$/u);
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
 function isPresenceTrackerEnabled(chat) {
   const metadata = normalizeObject(chat?.metadata);
   if (!uniqueStrings(metadata.activeAgentIds).includes(PRESENCE_PACKAGE_ID)) return false;
@@ -530,35 +421,4 @@ function isPresenceTrackerEnabled(chat) {
 
 function isStampableMessageRole(role) {
   return role === "user" || role === "assistant" || role === "narrator";
-}
-
-function extractChatRootId(url) {
-  const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)(?:[?#].*)?$/u);
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
-function extractChatMetadataRouteId(url) {
-  const match = String(url || "").match(/^\/api\/chats\/([^/?#]+)\/metadata(?:[?#].*)?$/u);
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
-function isNormalGenerateUrl(url) {
-  return /^\/api\/generate(?:[?#].*)?$/u.test(String(url || ""));
-}
-
-function shouldWatchGeneratedUserMessage(body) {
-  if (normalizeObject(body).impersonate === true) return false;
-  if (typeof body.userMessage === "string" && body.userMessage.length > 0) return true;
-  if (Array.isArray(body.attachments) && body.attachments.length > 0) return true;
-  const pendingSpatialTransition = body.pendingSpatialTransition;
-  return !!pendingSpatialTransition && typeof pendingSpatialTransition === "object" && !Array.isArray(pendingSpatialTransition);
-}
-
-function isPresenceInternalRequest(request) {
-  const value = request.headers?.["x-presence-internal"];
-  return value === "1" || value === "true" || (Array.isArray(value) && value.includes("1"));
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

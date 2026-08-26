@@ -8,7 +8,8 @@ import { createAgentResultRegistry } from "../src/server/result-registry.js";
 import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
 import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
 import { createTurnHandoffRegistry } from "../src/server/turn-handoff-registry.js";
-import { createHostLifecycleRegistry } from "../src/server/host-lifecycle-registry.js";
+import { createMessageRegistry } from "../src/server/message-registry.js";
+import { createChatRegistry } from "../src/server/chat-registry.js";
 import { prepareClientOverlay } from "../src/server/client-overlay.js";
 
 const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
@@ -41,7 +42,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.25";
+kernel.version = "1.0.27";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -60,7 +61,8 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
   const trackerContextRegistry = createTrackerContextRegistry();
   const groupSelectorRegistry = createGroupSelectorRegistry();
   const turnHandoffRegistry = createTurnHandoffRegistry();
-  const hostLifecycleRegistry = createHostLifecycleRegistry();
+  const messageRegistry = createMessageRegistry();
+  const chatRegistry = createChatRegistry();
   const host = { app: null, hooksInstalled: false, diagnosticsInstalled: false };
   const promptPatchApplied =
     kernel.patches["prompt.assembler"] === "applied" &&
@@ -88,6 +90,11 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
     "turn.handoff-response-process",
     "turn.handoff-commit",
   ].every((patchId) => kernel.patches[patchId] === "applied");
+  const messagePreparePatchApplied = kernel.patches["message.prepare-create"] === "applied";
+  const messagePersistPatchApplied = kernel.patches["message.persist-generate"] === "applied";
+  const chatChangedPatchApplied =
+    kernel.patches["chat.changed-root"] === "applied" &&
+    kernel.patches["chat.changed-metadata"] === "applied";
   const hostRequest = async (consumerId, input = {}) => {
     if (!host.app) throw new Error("Mari Bridge host is not bound to Marinara yet");
     const method = String(input.method ?? "GET").toUpperCase();
@@ -125,7 +132,6 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
       "diagnostics",
       "runtime.health",
       "consumer.sessions",
-      "host.lifecycle",
       "host.request",
       ...(promptPatchApplied ? ["prompt.inject", "prompt.suppress", "prompt.transform-final", "prompt.transform-history"] : []),
       ...(clientOverlay ? ["client.bridge-first"] : []),
@@ -133,13 +139,17 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
       ...(trackerContextPatchApplied ? ["tracker.context"] : []),
       ...(groupSelectorPatchApplied ? ["group.selector"] : []),
       ...(turnHandoffPatchApplied ? ["turn.handoff"] : []),
+      ...(messagePreparePatchApplied ? ["message.prepare"] : []),
+      ...(messagePersistPatchApplied ? ["message.persist"] : []),
+      ...(chatChangedPatchApplied ? ["chat.changed"] : []),
     ],
     promptRegistry,
     agentResultRegistry,
     trackerContextRegistry,
     groupSelectorRegistry,
     turnHandoffRegistry,
-    hostLifecycleRegistry,
+    messageRegistry,
+    chatRegistry,
     hostRequest,
     patches: Object.entries(kernel.patches).map(([id, status]) => ({ id, status })),
   });
@@ -179,21 +189,6 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
         return view ?? reply.status(404).send({ error: "No active turn handoff for this chat" });
       });
     }
-    app.addHook("preHandler", async (request, reply) => {
-      try { await hostLifecycleRegistry.dispatch("preHandler", request, reply); }
-      catch (error) { app.log.warn(error, "[Mari Bridge] Host preHandler contribution failed"); }
-    });
-    app.addHook("onSend", async (request, reply, payload) => {
-      try { return await hostLifecycleRegistry.dispatch("onSend", request, reply, payload); }
-      catch (error) {
-        app.log.warn(error, "[Mari Bridge] Host onSend contribution failed");
-        return payload;
-      }
-    });
-    app.addHook("onResponse", async (request, reply) => {
-      try { await hostLifecycleRegistry.dispatch("onResponse", request, reply); }
-      catch (error) { app.log.warn(error, "[Mari Bridge] Host onResponse contribution failed"); }
-    });
     return runtime;
   };
   kernel.runtime = runtime;
@@ -349,6 +344,55 @@ export function patchServerModule(url, inputSource) {
           "prompt.outlet-nested-fields.scan-call",
         );
         kernel.patches["prompt.assembler"] = "applied";
+        return source;
+      }
+      if (url.endsWith("/services/storage/chats.storage.js")) {
+        source = replaceExact(
+          source,
+          "    async createMessage(input, timestampOverrides) {",
+          [
+            "    async createMessage(input, timestampOverrides) {",
+            "      input = await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.messageHooks?.prepareCreate(input) ?? input;",
+          ].join("\n"),
+          "message.prepare-create",
+        );
+        return source;
+      }
+      if (url.endsWith("/routes/chats.routes.js")) {
+        source = replaceExact(
+          source,
+          "    const updated = await storage.update(req.params.id, data);",
+          [
+            "    const updated = await storage.update(req.params.id, data);",
+            "    if (updated) {",
+            "      try {",
+            "        await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.chatHooks?.notifyChanged({",
+            "          chatId: req.params.id, source: \"chat\", changedKeys: Object.keys(data), previous: existing, chat: updated,",
+            "        });",
+            "      } catch (error) {",
+            "        logger.warn(error, \"[Mari Bridge] Chat change contribution failed\");",
+            "      }",
+            "    }",
+          ].join("\n"),
+          "chat.changed-root",
+        );
+        source = replaceExact(
+          source,
+          "    const updated = await storage.patchMetadata(req.params.id, incoming);",
+          [
+            "    const updated = await storage.patchMetadata(req.params.id, incoming);",
+            "    if (updated) {",
+            "      try {",
+            "        await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.chatHooks?.notifyChanged({",
+            "          chatId: req.params.id, source: \"metadata\", changedKeys: Object.keys(incoming), previous: chat, chat: updated,",
+            "        });",
+            "      } catch (error) {",
+            "        logger.warn(error, \"[Mari Bridge] Chat metadata contribution failed\");",
+            "      }",
+            "    }",
+          ].join("\n"),
+          "chat.changed-metadata",
+        );
         return source;
       }
       if (url.endsWith("/services/prompt/macro-context.js")) {
@@ -690,6 +734,56 @@ export function patchServerModule(url, inputSource) {
             ].join("\n"),
           },
         ], "turn.handoff-commit");
+        source = replaceSupportedExact(source, [
+          {
+            anchor: [
+              "          if (",
+              "            savedMsg?.id &&",
+              "            savedSwipeIndex !== null &&",
+              "            !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+            replacement: [
+              "          if (savedMsg?.id && savedSwipeIndex !== null) {",
+              "            try {",
+              "              await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.messageHooks?.notifyPersisted({",
+              "                chatId: input.chatId, messageId: savedMsg.id, swipeIndex: savedSwipeIndex,",
+              "                kind: input.regenerateMessageId ? \"regenerate\" : input.continueMessageId ? \"continue\" : \"create\",",
+              "                message: savedMsg,",
+              "              });",
+              "            } catch (error) {",
+              "              logger.warn(error, \"[Mari Bridge] Message persisted contribution failed\");",
+              "            }",
+              "          }",
+              "          if (",
+              "            savedMsg?.id &&",
+              "            savedSwipeIndex !== null &&",
+              "            !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+          },
+          {
+            anchor: [
+              "                    if (savedMsg?.id &&",
+              "                        savedSwipeIndex !== null &&",
+              "                        !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+            replacement: [
+              "                    if (savedMsg?.id && savedSwipeIndex !== null) {",
+              "                        try {",
+              "                            await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.messageHooks?.notifyPersisted({",
+              "                                chatId: input.chatId, messageId: savedMsg.id, swipeIndex: savedSwipeIndex,",
+              "                                kind: input.regenerateMessageId ? \"regenerate\" : input.continueMessageId ? \"continue\" : \"create\",",
+              "                                message: savedMsg,",
+              "                            });",
+              "                        } catch (error) {",
+              "                            logger.warn(error, \"[Mari Bridge] Message persisted contribution failed\");",
+              "                        }",
+              "                    }",
+              "                    if (savedMsg?.id &&",
+              "                        savedSwipeIndex !== null &&",
+              "                        !shouldSuppressAssistantSpatialMutation(input) &&",
+            ].join("\n"),
+          },
+        ], "message.persist-generate");
         source = replaceExact(
           source,
           "const preparedMessagesForGen = resolvePromptMessageMacros(macroScopedMessagesForGen, providerMacroContext, historyMacroProfilesById);",
@@ -991,6 +1085,8 @@ export function decodeModuleSource(source) {
 const SERVER_PATCH_TARGETS = Object.freeze([
   ["capability-module-runtime.service.js", ["packages", "server", "dist", "services", "capability-packages", "capability-module-runtime.service.js"]],
   ["services/prompt/assembler.js", ["packages", "server", "dist", "services", "prompt", "assembler.js"]],
+  ["services/storage/chats.storage.js", ["packages", "server", "dist", "services", "storage", "chats.storage.js"]],
+  ["routes/chats.routes.js", ["packages", "server", "dist", "routes", "chats.routes.js"]],
   ["services/prompt/macro-context.js", ["packages", "server", "dist", "services", "prompt", "macro-context.js"]],
   ["utils/macro-engine.js", ["packages", "shared", "dist", "utils", "macro-engine.js"]],
   ["services/agents/agent-executor.js", ["packages", "server", "dist", "services", "agents", "agent-executor.js"]],

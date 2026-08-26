@@ -11,7 +11,8 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/server/tracker-context-registry.js",
   "src/server/group-selector-registry.js",
   "src/server/turn-handoff-registry.js",
-  "src/server/host-lifecycle-registry.js",
+  "src/server/message-registry.js",
+  "src/server/chat-registry.js",
   "src/server/client-overlay.js",
   "src/client/runtime.js",
   // Commit the preload entry last, after every module it imports exists.

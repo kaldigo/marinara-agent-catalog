@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.25",
+  "version": "1.0.27",
   "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
   "engine": {
     "min": "2.4.4",
@@ -17,8 +17,8 @@
   "files": [
     {
       "path": "bootstrap/register.mjs",
-      "sha256": "faab3bec59ec2d47df6a468bb4652e8e5a13b3228c31ec62281f5633aee04e59",
-      "bytes": 52420
+      "sha256": "07d70c7c32b44b29646dcf1d670d6648e4940b95cc64e47518261c7224692a95",
+      "bytes": 57536
     },
     {
       "path": "server.mjs",
@@ -27,7 +27,7 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "054668e58bd54c3a0f2c5b4602eeca10fe1b8b900d017138a9c08e3f50aca8e8",
+      "sha256": "b493c8cde2d3aa6061be3cf382a1bcb0b3aeacecbb576bb57671c42d9bf19ba9",
       "bytes": 55318
     },
     {
@@ -37,13 +37,18 @@
     },
     {
       "path": "src/server/bootstrap-restart.js",
-      "sha256": "55230c69a7e6a2d9cd5141eaeacefc59c3522e7175e7c00f47437a0eda3a9239",
-      "bytes": 2857
+      "sha256": "a0048c31386ab75a38ad6f55b8acea71fcfc1b1c16627d804292d6f7cdf301a7",
+      "bytes": 3531
+    },
+    {
+      "path": "src/server/chat-registry.js",
+      "sha256": "c73cc51592163c0e9b04e80faf6f0af91162a04784d00607f3568274349be948",
+      "bytes": 1755
     },
     {
       "path": "src/server/client-overlay.js",
-      "sha256": "5243ec3b1b637781b48c31875e79059261e306469b720c943e026e4c7e87a772",
-      "bytes": 41331
+      "sha256": "f86fc08bf22517adc8fb6d25e80c90fc604dfcfb4d997d14989ae78708e9ca3d",
+      "bytes": 41243
     },
     {
       "path": "src/server/group-selector-registry.js",
@@ -51,14 +56,14 @@
       "bytes": 2334
     },
     {
-      "path": "src/server/host-lifecycle-registry.js",
-      "sha256": "44a8cac17ec98c5a7b4a98b94a17ebe87015cd77f62754f0a5ff28020227e1cb",
-      "bytes": 2326
+      "path": "src/server/index.js",
+      "sha256": "c6519094225a18e48fc13186252bb868139d817d7b3cb26c7dddb1faf86afcef",
+      "bytes": 2593
     },
     {
-      "path": "src/server/index.js",
-      "sha256": "5c3a093b9d0774e2f93c65fab40f65cda2ab2e45ce382adb4845edf547f90921",
-      "bytes": 2567
+      "path": "src/server/message-registry.js",
+      "sha256": "88cc7b0b771e6c92cf40e0b57377aca27cb38d6240bb68a70b38172d2f8a8ecc",
+      "bytes": 2812
     },
     {
       "path": "src/server/prompt-registry.js",
@@ -77,8 +82,8 @@
     },
     {
       "path": "src/server/runtime.js",
-      "sha256": "2b94b10259d42ca787ab17aafd9e732410651ff782d884ea21d7ebeac8a1165d",
-      "bytes": 12158
+      "sha256": "bd175df44183556bd50d98a8180803e4808da50c316a4be5f77a4fddd4903fcd",
+      "bytes": 13202
     },
     {
       "path": "src/server/tracker-context-registry.js",
@@ -92,7 +97,7 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "7a8c5430b022bc8f884ab228400c2dad10447ddb01bd838f3b65dc8c05844ef3",
+      "sha256": "590e6b355356ee8c903163639b8b6990ca5f38978136209df85f0095c45d2050",
       "bytes": 1841
     }
   ],
