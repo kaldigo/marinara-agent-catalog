@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.25` supports Marinara Engine 2.4.4 and keeps the injected client
+Version `1.0.27` supports Marinara Engine 2.4.4 and keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
 tracker-context sections, native Agent Suite tracker-data registrations, and
@@ -137,9 +137,11 @@ The bridge provides six broad capability groups:
    retry application points, exact-snapshot state adapters, and shared tracker
    context assembly.
 6. Shared host services only where no public package API exists: scoped native
-   request access, package coordination, native group-selector delegation, and
-   host lifecycle contributions. Consumers must not use these to rebuild
-   available native workflows.
+   request access, package coordination, and native group-selector delegation.
+   `message.prepare` runs at native message creation, `message.persist` runs
+   after native message persistence, and `chat.changed` runs after native chat
+   or metadata persistence. Consumers receive structured events from exact save
+   boundaries and must not rebuild native workflows from generic request hooks.
 
 ## Relationship to `_mari-bridge`
 

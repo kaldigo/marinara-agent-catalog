@@ -25,7 +25,8 @@ export function createBridgeRuntime(options = {}) {
   const trackerContextRegistry = options.trackerContextRegistry ?? null;
   const groupSelectorRegistry = options.groupSelectorRegistry ?? null;
   const turnHandoffRegistry = options.turnHandoffRegistry ?? null;
-  const hostLifecycleRegistry = options.hostLifecycleRegistry ?? null;
+  const messageRegistry = options.messageRegistry ?? null;
+  const chatRegistry = options.chatRegistry ?? null;
   const hostRequest = typeof options.hostRequest === "function" ? options.hostRequest : null;
 
   function snapshot() {
@@ -48,7 +49,8 @@ export function createBridgeRuntime(options = {}) {
       trackerContextRegistrations: trackerContextRegistry?.snapshot?.() ?? null,
       groupSelectorRegistrations: groupSelectorRegistry?.snapshot?.() ?? null,
       turnHandoffRegistrations: turnHandoffRegistry?.snapshot?.() ?? null,
-      hostLifecycleRegistrations: hostLifecycleRegistry?.snapshot?.() ?? null,
+      messageRegistrations: messageRegistry?.snapshot?.() ?? null,
+      chatRegistrations: chatRegistry?.snapshot?.() ?? null,
     });
   }
 
@@ -197,13 +199,26 @@ export function createBridgeRuntime(options = {}) {
           },
         })
       : null;
-    const lifecycle = hostLifecycleRegistry
+    const messages = messageRegistry
       ? Object.freeze({
           register(input) {
-            if (!ownsCapability("host.lifecycle")) {
-              throw new Error(`${requirements.consumerId} did not require host.lifecycle`);
+            if (typeof input?.prepare === "function" && !ownsCapability("message.prepare")) {
+              throw new Error(`${requirements.consumerId} did not require message.prepare`);
             }
-            return registerOwnedCleanup(hostLifecycleRegistry.register(requirements.consumerId, input));
+            if (typeof input?.afterPersist === "function" && !ownsCapability("message.persist")) {
+              throw new Error(`${requirements.consumerId} did not require message.persist`);
+            }
+            return registerOwnedCleanup(messageRegistry.register(requirements.consumerId, input));
+          },
+        })
+      : null;
+    const chats = chatRegistry
+      ? Object.freeze({
+          register(input) {
+            if (!ownsCapability("chat.changed")) {
+              throw new Error(`${requirements.consumerId} did not require chat.changed`);
+            }
+            return registerOwnedCleanup(chatRegistry.register(requirements.consumerId, input));
           },
         })
       : null;
@@ -218,7 +233,8 @@ export function createBridgeRuntime(options = {}) {
       trackerContext,
       groupSelectors,
       turnHandoffs,
-      lifecycle,
+      messages,
+      chats,
       host,
       addCleanup(cleanup) {
         if (typeof cleanup !== "function") throw new TypeError("Mari Bridge cleanup must be a function");
@@ -288,6 +304,15 @@ export function createBridgeRuntime(options = {}) {
           commit: turnHandoffRegistry.commit,
         })
       : null,
+    messageHooks: messageRegistry
+      ? Object.freeze({
+          prepareCreate: messageRegistry.prepareCreate,
+          notifyPersisted: messageRegistry.notifyPersisted,
+        })
+      : null,
+    chatHooks: chatRegistry
+      ? Object.freeze({ notifyChanged: chatRegistry.notifyChanged })
+      : null,
     getSnapshot: snapshot,
     markReady() {
       if (disposed) throw new Error("Cannot ready a disposed Mari Bridge runtime");
@@ -311,7 +336,8 @@ export function createBridgeRuntime(options = {}) {
       trackerContextRegistry?.clear?.();
       groupSelectorRegistry?.clear?.();
       turnHandoffRegistry?.clear?.();
-      hostLifecycleRegistry?.clear?.();
+      messageRegistry?.clear?.();
+      chatRegistry?.clear?.();
     },
   });
 }

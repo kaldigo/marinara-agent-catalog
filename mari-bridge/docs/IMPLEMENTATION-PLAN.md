@@ -13,7 +13,6 @@ Active consumers have been realigned to native Marinara ownership:
 | Better Impersonate | Global Impersonate prompt/settings, generation guide, dry run, draft store, Stop | Slash commands, persistent draft lifecycle, provider-level draft continuation result, optional dry-run reasoning exposure, Quick Reply `{{input}}` |
 | Group Sort Order | Agent editor/model/prompt and native group response queue | Smart group-selector delegation |
 | Presence | Native message visibility and native agent card | Message-create lifecycle, scoped host access, commands, avatar-picker addition |
-| GM Notes | Normal tracker agent settings/execution and native GameState APIs | Structured result type, committed context, Tracker panel and Roleplay HUD mounts |
 | World Map Background | Native World Maps state, chat background renderer/store, agent card | Active-chat/lifecycle events, scoped native background update, and blur control addition |
 | PWA Helper | Browser wake-lock/PWA behavior | Native generation lifecycle snapshot |
 

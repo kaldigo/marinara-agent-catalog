@@ -69,7 +69,9 @@ assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { rosterChar
 
 const registeredRoutes = [];
 const registeredRouteHandlers = new Map();
-const registeredHooks = [];
+const registeredHostHooks = [];
+const registeredMessagePolicies = [];
+const registeredChatPolicies = [];
 const injectedRequests = [];
 let testChat = {
   id: "chat-1",
@@ -77,6 +79,7 @@ let testChat = {
   metadata: { enableAgents: true, activeAgentIds: ["presence"], inactiveCharacterIds: ["b"] },
 };
 let currentMessages = [];
+let metadataWriteCount = 0;
 const runtime = {
   logger: { info() {}, warn() {} },
   persistence: {
@@ -87,6 +90,7 @@ const runtime = {
       return currentMessages;
     },
     updateChatMetadata({ metadata }) {
+      metadataWriteCount += 1;
       testChat = { ...testChat, metadata };
     },
   },
@@ -101,7 +105,7 @@ const runtime = {
 };
 const hostApp = {
   addHook(name, handler) {
-    registeredHooks.push({ name, handler });
+    registeredHostHooks.push({ name, handler });
   },
   async register(callback, options) {
     assert(options?.prefix === "/api/presence", "activate uses package route prefix");
@@ -142,7 +146,10 @@ globalThis[bridgeSymbol] = {
   registerConsumer(requirements) {
     assert(requirements.consumerId === "presence", "server activates through the Presence bridge identity");
     assert(requirements.require.includes("host.request"), "Presence requires the bridge host service");
-    assert(requirements.require.includes("host.lifecycle"), "Presence requires the bridge host lifecycle slot");
+    assert(requirements.require.includes("message.prepare"), "Presence requires the bridge native message preparation slot");
+    assert(requirements.require.includes("message.persist"), "Presence requires the bridge native message persisted slot");
+    assert(requirements.require.includes("chat.changed"), "Presence requires the bridge native chat change slot");
+    assert(!requirements.require.includes("host.lifecycle"), "Presence no longer requires the broad host lifecycle slot");
     const cleanups = [];
     return {
       signal: new AbortController().signal,
@@ -152,12 +159,24 @@ globalThis[bridgeSymbol] = {
           return response.payload ? JSON.parse(response.payload) : null;
         },
       },
-      lifecycle: {
+      messages: {
         register(input) {
-          for (const name of ["preHandler", "onSend", "onResponse"]) {
-            if (typeof input[name] === "function") registeredHooks.push({ name, handler: input[name] });
-          }
-          const cleanup = () => { registeredHooks.splice(0); };
+          registeredMessagePolicies.push(input);
+          const cleanup = () => {
+            const index = registeredMessagePolicies.indexOf(input);
+            if (index >= 0) registeredMessagePolicies.splice(index, 1);
+          };
+          cleanups.push(cleanup);
+          return cleanup;
+        },
+      },
+      chats: {
+        register(input) {
+          registeredChatPolicies.push(input);
+          const cleanup = () => {
+            const index = registeredChatPolicies.indexOf(input);
+            if (index >= 0) registeredChatPolicies.splice(index, 1);
+          };
           cleanups.push(cleanup);
           return cleanup;
         },
@@ -172,9 +191,11 @@ await activate({ app: hostApp, api: { runtime } });
 assert(registeredRoutes.includes("GET /chat/:chatId/state"), "state route registered");
 assert(registeredRoutes.includes("POST /chat/:chatId/command"), "command route registered");
 assert(registeredRoutes.includes("POST /chat/:chatId/ensure"), "ensure route registered");
-assert(registeredHooks.some((hook) => hook.name === "onSend"), "message save policy is registered through the bridge lifecycle slot");
-assert(registeredHooks.some((hook) => hook.name === "preHandler"), "generation capture policy is registered through the bridge lifecycle slot");
-assert(registeredHooks.some((hook) => hook.name === "onResponse"), "generation completion policy is registered through the bridge lifecycle slot");
+assert(registeredMessagePolicies.length === 1, "message save policy is registered through native message slots");
+assert(typeof registeredMessagePolicies[0].prepare === "function", "new messages use native pre-persist preparation");
+assert(typeof registeredMessagePolicies[0].afterPersist === "function", "message rewrites use the native persisted notification");
+assert(registeredChatPolicies.length === 1, "chat changes use the native chat change slot");
+assert(registeredHostHooks.length === 0, "Presence installs no broad Fastify lifecycle hook");
 
 const stateResponse = await registeredRouteHandlers.get("GET /chat/:chatId/state")(
   { params: { chatId: "chat-1" } },
@@ -199,14 +220,12 @@ const migrationEnsure = await registeredRouteHandlers.get("POST /chat/:chatId/en
 assert(migrationEnsure.roster.initializedMessages === 1, "ensure initializes missing positive records in package-era chats");
 assert(currentMessages[0].extra.marinaraPresence.presentCharacterIds.join(",") === "a", "package-era migration preserves native visibility");
 
-currentMessages.push({ id: "posted", role: "user", extra: {} });
-await registeredHooks.find((hook) => hook.name === "onSend").handler(
-  { method: "POST", url: "/api/chats/chat-1/messages" },
-  { statusCode: 200 },
-  JSON.stringify({ id: "posted", chatId: "chat-1", role: "user", extra: {} }),
-);
+const postedInput = { chatId: "chat-1", role: "user", content: "Private", extra: { submissionId: "submission-1" } };
+const postedPatch = await registeredMessagePolicies[0].prepare({ input: postedInput });
+currentMessages.push({ id: "posted", ...postedInput, ...postedPatch });
 assert(currentMessages.find((message) => message.id === "posted").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "post-only message stores active positive presence");
 assert(currentMessages.find((message) => message.id === "posted").extra.hiddenFromAICharacterIds.join(",") === "b", "post-only message projects native hidden IDs");
+assert(currentMessages.find((message) => message.id === "posted").extra.submissionId === "submission-1", "native preparation preserves unrelated message extras");
 
 await registeredRouteHandlers.get("PATCH /chat/:chatId/settings")(
   { params: { chatId: "chat-1" }, body: { alwaysPresentCharacterIds: ["b"] } },
@@ -220,21 +239,36 @@ testChat = {
   metadata: { ...testChat.metadata, marinaraPresencePackage: { ...testChat.metadata.marinaraPresencePackage, alwaysPresentCharacterIds: [] } },
 };
 currentMessages = [{ id: "before", role: "user", extra: { marinaraPresence: { presentCharacterIds: ["a", "b"] }, hiddenFromAICharacterIds: [] } }];
-const generateRequest = {
-  method: "POST",
-  url: "/api/generate",
-  body: { chatId: "chat-1", userMessage: "Hello", submissionId: "submission-1" },
-  headers: {},
-};
-await registeredHooks.find((hook) => hook.name === "preHandler").handler(generateRequest, {});
-currentMessages.push({ id: "generated-user", role: "user", extra: { submissionId: "submission-1", hiddenFromAICharacterIds: [] } });
-await waitForCondition(
-  () => currentMessages.find((message) => message.id === "generated-user")?.extra.marinaraPresence?.presentCharacterIds?.join(",") === "a",
-  "generated user message is stamped before completion",
-);
-currentMessages.push({ id: "generated-assistant", role: "assistant", characterId: "a", extra: { hiddenFromAICharacterIds: [] } });
-await registeredHooks.find((hook) => hook.name === "onResponse").handler(generateRequest, { statusCode: 200 });
+const generatedUserInput = { chatId: "chat-1", role: "user", extra: { submissionId: "submission-1" } };
+const generatedUserPatch = await registeredMessagePolicies[0].prepare({ input: generatedUserInput });
+currentMessages.push({ id: "generated-user", ...generatedUserInput, ...generatedUserPatch });
+assert(currentMessages.find((message) => message.id === "generated-user").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "generated user message is stamped before its native save");
+const generatedAssistantInput = { chatId: "chat-1", role: "assistant", characterId: "a", extra: {} };
+const generatedAssistantPatch = await registeredMessagePolicies[0].prepare({ input: generatedAssistantInput });
+currentMessages.push({ id: "generated-assistant", ...generatedAssistantInput, ...generatedAssistantPatch });
 assert(currentMessages.find((message) => message.id === "generated-assistant").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "generated assistant message is stamped");
+
+currentMessages = [{ id: "regenerated", chatId: "chat-1", role: "assistant", characterId: "a", extra: { hiddenFromAICharacterIds: [] } }];
+await registeredMessagePolicies[0].afterPersist({
+  chatId: "chat-1",
+  messageId: "regenerated",
+  swipeIndex: 1,
+  kind: "regenerate",
+  message: currentMessages[0],
+});
+assert(currentMessages[0].extra.marinaraPresence.presentCharacterIds.join(",") === "a", "regenerate updates existing message visibility after generation");
+
+currentMessages = [{ id: "history", role: "user", extra: { marinaraPresence: { presentCharacterIds: ["a"] }, hiddenFromAICharacterIds: ["b"] } }];
+testChat = { ...testChat, characterIds: ["a", "b"], metadata: { ...testChat.metadata, inactiveCharacterIds: [] } };
+const metadataWritesBeforeChatChange = metadataWriteCount;
+await registeredChatPolicies[0].onChanged({
+  chatId: "chat-1",
+  source: "metadata",
+  changedKeys: ["inactiveCharacterIds"],
+  chat: testChat,
+});
+assert(metadataWriteCount === metadataWritesBeforeChatChange + 1, "chat change callback runs roster reconciliation");
+assert(testChat.metadata.marinaraPresencePackage.rosterCharacterIds.join(",") === "a,b", "chat change callback reconciles the active roster");
 
 currentMessages = [
   { id: "positive", role: "user", extra: { hiddenFromAICharacterIds: [], marinaraPresence: { presentCharacterIds: ["a"] } } },
@@ -253,6 +287,9 @@ assert(!injectedRequests.some((request) => request.url.includes("summary") || re
 
 await selfCheck({ api: { runtime } });
 delete globalThis[bridgeSymbol];
+const serverRoutesSource = fs.readFileSync(new URL("../src/server/routes.js", import.meta.url), "utf8");
+assert(!serverRoutesSource.includes("stampGeneratedUserMessageSoon"), "Presence no longer polls for generated user messages");
+assert(!serverRoutesSource.includes("setTimeout"), "Presence server lifecycle contains no polling timer");
 console.log("Presence checks passed.");
 
 function replyStub() {
@@ -266,15 +303,6 @@ function replyStub() {
       return payload;
     },
   };
-}
-
-async function waitForCondition(predicate, message, timeoutMs = 1_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Presence check failed: ${message}`);
 }
 
 function assert(condition, message) {

@@ -9,7 +9,7 @@ assert(fs.existsSync(manifestPath), "dist/package/manifest.json exists");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const agents = JSON.parse(fs.readFileSync(path.join(packageRoot, "agents.json"), "utf8"));
 assert(manifest.id === "presence", "manifest id is presence");
-assert(manifest.version === "1.4.6", "manifest version is 1.4.6");
+assert(manifest.version === "1.4.8", "manifest version is 1.4.8");
 assert(manifest.engine?.min === "2.4.4" && manifest.engine?.maxExclusive === "2.4.5", "manifest matches the bridge-supported Engine release");
 assert(manifest.entrypoints?.server === "server.mjs", "server entrypoint declared");
 assert(manifest.entrypoints?.client === "client.js", "client entrypoint declared");

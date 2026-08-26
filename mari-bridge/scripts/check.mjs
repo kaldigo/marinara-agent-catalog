@@ -9,7 +9,8 @@ import { createAgentResultRegistry } from "../src/server/result-registry.js";
 import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
 import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
 import { createTurnHandoffRegistry, __test as turnHandoffTest } from "../src/server/turn-handoff-registry.js";
-import { createHostLifecycleRegistry } from "../src/server/host-lifecycle-registry.js";
+import { createMessageRegistry } from "../src/server/message-registry.js";
+import { createChatRegistry } from "../src/server/chat-registry.js";
 import {
   patchActiveChatEvents,
   patchAgentSuiteBridge,
@@ -26,7 +27,7 @@ import {
   prepareClientOverlay,
   versionAssetReferences,
 } from "../src/server/client-overlay.js";
-import { schedulePackageBootstrapRestart } from "../src/server/bootstrap-restart.js";
+import { schedulePackageBootstrapRestart, __test as bootstrapRestartTest } from "../src/server/bootstrap-restart.js";
 import { installBootstrapFile, requiresBootstrapHandoff } from "../src/server/bootstrap-install.js";
 import { MariBridgeUnavailableError } from "../src/shared/contracts.js";
 
@@ -188,18 +189,65 @@ assert.equal(escapedMarkerFilter.push("Visible &lt;next_spea"), "Visibl");
 assert.equal(escapedMarkerFilter.push("ker&gt;char-2&lt;/next_speaker&gt;"), "e ");
 assert.equal(escapedMarkerFilter.flush(), "");
 
-const lifecycleRegistry = createHostLifecycleRegistry();
-const lifecycleCalls = [];
-lifecycleRegistry.register("presence", {
-  id: "visibility",
-  preHandler: async (request) => lifecycleCalls.push(`pre:${request.url}`),
-  onSend: async (_request, _reply, payload) => `${payload}:presence`,
-  onResponse: async (request) => lifecycleCalls.push(`response:${request.url}`),
+const messageRegistry = createMessageRegistry();
+const persistedMessages = [];
+messageRegistry.register("presence", {
+  id: "active-presence",
+  prepare: ({ input }) => ({
+    extra: {
+      ...input.extra,
+      hiddenFromAICharacterIds: ["char-2"],
+      marinaraPresence: { presentCharacterIds: ["char-1"] },
+    },
+  }),
+  afterPersist: async (event) => persistedMessages.push(event),
 });
-await lifecycleRegistry.dispatch("preHandler", { url: "/api/generate" }, {});
-assert.equal(await lifecycleRegistry.dispatch("onSend", {}, {}, "payload"), "payload:presence");
-await lifecycleRegistry.dispatch("onResponse", { url: "/api/generate" }, {});
-assert.deepEqual(lifecycleCalls, ["pre:/api/generate", "response:/api/generate"]);
+const preparedMessage = await messageRegistry.prepareCreate({
+  chatId: "chat-1",
+  role: "user",
+  content: "Private turn",
+  extra: { submissionId: "submission-1" },
+});
+assert.deepEqual(preparedMessage.extra, {
+  submissionId: "submission-1",
+  hiddenFromAICharacterIds: ["char-2"],
+  marinaraPresence: { presentCharacterIds: ["char-1"] },
+});
+await messageRegistry.notifyPersisted({ chatId: "chat-1", messageId: "message-1", kind: "regenerate" });
+assert.deepEqual(persistedMessages, [{ chatId: "chat-1", messageId: "message-1", kind: "regenerate" }]);
+assert.deepEqual(messageRegistry.snapshot(), [{
+  ownerId: "presence",
+  id: "active-presence",
+  priority: 0,
+  callbacks: ["prepare", "afterPersist"],
+}]);
+
+const chatRegistry = createChatRegistry();
+const changedChats = [];
+chatRegistry.register("presence", {
+  id: "presence-roster",
+  onChanged: async (event) => changedChats.push(event),
+});
+await chatRegistry.notifyChanged({ chatId: "chat-1", source: "metadata", changedKeys: ["inactiveCharacterIds"] });
+assert.equal(changedChats[0].chatId, "chat-1");
+assert.deepEqual(changedChats[0].changedKeys, ["inactiveCharacterIds"]);
+
+const persistenceRuntime = createBridgeRuntime({
+  capabilities: ["chat.changed", "message.persist", "message.prepare"],
+  messageRegistry,
+  chatRegistry,
+});
+persistenceRuntime.markReady();
+const persistenceSession = persistenceRuntime.registerConsumer({
+  consumerId: "persistence-test",
+  api: { major: 1, minMinor: 7 },
+  require: ["chat.changed", "message.persist", "message.prepare"],
+});
+persistenceSession.messages.register({ id: "messages", prepare: () => null, afterPersist: () => {} });
+persistenceSession.chats.register({ id: "chats", onChanged: () => {} });
+assert.equal(persistenceSession.lifecycle, undefined);
+await persistenceSession.close();
+await persistenceRuntime.dispose();
 
 const clientSymbol = Symbol.for("marinara.mari-bridge.client.v1");
 const customElementDefinitions = new Map();
@@ -273,7 +321,7 @@ const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", impo
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.25");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.27");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -573,7 +621,8 @@ assert.equal((patchedChatInput.match(/setDraft:mariBridgeValue/gu) ?? []).length
 assert.equal((patchedChatInput.match(/setDraftGenerating:mariBridgeGenerating/gu) ?? []).length, 1);
 assert.match(patchedChatInput, /const mariBridgeDraftText=String/u);
 assert.equal((patchedChatInput.match(/stopDraft\(chat\)/gu) ?? []).length, 1);
-assert.match(patchedChatInput, /\.mari-chat-input textarea/u);
+assert.doesNotMatch(patchedChatInput, /querySelector/u);
+assert.match(patchedChatInput, /const mariBridgeTextarea=field\.current/u);
 assert.match(patchedChatInput, /dispatchEvent\(new Event\("input"/u);
 const slashCommandListFixture = 'const native=[{name:"help",description:"Show available slash commands"}];function available(item,ctx){return true}function games(value){return[]}function list(ctx={}){return[...native,...games(ctx.conversationGames)].filter(item=>available(item,ctx))}';
 const patchedSlashCommandList = patchSlashCommandListBridge(slashCommandListFixture);
@@ -685,7 +734,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.25"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.27"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -739,12 +788,12 @@ assert.deepEqual(await installBootstrapFile(bootstrapSource, bootstrapTarget), {
   changed: true,
 });
 assert.equal((await fs.readFile(bootstrapTarget, "utf8")).includes("marker = 2"), true);
-assert.equal(requiresBootstrapHandoff(null, true, "1.0.25"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.25" }, false, "1.0.25"), false);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.24" }, false, "1.0.25"), true);
-assert.equal(requiresBootstrapHandoff({ version: "1.0.25" }, true, "1.0.25"), true);
+assert.equal(requiresBootstrapHandoff(null, true, "1.0.27"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.27" }, false, "1.0.27"), false);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.26" }, false, "1.0.27"), true);
+assert.equal(requiresBootstrapHandoff({ version: "1.0.27" }, true, "1.0.27"), true);
 const kernelSymbol = Symbol.for("marinara.mari-bridge.kernel.v1");
-globalThis[kernelSymbol] = { active: true, version: "1.0.25", failures: [] };
+globalThis[kernelSymbol] = { active: true, version: "1.0.27", failures: [] };
 const installerHooks = [];
 const installer = await import(new URL(`../src/server/index.js?check=${Date.now()}`, import.meta.url));
 await installer.activate({
@@ -758,6 +807,8 @@ for (const relativePath of [
   "src/shared/contracts.js",
   "src/server/runtime.js",
   "src/server/turn-handoff-registry.js",
+  "src/server/message-registry.js",
+  "src/server/chat-registry.js",
   "src/server/client-overlay.js",
   "src/client/runtime.js",
 ]) {
@@ -767,6 +818,18 @@ assert.equal(installerHooks.some((hook) => hook.name === "onReady"), true);
 globalThis[kernelSymbol] = { active: true };
 const bootstrapResult = await schedulePackageBootstrapRestart({ dataDir: bootstrapFixtureRoot }, "unused.mjs");
 assert.deepEqual(bootstrapResult, { scheduled: false, reason: "preload-active" });
+assert.equal(
+  bootstrapRestartTest.withoutMariBridgeImports(
+    "--trace-warnings --import=file:///data/mari-bridge/bootstrap/register.mjs --enable-source-maps",
+  ),
+  "--trace-warnings --enable-source-maps",
+);
+assert.equal(
+  bootstrapRestartTest.withoutMariBridgeImports(
+    "--import file:///data/mari-bridge/bootstrap/register.mjs --max-old-space-size=4096",
+  ),
+  "--max-old-space-size=4096",
+);
 const bootstrapAttempt = JSON.parse(
   await fs.readFile(path.join(bootstrapFixtureRoot, "mari-bridge", "bootstrap-attempt.json"), "utf8"),
 );
@@ -838,6 +901,13 @@ assert.match(bootstrapPatchSource, /turn\.handoff-response-process/u);
 assert.match(bootstrapPatchSource, /turn\.handoff-commit/u);
 assert.match(bootstrapPatchSource, /const turnHandoffPatchApplied = groupSelectorPatchApplied/u);
 assert.match(bootstrapPatchSource, /turnHandoffPatchApplied \? \["turn\.handoff"\]/u);
+assert.match(bootstrapPatchSource, /message\.prepare-create/u);
+assert.match(bootstrapPatchSource, /messagePreparePatchApplied \? \["message\.prepare"\]/u);
+assert.match(bootstrapPatchSource, /message\.persist-generate/u);
+assert.match(bootstrapPatchSource, /messagePersistPatchApplied \? \["message\.persist"\]/u);
+assert.match(bootstrapPatchSource, /chat\.changed-root/u);
+assert.match(bootstrapPatchSource, /chatChangedPatchApplied \? \["chat\.changed"\]/u);
+assert.doesNotMatch(bootstrapPatchSource, /host\.lifecycle|createHostLifecycleRegistry/u);
 assert.match(bootstrapPatchSource, /\/api\/mari-bridge\/turn-handoff\/:chatId/u);
 assert.match(bootstrapPatchSource, /status: initializing \? "initializing" : "unavailable"/u);
 assert.match(
@@ -869,6 +939,54 @@ assert.match(patchedPackageStartup, /bridgeStartupError/u);
 assert.match(patchedPackageStartup, /startsWith\("Mari Bridge "\)/u);
 assert.match(patchedPackageStartup, /this\.activateOne\(app, \{ installed \}, false, false\)/u);
 assert.equal(globalThis[kernelSymbol].patches["packages.client-only-updates"], "applied");
+
+const chatsStorageFixture = `export class ChatsStorage {
+    async createMessage(input, timestampOverrides) {
+      return { input, timestampOverrides };
+    }
+}`;
+const patchedChatsStorage = patchServerModule(
+  "file:///engine/services/storage/chats.storage.js",
+  chatsStorageFixture,
+);
+assert.match(patchedChatsStorage, /messageHooks\?\.prepareCreate\(input\)/u);
+assert.equal(globalThis[kernelSymbol].patches["message.prepare-create"], "applied");
+
+const chatsRouteFixture = `export function register(app, storage, logger) {
+  app.patch("/:id", async (req) => {
+    const data = req.body;
+    const existing = await storage.getById(req.params.id);
+    const updated = await storage.update(req.params.id, data);
+    return updated;
+  });
+  app.patch("/:id/metadata", async (req) => {
+    const chat = await storage.getById(req.params.id);
+    const incoming = req.body;
+    const updated = await storage.patchMetadata(req.params.id, incoming);
+    return updated;
+  });
+}`;
+const patchedChatsRoute = patchServerModule("file:///engine/routes/chats.routes.js", chatsRouteFixture);
+assert.match(patchedChatsRoute, /chatHooks\?\.notifyChanged/u);
+assert.match(patchedChatsRoute, /source: "chat"/u);
+assert.match(patchedChatsRoute, /source: "metadata"/u);
+assert.equal(globalThis[kernelSymbol].patches["chat.changed-root"], "applied");
+assert.equal(globalThis[kernelSymbol].patches["chat.changed-metadata"], "applied");
+
+const generatePersistFixture = `async function persist(input, savedMsg, savedSwipeIndex) {
+          if (
+            savedMsg?.id &&
+            savedSwipeIndex !== null &&
+            !shouldSuppressAssistantSpatialMutation(input) &&
+            hierarchicalMapsEnabledForChat
+          ) {
+            await materializeAssistantSpatialState();
+          }
+}`;
+const patchedGeneratePersist = patchServerModule("file:///engine/routes/generate.routes.js", generatePersistFixture);
+assert.match(patchedGeneratePersist, /messageHooks\?\.notifyPersisted/u);
+assert.match(patchedGeneratePersist, /kind: input\.regenerateMessageId \? "regenerate" : input\.continueMessageId \? "continue" : "create"/u);
+assert.equal(globalThis[kernelSymbol].patches["message.persist-generate"], "applied");
 
 const macroEngineFixture = `
 function replaceBalancedMacros(input, replacer) {
@@ -926,12 +1044,12 @@ assert.equal(
     {
       groupMode: "INDIVIDUAL",
       groupScenarioOverride: "At {{outlet::place}}",
-      activeAgents: ["gm-notes", "presence"],
+      activeAgents: ["custom-tracker", "presence"],
       characterFields: { description: "Clue: {{outlet::clue}} ({{group_mode}})" },
       outlets: { place: "the inn", clue: "the key is missing" },
     },
   ),
-  "INDIVIDUAL|At the inn|gm-notes,presence|Clue: the key is missing (INDIVIDUAL)",
+  "INDIVIDUAL|At the inn|custom-tracker,presence|Clue: the key is missing (INDIVIDUAL)",
 );
 assert.equal(
   patchedMacroEngine.resolveMacros("{{group_mode}}|{{group_scenario_override}}", {}),
@@ -948,8 +1066,8 @@ for (const mode of ["SOLO", "MERGED", "INDIVIDUAL"]) {
 }
 assert.equal(
   patchedMacroEngine.resolveMacros(
-    '{{#if active-agents contains "gm-notes"}}ACTIVE{{else}}INACTIVE{{/if}}|{{#if group_scenario_override}}SCENARIO{{else}}NONE{{/if}}',
-    { activeAgents: ["gm-notes", "presence"], groupScenarioOverride: "Shared scenario" },
+    '{{#if active-agents contains "custom-tracker"}}ACTIVE{{else}}INACTIVE{{/if}}|{{#if group_scenario_override}}SCENARIO{{else}}NONE{{/if}}',
+    { activeAgents: ["custom-tracker", "presence"], groupScenarioOverride: "Shared scenario" },
   ),
   "ACTIVE|SCENARIO",
 );
@@ -960,11 +1078,11 @@ assert.equal(
     {
       groupMode: "MERGED",
       groupScenarioOverride: "Shared scenario",
-      activeAgents: ["gm-notes"],
+      activeAgents: ["custom-tracker"],
       variables: {},
     },
   ),
-  "MERGED|Shared scenario|gm-notes|Nested MERGED",
+  "MERGED|Shared scenario|custom-tracker|Nested MERGED",
 );
 
 const macroContextFixture = `export function build(input) {
@@ -980,12 +1098,12 @@ const patchedMacroContext = await import(
   `data:text/javascript;base64,${Buffer.from(patchedMacroContextFixture).toString("base64")}`
 );
 assert.deepEqual(patchedMacroContext.build({
-  activeAgentIds: [" gm-notes ", "gm-notes", "presence"],
+  activeAgentIds: [" custom-tracker ", "custom-tracker", "presence"],
   groupScenarioOverrideText: "Shared scenario",
   groupMode: "merged",
 }), {
   timeZone: undefined,
-  activeAgents: ["gm-notes", "presence"],
+  activeAgents: ["custom-tracker", "presence"],
   groupScenarioOverride: "Shared scenario",
   groupMode: "MERGED",
 });

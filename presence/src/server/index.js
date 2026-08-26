@@ -1,18 +1,18 @@
-import { createPresenceRoutes, registerPresenceMessageCreateHook } from "./routes.js";
+import { createPresenceRoutes, registerPresenceHooks } from "./routes.js";
 import { activateWithMariBridge } from "../../../_mari-bridge/sdk/server.js";
 
-export { createPresenceRoutes, registerPresenceMessageCreateHook } from "./routes.js";
+export { createPresenceRoutes, registerPresenceHooks } from "./routes.js";
 
 export async function activate(context) {
   return activateWithMariBridge(
     context,
     {
       consumerId: "presence",
-      api: { major: 1, minMinor: 2 },
-      require: ["consumer.sessions", "host.lifecycle", "host.request", "runtime.health"],
+      api: { major: 1, minMinor: 7 },
+      require: ["chat.changed", "consumer.sessions", "host.request", "message.persist", "message.prepare", "runtime.health"],
     },
     async (bridgeSession) => {
-      registerPresenceMessageCreateHook({ app: context.app, runtime: context.api.runtime, bridgeSession });
+      registerPresenceHooks({ runtime: context.api.runtime, bridgeSession });
       await context.app.register(
         async (app) => {
           createPresenceRoutes({ app, runtime: context.api.runtime, bridgeSession });

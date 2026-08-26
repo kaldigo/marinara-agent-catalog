@@ -388,7 +388,7 @@ SSE parsing and JSON-stream helpers remain private to the narrow native draft
 adapter used by Better Impersonate. They are not a general package generation
 API. The old fetch-interceptor pipeline is not retained.
 
-## Chat and host lifecycle
+## Chat lifecycle and persistence
 
 Replace active-chat polling with events from exact native call sites:
 
@@ -398,13 +398,15 @@ bridgeSession.chat.active.subscribe(listener);
 bridgeSession.chat.background.set({ chatId, url, blurPx });
 bridgeSession.chat.spatial.getSnapshot(chatId);
 bridgeSession.chat.spatial.subscribe(listener);
-bridgeSession.lifecycle.register(listener);
+bridgeSession.messages.register({ id, prepare, afterPersist });
+bridgeSession.chats.register({ id, onChanged });
 ```
 
-Chat events include the active chat ID and workflow. Host lifecycle events are
-added only for an active consumer and carry structured native state. Presence
-uses these events for roster/message reconciliation and writes Marinara's native
-message visibility fields. Presence does not observe or alter summaries.
+Chat events include the active chat ID and workflow. Message and chat
+persistence callbacks run only at their exact native save boundaries and carry
+structured IDs, changed keys, and saved records. Presence uses these callbacks
+for roster/message reconciliation and writes Marinara's native message
+visibility fields. Presence does not observe or alter summaries.
 
 `chat.background` is active-chat scoped. Mari Bridge binds Marinara's existing
 Roleplay background store at its native selector, and `set` delegates to the
