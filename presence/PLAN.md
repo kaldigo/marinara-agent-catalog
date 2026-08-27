@@ -4,36 +4,32 @@
 
 - Expose Presence as a tracker feature agent.
 - Run only in chats where the Presence tracker is enabled.
-- Own message attendance and its native Hide From AI projection.
+- Use native per-character Hide From AI state as the sole message authority.
 - Leave native chat summaries entirely unchanged.
 
 ## Data Model
 
-Each stamped message stores positive attendance:
+Each stamped message uses Marinara's native negative visibility list:
 
 ```json
 {
-  "marinaraPresence": {
-    "version": 1,
-    "presentCharacterIds": ["char-a"],
-    "updatedAt": "2026-08-17T00:00:00.000Z"
-  },
   "hiddenFromAICharacterIds": ["char-b"]
 }
 ```
 
-The positive record is Presence's source of truth. `hiddenFromAICharacterIds` is the native projection consumed by Marinara.
+`hiddenFromAICharacterIds` is both the source of truth and the field consumed by Marinara. Chat metadata stores only a monotonic known-character set for detecting new members and the configured omnipresent IDs.
 
 ## Behavior
 
 - Stamp post-only, generated user, assistant, and narrator messages with the active roster.
 - Preserve attendance on regenerate and continue.
-- Initialize older chats when Presence is enabled.
-- Backfill newly added characters as absent from historical messages.
+- Seed the known-character set without rewriting history when Presence is enabled.
+- Backfill genuinely new characters as absent from historical messages.
 - Preserve global Hide From AI and non-roster hidden IDs.
-- Union always-present characters into existing and future message attendance.
-- Provide per-message and range mutation handlers.
-- Provide `/presence resync` to rebuild native hidden IDs from positive attendance.
+- Remove only newly omnipresent characters from existing hidden lists and keep them visible in future messages.
+- Preserve native visibility on regenerate and continue.
+- Provide target-only per-message and range mutation handlers.
+- Provide `/presence resync` to repeat new-character backfill and omnipresent repair.
 
 ## Integration
 
@@ -53,8 +49,8 @@ The positive record is Presence's source of truth. `hiddenFromAICharacterIds` is
 
 - Marinara owns chat membership, agent enablement, the settings card, message
   persistence, and the native Hide From AI projection.
-- Presence owns only its positive attendance record and the reconciliation
-  needed to keep the native projection correct.
+- Presence owns only targeted native visibility mutations and the reconciliation
+  needed for newly added and omnipresent characters.
 - No DOM observers, repeated message scans, button probing, or package-local
   copies of native settings and generation behavior.
 - Verify enable/disable isolation, newly added characters, regenerate,

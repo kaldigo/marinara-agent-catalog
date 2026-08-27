@@ -28,6 +28,9 @@ export async function selfCheck(context) {
   if (typeof context?.api?.runtime?.persistence?.getChat !== "function") {
     throw new Error("Presence persistence host is unavailable.");
   }
+  if (typeof context?.api?.runtime?.persistence?.withChatLock !== "function") {
+    throw new Error("Presence chat metadata lock is unavailable.");
+  }
   if (typeof context?.api?.runtime?.resources?.listCharacters !== "function") {
     throw new Error("Presence resource host is unavailable.");
   }

@@ -7,7 +7,9 @@ export function readPresenceChatState(chat) {
   return {
     version: PRESENCE_SCHEMA_VERSION,
     alwaysPresentCharacterIds: uniqueStrings(state.alwaysPresentCharacterIds),
-    rosterCharacterIds: uniqueStrings(state.rosterCharacterIds),
+    knownCharacterIds: uniqueStrings(
+      Array.isArray(state.knownCharacterIds) ? state.knownCharacterIds : state.rosterCharacterIds,
+    ),
     updatedAt: typeof state.updatedAt === "string" ? state.updatedAt : null,
   };
 }

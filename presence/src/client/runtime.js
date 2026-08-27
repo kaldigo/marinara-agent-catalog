@@ -11,6 +11,9 @@ const cleanupPresenceClient = await activateClientWithMariBridge(
   },
   async (bridgeSession) => {
     class PresenceElement extends HTMLElement {
+      savingCharacterIds = new Set();
+      renderVersion = 0;
+
       connectedCallback() {
         this.addEventListener("marinara-capability-props", this);
         this.addEventListener("click", this);
@@ -36,14 +39,18 @@ const cleanupPresenceClient = await activateClientWithMariBridge(
           : bridgeSession.chat.active.getSnapshot().chatId || "";
       }
       async render() {
-        if (this.getAttribute("view") !== "settings" || !this.chatId) {
+        const version = ++this.renderVersion;
+        const chatId = this.chatId;
+        if (this.getAttribute("view") !== "settings" || !chatId) {
           this.hidden = true;
           this.replaceChildren();
           return;
         }
         this.hidden = false;
         try {
-          this.data = await request(`/chat/${encodeURIComponent(this.chatId)}/state`);
+          const data = await request(`/chat/${encodeURIComponent(chatId)}/state`);
+          if (version !== this.renderVersion || chatId !== this.chatId) return;
+          this.data = data;
           const selected = new Set(uniqueStrings(this.data?.state?.alwaysPresentCharacterIds));
           const roster = Array.isArray(this.data?.roster) ? this.data.roster : [];
           this.innerHTML = `<section class="rounded-lg bg-[var(--background)]/75 p-3 ring-1 ring-[var(--border)]">
@@ -53,19 +60,29 @@ const cleanupPresenceClient = await activateClientWithMariBridge(
             </div>
           </section>`;
         } catch (error) {
+          if (version !== this.renderVersion || chatId !== this.chatId) return;
           this.innerHTML = `<p class="text-xs text-[var(--destructive)]">Presence settings could not load: ${escapeHtml(error instanceof Error ? error.message : String(error))}</p>`;
         }
       }
       async toggle(characterId) {
-        if (!characterId || !this.data) return;
+        if (!characterId || !this.data || this.savingCharacterIds.has(characterId)) return;
+        const chatId = this.chatId;
+        if (!chatId || this.data.chatId !== chatId) return;
         const selected = new Set(uniqueStrings(this.data?.state?.alwaysPresentCharacterIds));
-        if (selected.has(characterId)) selected.delete(characterId);
-        else selected.add(characterId);
-        await request(`/chat/${encodeURIComponent(this.chatId)}/settings`, {
-          method: "PATCH",
-          body: { alwaysPresentCharacterIds: [...selected] },
-        });
-        await this.render();
+        const alwaysPresent = !selected.has(characterId);
+        this.savingCharacterIds.add(characterId);
+        try {
+          const result = await request(`/chat/${encodeURIComponent(chatId)}/settings`, {
+            method: "PATCH",
+            body: { characterId, alwaysPresent },
+          });
+          if (chatId === this.chatId) {
+            this.data = { ...this.data, state: result.state };
+            await this.render();
+          }
+        } finally {
+          this.savingCharacterIds.delete(characterId);
+        }
       }
     }
 

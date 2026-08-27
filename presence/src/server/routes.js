@@ -1,6 +1,14 @@
 import { readPresenceChatState, writePresenceChatState } from "../shared/chat-state.js";
 import { PRESENCE_PACKAGE_ID } from "../shared/constants.js";
-import { buildPresenceExtraPatch, normalizeObject, readPresenceState, uniqueStrings } from "../shared/presence-state.js";
+import {
+  assertVisibilityPatchScope,
+  buildPresenceExtraPatch,
+  buildVisibilityDeltaPatch,
+  normalizeObject,
+  readPresenceState,
+  uniqueStrings,
+  visibilityPatchChanges,
+} from "../shared/presence-state.js";
 import { planRosterBackfill } from "../shared/roster.js";
 import { parseMessageRange } from "../shared/message-range.js";
 import { createPresenceCommandRouter } from "./command-router.js";
@@ -60,7 +68,11 @@ export function createPresenceRoutes({ app, runtime, bridgeSession }) {
       presentCharacterIds: uniqueStrings(body.presentCharacterIds),
       alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
     });
-    await patchMessageExtra(bridgeSession, req.params.chatId, req.params.messageId, patch);
+    await patchMessageExtra(bridgeSession, req.params.chatId, req.params.messageId, patch, {
+      previousExtra: message.extra,
+      allowedCharacterIds: rosterIds,
+      operation: "Explicit message-presence edit",
+    });
     return { ok: true, patch };
   });
 
@@ -71,11 +83,15 @@ export function createPresenceRoutes({ app, runtime, bridgeSession }) {
       return reply.status(409).send({ error: "Presence tracker is not enabled for this chat." });
     }
     const body = normalizeObject(req.body);
+    if (typeof body.characterId !== "string" || typeof body.alwaysPresent !== "boolean") {
+      return reply.status(400).send({ error: "characterId and boolean alwaysPresent are required" });
+    }
     const result = await updatePresenceChatSettings({
       bridgeSession,
       runtime,
       chat,
-      alwaysPresentCharacterIds: uniqueStrings(body.alwaysPresentCharacterIds),
+      characterId: body.characterId,
+      alwaysPresent: body.alwaysPresent,
     });
     const freshChat = (await persistence.getChat(req.params.chatId)) || chat;
     return { ok: true, state: readPresenceChatState(freshChat), ...result };
@@ -121,6 +137,12 @@ async function prepareCreatedMessage({ runtime, input }) {
     presentCharacterIds: resolveActiveRosterIds(chat),
     alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
   });
+  assertVisibilityPatchScope({
+    extra,
+    patch,
+    allowedCharacterIds: uniqueStrings(chat.characterIds),
+    operation: "New-message presence stamp",
+  });
   return { extra: { ...extra, ...patch } };
 }
 
@@ -129,29 +151,24 @@ async function applyPersistedMessagePresence({ bridgeSession, runtime, event }) 
   if (!event.chatId || !event.message?.id || !isStampableMessageRole(event.message.role)) return;
   const chat = await runtime.persistence.getChat(event.chatId);
   if (!chat || !isPresenceTrackerEnabled(chat)) return;
-  await stampMessageWithActivePresence({ bridgeSession, chat, message: event.message, overwriteExisting: true });
-}
-
-async function stampMessageWithActivePresence({ bridgeSession, chat, message, overwriteExisting }) {
-  if (!message?.id) return;
-  const extra = normalizeObject(message.extra);
-  if (!overwriteExisting && hasPositivePresence(message)) return;
-  const rosterIds = uniqueStrings(chat.characterIds);
-  const presentCharacterIds = !overwriteExisting && Array.isArray(extra.hiddenFromAICharacterIds)
-    ? [...readPresenceState(message, rosterIds)]
-    : resolveActiveRosterIds(chat);
-  const patch = buildPresenceExtraPatch({
+  const extra = normalizeObject(event.message.extra);
+  if (extra.hiddenFromAI === true) return;
+  const patch = buildVisibilityDeltaPatch({
     extra,
-    rosterIds,
-    presentCharacterIds,
-    alwaysPresentCharacterIds: resolveAlwaysPresentRosterIds(chat),
+    visibleCharacterIds: resolveAlwaysPresentRosterIds(chat),
   });
-  await patchMessageExtra(bridgeSession, chat.id, message.id, patch);
+  if (visibilityPatchChanges(extra, patch)) {
+    await patchMessageExtra(bridgeSession, chat.id, event.message.id, patch, {
+      previousExtra: extra,
+      allowedCharacterIds: resolveAlwaysPresentRosterIds(chat),
+      operation: "Regenerate/continue omnipresent repair",
+    });
+  }
 }
 
 async function applyChangedChatPresence({ bridgeSession, runtime, event }) {
   if (!event.chatId || !event.changedKeys?.some((key) => PRESENCE_CHAT_KEYS.has(key))) return;
-  const chat = event.chat ?? await runtime.persistence.getChat(event.chatId);
+  const chat = await runtime.persistence.getChat(event.chatId);
   if (chat && isPresenceTrackerEnabled(chat)) await ensurePresenceChatLifecycle({ bridgeSession, runtime, chat });
 }
 
@@ -181,87 +198,93 @@ async function ensurePresenceChatLifecycle({ bridgeSession, runtime, chat }) {
 async function reconcileRoster({ bridgeSession, runtime, chat }) {
   const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
   const state = readPresenceChatState(chat);
-  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds.filter((id) => rosterIds.includes(id));
+  const alwaysPresentCharacterIds = state.alwaysPresentCharacterIds;
   const messages = await runtime.persistence.listMessages(chat.id);
-  if (state.rosterCharacterIds.length === 0) {
-    let patchedMessages = 0;
-    for (const message of Array.isArray(messages) ? messages : []) {
-      if (!message?.id || normalizeObject(message.extra).hiddenFromAI === true) continue;
-      await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
-        extra: message.extra,
-        rosterIds,
-        presentCharacterIds: [...readPresenceState(message, rosterIds)],
-        alwaysPresentCharacterIds,
-      }));
-      patchedMessages += 1;
-    }
-    const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
-    await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds, alwaysPresentCharacterIds });
-    return { addedCharacterIds: [], patchedMessages, initialized: true };
+  if (state.knownCharacterIds.length === 0) {
+    await patchChatState(runtime.persistence, chat.id, { knownCharacterIds: rosterIds });
+    return { addedCharacterIds: [], patchedMessages: 0, initialized: true };
   }
   const backfill = planRosterBackfill({
-    previousRosterIds: state.rosterCharacterIds,
+    knownCharacterIds: state.knownCharacterIds,
     currentRosterIds: rosterIds,
     messages,
     alwaysPresentCharacterIds,
   });
-  let initializedMessages = 0;
-  if (backfill.addedCharacterIds.length === 0) {
-    for (const message of Array.isArray(messages) ? messages : []) {
-      if (!message?.id || hasPositivePresence(message) || normalizeObject(message.extra).hiddenFromAI === true) continue;
-      await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
-        extra: message.extra,
-        rosterIds,
-        presentCharacterIds: [...readPresenceState(message, state.rosterCharacterIds)],
-        alwaysPresentCharacterIds,
-      }));
-      initializedMessages += 1;
-    }
-  }
   for (const patch of backfill.messagePatches) {
-    await patchMessageExtra(bridgeSession, chat.id, patch.messageId, patch.patch);
+    await patchMessageExtra(bridgeSession, chat.id, patch.messageId, patch.patch, {
+      previousExtra: patch.previousExtra,
+      allowedCharacterIds: patch.allowedCharacterIds,
+      operation: "New-character backfill",
+    });
   }
-  const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
-  await patchChatState(runtime.persistence, freshChat, { rosterCharacterIds: rosterIds, alwaysPresentCharacterIds });
+  const knownCharacterIds = uniqueStrings([...state.knownCharacterIds, ...rosterIds]);
+  if (knownCharacterIds.length !== state.knownCharacterIds.length) {
+    await patchChatState(runtime.persistence, chat.id, { knownCharacterIds });
+  }
   return {
     addedCharacterIds: backfill.addedCharacterIds,
-    patchedMessages: backfill.messagePatches.length + initializedMessages,
-    initializedMessages,
+    patchedMessages: backfill.messagePatches.length,
   };
 }
 
-async function updatePresenceChatSettings({ bridgeSession, runtime, chat, alwaysPresentCharacterIds }) {
+async function updatePresenceChatSettings({
+  bridgeSession,
+  runtime,
+  chat,
+  characterId,
+  alwaysPresent,
+}) {
   const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
-  const normalizedAlwaysPresent = uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterIds.includes(id));
-  await patchChatState(runtime.persistence, chat, { alwaysPresentCharacterIds: normalizedAlwaysPresent });
+  if (characterId && !rosterIds.includes(characterId)) throw new Error(`Character not found: ${characterId}`);
+  let previousAlwaysPresent = [];
+  let normalizedAlwaysPresent = [];
+  await patchChatState(runtime.persistence, chat.id, (state) => {
+    previousAlwaysPresent = state.alwaysPresentCharacterIds;
+    const next = new Set(previousAlwaysPresent);
+    if (characterId) {
+      if (alwaysPresent) next.add(characterId);
+      else next.delete(characterId);
+    }
+    normalizedAlwaysPresent = [...next];
+    return { alwaysPresentCharacterIds: normalizedAlwaysPresent };
+  });
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
+  const previous = new Set(previousAlwaysPresent);
+  const newlyEnabled = normalizedAlwaysPresent.filter((id) => !previous.has(id));
   const patchedMessages = await enforceAlwaysPresentOnMessages({
     bridgeSession,
     runtime,
     chat: freshChat,
-    rosterIds,
-    alwaysPresentCharacterIds: normalizedAlwaysPresent,
+    characterIds: newlyEnabled,
   });
   return { alwaysPresentCharacterIds: normalizedAlwaysPresent, patchedMessages };
 }
 
-async function enforceAlwaysPresentOnMessages({ bridgeSession, runtime, chat, rosterIds, alwaysPresentCharacterIds }) {
-  const forced = new Set(uniqueStrings(alwaysPresentCharacterIds).filter((id) => rosterIds.includes(id)));
-  if (!forced.size) return 0;
+async function enforceAlwaysPresentOnMessages({ bridgeSession, runtime, chat, characterIds }) {
+  const visibleCharacterIds = uniqueStrings(characterIds);
+  if (!visibleCharacterIds.length) return 0;
   let patched = 0;
   const messages = await runtime.persistence.listMessages(chat.id);
+  const planned = [];
   for (const message of Array.isArray(messages) ? messages : []) {
-    if (!message?.id || normalizeObject(message.extra).hiddenFromAI === true) continue;
-    const present = readPresenceState(message, rosterIds);
-    const beforeSize = present.size;
-    for (const characterId of forced) present.add(characterId);
-    if (present.size === beforeSize && hasPositivePresence(message)) continue;
-    await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
-      extra: message.extra,
-      rosterIds,
-      presentCharacterIds: [...present],
-      alwaysPresentCharacterIds,
-    }));
+    const extra = normalizeObject(message?.extra);
+    if (!message?.id || extra.hiddenFromAI === true) continue;
+    const patch = buildVisibilityDeltaPatch({ extra, visibleCharacterIds });
+    if (!visibilityPatchChanges(extra, patch)) continue;
+    assertVisibilityPatchScope({
+      extra,
+      patch,
+      allowedCharacterIds: visibleCharacterIds,
+      operation: "Omnipresent history repair",
+    });
+    planned.push({ messageId: message.id, previousExtra: extra, patch });
+  }
+  for (const item of planned) {
+    await patchMessageExtra(bridgeSession, chat.id, item.messageId, item.patch, {
+      previousExtra: item.previousExtra,
+      allowedCharacterIds: visibleCharacterIds,
+      operation: "Omnipresent history repair",
+    });
     patched += 1;
   }
   return patched;
@@ -278,19 +301,31 @@ async function setPresenceForRange({ bridgeSession, runtime, chat, hidden, chara
   if (!target) throw new Error(`Character not found: ${characterName || "(missing)"}`);
   const messages = await runtime.persistence.listMessages(chat.id);
   const selected = parseMessageRange(rangeTokens, messages);
-  const rosterIds = roster.map((character) => character.id);
   const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
   const targetIsAlwaysPresent = alwaysPresentCharacterIds.includes(target.id);
+  const planned = [];
   for (const message of selected) {
-    const present = readPresenceState(message, rosterIds);
-    if (hidden && !targetIsAlwaysPresent) present.delete(target.id);
-    else present.add(target.id);
-    await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
+    const patch = buildVisibilityDeltaPatch({
       extra: message.extra,
-      rosterIds,
-      presentCharacterIds: [...present],
-      alwaysPresentCharacterIds,
-    }));
+      hiddenCharacterIds: hidden && !targetIsAlwaysPresent ? [target.id] : [],
+      visibleCharacterIds: !hidden || targetIsAlwaysPresent ? [target.id] : [],
+    });
+    if (visibilityPatchChanges(message.extra, patch)) {
+      assertVisibilityPatchScope({
+        extra: message.extra,
+        patch,
+        allowedCharacterIds: [target.id],
+        operation: "Scoped Presence range edit",
+      });
+      planned.push({ messageId: message.id, previousExtra: message.extra, patch });
+    }
+  }
+  for (const item of planned) {
+    await patchMessageExtra(bridgeSession, chat.id, item.messageId, item.patch, {
+      previousExtra: item.previousExtra,
+      allowedCharacterIds: [target.id],
+      operation: "Scoped Presence range edit",
+    });
   }
   return {
     ok: true,
@@ -300,41 +335,20 @@ async function setPresenceForRange({ bridgeSession, runtime, chat, hidden, chara
 }
 
 async function resyncPresenceChat({ bridgeSession, runtime, chat }) {
-  const rosterIds = (await resolveRoster(runtime, chat)).map((character) => character.id);
-  const alwaysPresentCharacterIds = resolveAlwaysPresentRosterIds(chat);
-  const messages = await runtime.persistence.listMessages(chat.id);
-  let updated = 0;
-  let skippedGlobal = 0;
-  for (const message of Array.isArray(messages) ? messages : []) {
-    if (!message?.id) continue;
-    if (normalizeObject(message.extra).hiddenFromAI === true) {
-      skippedGlobal += 1;
-      continue;
-    }
-    const present = readPresenceState(message, rosterIds);
-    await patchMessageExtra(bridgeSession, chat.id, message.id, buildPresenceExtraPatch({
-      extra: message.extra,
-      rosterIds,
-      presentCharacterIds: [...present],
-      alwaysPresentCharacterIds,
-    }));
-    updated += 1;
-  }
+  const roster = await reconcileRoster({ bridgeSession, runtime, chat });
   const freshChat = (await runtime.persistence.getChat(chat.id)) || chat;
-  await patchChatState(runtime.persistence, freshChat, {
-    rosterCharacterIds: rosterIds,
-    alwaysPresentCharacterIds,
+  const updated = await enforceAlwaysPresentOnMessages({
+    bridgeSession,
+    runtime,
+    chat: freshChat,
+    characterIds: readPresenceChatState(freshChat).alwaysPresentCharacterIds,
   });
   return {
     ok: true,
-    feedback: `Resynced Presence on ${updated} message${updated === 1 ? "" : "s"}.${skippedGlobal ? ` Left ${skippedGlobal} globally hidden message${skippedGlobal === 1 ? "" : "s"} unchanged.` : ""}`,
+    feedback: `Reconciled ${roster.addedCharacterIds.length} new character${roster.addedCharacterIds.length === 1 ? "" : "s"} and repaired omnipresent access on ${updated} message${updated === 1 ? "" : "s"}.`,
     updated,
-    skippedGlobal,
+    addedCharacterIds: roster.addedCharacterIds,
   };
-}
-
-function hasPositivePresence(message) {
-  return Array.isArray(normalizeObject(normalizeObject(message?.extra).marinaraPresence).presentCharacterIds);
 }
 
 async function resolveRoster(runtime, chat, bridgeSession = null) {
@@ -386,7 +400,14 @@ function readCharacterDisplay(data) {
   };
 }
 
-async function patchMessageExtra(bridgeSession, chatId, messageId, patch) {
+async function patchMessageExtra(bridgeSession, chatId, messageId, patch, guard) {
+  if (!guard) throw new Error("Presence refused an unguarded message visibility write");
+  assertVisibilityPatchScope({
+    extra: guard.previousExtra,
+    patch,
+    allowedCharacterIds: guard.allowedCharacterIds,
+    operation: guard.operation,
+  });
   return injectJson(
     bridgeSession,
     "PATCH",
@@ -395,9 +416,16 @@ async function patchMessageExtra(bridgeSession, chatId, messageId, patch) {
   );
 }
 
-async function patchChatState(persistence, chat, statePatch) {
-  const metadata = writePresenceChatState(chat.metadata, statePatch);
-  await persistence.updateChatMetadata({ chatId: chat.id, metadata, updatedAt: new Date().toISOString() });
+async function patchChatState(persistence, chatId, statePatch) {
+  return persistence.withChatLock(chatId, async () => {
+    const chat = await persistence.getChat(chatId);
+    if (!chat) return null;
+    const currentState = readPresenceChatState(chat);
+    const resolvedPatch = typeof statePatch === "function" ? statePatch(currentState) : statePatch;
+    const metadata = writePresenceChatState(chat.metadata, resolvedPatch);
+    await persistence.updateChatMetadata({ chatId, metadata, updatedAt: new Date().toISOString() });
+    return readPresenceChatState({ metadata });
+  });
 }
 
 async function injectJson(bridgeSession, method, url, payload) {

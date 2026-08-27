@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import { createHideCommandOwner } from "../src/shared/message-range.js";
 import { readPresenceChatState } from "../src/shared/chat-state.js";
-import { buildPresenceExtraPatch, readPresenceState } from "../src/shared/presence-state.js";
+import {
+  assertVisibilityPatchScope,
+  buildPresenceExtraPatch,
+  buildVisibilityDeltaPatch,
+  readPresenceState,
+} from "../src/shared/presence-state.js";
 import { planRosterBackfill } from "../src/shared/roster.js";
 import { activate, selfCheck } from "../src/server/index.js";
 import { createPresenceCommandRouter } from "../src/server/command-router.js";
@@ -22,6 +27,9 @@ assert(clientRuntime.includes("bridgeSession.ui.register"), "client contributes 
 assert(clientRuntime.includes('slot: "agent.settings"'), "client targets the native agent settings extension point");
 assert(clientRuntime.includes("data-presence-character-id"), "settings expose a compact avatar character picker");
 assert(clientRuntime.includes("Selected characters retain access"), "settings explain always-present behavior");
+assert(clientRuntime.includes("body: { characterId, alwaysPresent }"), "settings save one atomic character toggle");
+assert(clientRuntime.includes("savingCharacterIds"), "settings suppress duplicate in-flight toggles");
+assert(clientRuntime.includes("version !== this.renderVersion"), "stale settings responses cannot repaint a newer chat state");
 assert(!clientRuntime.includes("setMariBridgeNativeSettingsHtml"), "client does not replace Marinara's agent settings shell");
 assert(!clientRuntime.includes("summary"), "client no longer describes summary behavior");
 assert(!clientRuntime.includes("MutationObserver"), "client does not DOM-inject chat settings");
@@ -32,40 +40,63 @@ const patch = buildPresenceExtraPatch({
   rosterIds: ["a", "b"],
   presentCharacterIds: ["a"],
 });
-assert(patch.hiddenFromAICharacterIds.join(",") === "outside-roster,b", "native hidden IDs project positive presence");
+assert(patch.hiddenFromAICharacterIds.join(",") === "outside-roster,b", "explicit roster presence maps directly to native hidden IDs");
 assert(patch.hiddenFromAI === true, "global hidden flag is preserved");
-assert(patch.marinaraPresence.presentCharacterIds.join(",") === "a", "positive presence is stored explicitly");
+assert(!Object.prototype.hasOwnProperty.call(patch, "marinaraPresence"), "message patches do not write a positive attendance store");
 
-const positiveWins = readPresenceState({
+const nativeWins = readPresenceState({
   extra: {
     hiddenFromAICharacterIds: [],
     marinaraPresence: { version: 1, presentCharacterIds: ["a"] },
   },
 }, ["a", "b"]);
-assert(positiveWins.has("a") && !positiveWins.has("b"), "positive presence is authoritative");
+assert(nativeWins.has("a") && nativeWins.has("b"), "legacy positive records cannot override native visibility");
 assert(
   readPresenceState({ extra: { hiddenFromAICharacterIds: ["b"] } }, ["a", "b"]).has("a"),
-  "legacy messages fall back to native hidden IDs",
+  "native hidden IDs define message presence",
+);
+const targetOnly = buildVisibilityDeltaPatch({
+  extra: { hiddenFromAICharacterIds: ["a", "outside-roster"] },
+  hiddenCharacterIds: ["b"],
+  visibleCharacterIds: ["a"],
+});
+assert(targetOnly.hiddenFromAICharacterIds.join(",") === "outside-roster,b", "target-only visibility preserves unrelated IDs");
+assertThrows(
+  () => assertVisibilityPatchScope({
+    extra: { hiddenFromAICharacterIds: ["a"] },
+    patch: { hiddenFromAI: false, hiddenFromAICharacterIds: ["b"] },
+    allowedCharacterIds: ["a"],
+    operation: "Regression test",
+  }),
+  "scoped guard rejects changes to an unrelated character",
+);
+assertThrows(
+  () => assertVisibilityPatchScope({
+    extra: { hiddenFromAI: false, hiddenFromAICharacterIds: [] },
+    patch: { hiddenFromAI: true, hiddenFromAICharacterIds: [] },
+    allowedCharacterIds: [],
+    operation: "Regression test",
+  }),
+  "scoped guard rejects global Hide From AI changes",
 );
 
 const backfill = planRosterBackfill({
-  previousRosterIds: ["a"],
+  knownCharacterIds: ["a"],
   currentRosterIds: ["a", "b"],
-  messages: [{ id: "m1", extra: { marinaraPresence: { presentCharacterIds: ["a"] } } }],
+  messages: [{ id: "m1", extra: { hiddenFromAICharacterIds: ["outside-roster"] } }],
 });
 assert(backfill.messagePatches.length === 1, "new character backfill is planned");
-assert(backfill.messagePatches[0].patch.hiddenFromAICharacterIds.join(",") === "b", "new character is hidden from history");
-assert(backfill.messagePatches[0].patch.marinaraPresence.presentCharacterIds.join(",") === "a", "backfill preserves positive history");
+assert(backfill.messagePatches[0].patch.hiddenFromAICharacterIds.join(",") === "outside-roster,b", "backfill adds only the new character");
 assert(
   planRosterBackfill({
-    previousRosterIds: ["a"],
+    knownCharacterIds: ["a"],
     currentRosterIds: ["a", "b"],
-    messages: [{ id: "m1", extra: { marinaraPresence: { presentCharacterIds: ["a"] } } }],
+    messages: [{ id: "m1", extra: {} }],
     alwaysPresentCharacterIds: ["b"],
-  }).messagePatches[0].patch.marinaraPresence.presentCharacterIds.join(",") === "a,b",
-  "always-present characters are included during backfill",
+  }).messagePatches.length === 0,
+  "omnipresent characters are not hidden during backfill",
 );
-assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { rosterCharacterIds: ["a"] } } }).rosterCharacterIds[0] === "a", "chat state keeps roster snapshot");
+assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { rosterCharacterIds: ["a"] } } }).knownCharacterIds[0] === "a", "legacy roster snapshots migrate to the known-character set");
 
 const registeredRoutes = [];
 const registeredRouteHandlers = new Map();
@@ -93,13 +124,14 @@ const runtime = {
       metadataWriteCount += 1;
       testChat = { ...testChat, metadata };
     },
+    withChatLock(_chatId, operation) {
+      return operation();
+    },
   },
   resources: {
     listCharacters() {
-      return [
-        { id: "a", data: { name: "Alice" }, comment: "" },
-        { id: "b", data: { name: "Bob" }, comment: "" },
-      ];
+      const names = { a: "Alice", b: "Bob", c: "Cora" };
+      return testChat.characterIds.map((id) => ({ id, data: { name: names[id] || id }, comment: "" }));
     },
   },
 };
@@ -209,46 +241,90 @@ await registeredRouteHandlers.get("POST /chat/:chatId/ensure")(
   { params: { chatId: "chat-1" } },
   replyStub(),
 );
-assert(currentMessages[0].extra.marinaraPresence.presentCharacterIds.join(",") === "a,b", "first enable initializes old history as everyone present");
-assert(testChat.metadata.marinaraPresencePackage.rosterCharacterIds.join(",") === "a,b", "first enable snapshots roster");
+assert(!Object.prototype.hasOwnProperty.call(currentMessages[0].extra, "marinaraPresence"), "first enable does not rewrite old history");
+assert(currentMessages[0].extra.hiddenFromAICharacterIds === undefined, "first enable preserves native visibility exactly");
+assert(testChat.metadata.marinaraPresencePackage.knownCharacterIds.join(",") === "a,b", "first enable seeds the known-character set");
 
-currentMessages = [{ id: "package-era", role: "user", extra: { hiddenFromAICharacterIds: ["b"] } }];
-const migrationEnsure = await registeredRouteHandlers.get("POST /chat/:chatId/ensure")(
-  { params: { chatId: "chat-1" } },
+const stateBeforeLegacyReplacement = JSON.stringify(testChat.metadata.marinaraPresencePackage);
+const rejectedReplacement = await registeredRouteHandlers.get("PATCH /chat/:chatId/settings")(
+  { params: { chatId: "chat-1" }, body: { alwaysPresentCharacterIds: ["b"] } },
   replyStub(),
 );
-assert(migrationEnsure.roster.initializedMessages === 1, "ensure initializes missing positive records in package-era chats");
-assert(currentMessages[0].extra.marinaraPresence.presentCharacterIds.join(",") === "a", "package-era migration preserves native visibility");
+assert(rejectedReplacement.error.includes("characterId"), "replacement-style omnipresent settings are rejected");
+assert(JSON.stringify(testChat.metadata.marinaraPresencePackage) === stateBeforeLegacyReplacement, "rejected replacement settings cannot alter chat state");
 
 const postedInput = { chatId: "chat-1", role: "user", content: "Private", extra: { submissionId: "submission-1" } };
 const postedPatch = await registeredMessagePolicies[0].prepare({ input: postedInput });
 currentMessages.push({ id: "posted", ...postedInput, ...postedPatch });
-assert(currentMessages.find((message) => message.id === "posted").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "post-only message stores active positive presence");
-assert(currentMessages.find((message) => message.id === "posted").extra.hiddenFromAICharacterIds.join(",") === "b", "post-only message projects native hidden IDs");
+assert(currentMessages.find((message) => message.id === "posted").extra.hiddenFromAICharacterIds.join(",") === "b", "new messages hide only inactive roster characters");
+assert(!Object.prototype.hasOwnProperty.call(currentMessages.find((message) => message.id === "posted").extra, "marinaraPresence"), "new messages do not store positive attendance");
 assert(currentMessages.find((message) => message.id === "posted").extra.submissionId === "submission-1", "native preparation preserves unrelated message extras");
 
+currentMessages = [
+  { id: "legacy-positive", role: "user", extra: { hiddenFromAICharacterIds: [], marinaraPresence: { presentCharacterIds: ["a"] } } },
+  { id: "target-only", role: "user", extra: { hiddenFromAICharacterIds: ["b", "outside-roster"] } },
+];
 await registeredRouteHandlers.get("PATCH /chat/:chatId/settings")(
-  { params: { chatId: "chat-1" }, body: { alwaysPresentCharacterIds: ["b"] } },
+  { params: { chatId: "chat-1" }, body: { characterId: "b", alwaysPresent: true } },
   replyStub(),
 );
-assert(currentMessages.find((message) => message.id === "posted").extra.marinaraPresence.presentCharacterIds.join(",") === "a,b", "always-present setting updates positive presence");
-assert(currentMessages.find((message) => message.id === "posted").extra.hiddenFromAICharacterIds.length === 0, "always-present setting updates native hidden IDs");
+assert(testChat.metadata.marinaraPresencePackage.alwaysPresentCharacterIds.join(",") === "b", "atomic settings persist the omnipresent character");
+assert(testChat.metadata.enableAgents === true && testChat.metadata.activeAgentIds.includes("presence"), "atomic settings preserve unrelated chat metadata");
+assert(currentMessages.find((message) => message.id === "legacy-positive").extra.hiddenFromAICharacterIds.length === 0, "legacy positive state cannot hide other characters during omnipresent updates");
+assert(currentMessages.find((message) => message.id === "target-only").extra.hiddenFromAICharacterIds.join(",") === "outside-roster", "omnipresent updates remove only the selected ID");
+
+await registeredRouteHandlers.get("PATCH /chat/:chatId/settings")(
+  { params: { chatId: "chat-1" }, body: { characterId: "b", alwaysPresent: false } },
+  replyStub(),
+);
+assert(testChat.metadata.marinaraPresencePackage.alwaysPresentCharacterIds.length === 0, "omnipresent can be disabled atomically");
+assert(currentMessages.find((message) => message.id === "target-only").extra.hiddenFromAICharacterIds.join(",") === "outside-roster", "disabling omnipresent does not invent historical absence");
+const futureAfterDisable = await registeredMessagePolicies[0].prepare({ input: { chatId: "chat-1", role: "user", extra: {} } });
+assert(futureAfterDisable.extra.hiddenFromAICharacterIds.join(",") === "b", "disabling omnipresent affects future messages");
+await registeredRouteHandlers.get("PATCH /chat/:chatId/settings")(
+  { params: { chatId: "chat-1" }, body: { characterId: "b", alwaysPresent: true } },
+  replyStub(),
+);
+
+testChat = { ...testChat, characterIds: ["a"] };
+await registeredChatPolicies[0].onChanged({
+  chatId: "chat-1",
+  source: "chat",
+  changedKeys: ["characterIds"],
+  chat: { ...testChat, metadata: {} },
+});
+assert(testChat.metadata.marinaraPresencePackage.alwaysPresentCharacterIds.join(",") === "b", "temporarily absent omnipresent characters are not forgotten");
+assert(testChat.metadata.marinaraPresencePackage.knownCharacterIds.join(",") === "a,b", "known characters remain monotonic when removed");
+
+testChat = { ...testChat, characterIds: ["a", "b"] };
+currentMessages = [{ id: "readded", role: "user", extra: { hiddenFromAICharacterIds: [] } }];
+await registeredChatPolicies[0].onChanged({ chatId: "chat-1", source: "chat", changedKeys: ["characterIds"], chat: testChat });
+assert(currentMessages[0].extra.hiddenFromAICharacterIds.length === 0, "re-adding a known character does not erase their history");
+
+testChat = { ...testChat, characterIds: ["a", "b", "c"] };
+currentMessages = [{ id: "before-c", role: "user", extra: { hiddenFromAICharacterIds: ["outside-roster"] } }];
+await registeredChatPolicies[0].onChanged({ chatId: "chat-1", source: "chat", changedKeys: ["characterIds"], chat: testChat });
+assert(currentMessages[0].extra.hiddenFromAICharacterIds.join(",") === "outside-roster,c", "a genuinely new character is backfilled without changing other visibility");
+assert(testChat.metadata.marinaraPresencePackage.knownCharacterIds.join(",") === "a,b,c", "new characters join the monotonic known set");
 
 testChat = {
   ...testChat,
-  metadata: { ...testChat.metadata, marinaraPresencePackage: { ...testChat.metadata.marinaraPresencePackage, alwaysPresentCharacterIds: [] } },
+  characterIds: ["a", "b"],
+  metadata: {
+    ...testChat.metadata,
+    inactiveCharacterIds: ["b"],
+    marinaraPresencePackage: {
+      ...testChat.metadata.marinaraPresencePackage,
+      alwaysPresentCharacterIds: [],
+    },
+  },
 };
-currentMessages = [{ id: "before", role: "user", extra: { marinaraPresence: { presentCharacterIds: ["a", "b"] }, hiddenFromAICharacterIds: [] } }];
-const generatedUserInput = { chatId: "chat-1", role: "user", extra: { submissionId: "submission-1" } };
+const generatedUserInput = { chatId: "chat-1", role: "user", extra: { submissionId: "submission-2" } };
 const generatedUserPatch = await registeredMessagePolicies[0].prepare({ input: generatedUserInput });
-currentMessages.push({ id: "generated-user", ...generatedUserInput, ...generatedUserPatch });
-assert(currentMessages.find((message) => message.id === "generated-user").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "generated user message is stamped before its native save");
-const generatedAssistantInput = { chatId: "chat-1", role: "assistant", characterId: "a", extra: {} };
-const generatedAssistantPatch = await registeredMessagePolicies[0].prepare({ input: generatedAssistantInput });
-currentMessages.push({ id: "generated-assistant", ...generatedAssistantInput, ...generatedAssistantPatch });
-assert(currentMessages.find((message) => message.id === "generated-assistant").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "generated assistant message is stamped");
+assert(generatedUserPatch.extra.hiddenFromAICharacterIds.join(",") === "b", "generated user messages use native negative visibility");
 
-currentMessages = [{ id: "regenerated", chatId: "chat-1", role: "assistant", characterId: "a", extra: { hiddenFromAICharacterIds: [] } }];
+currentMessages = [{ id: "regenerated", chatId: "chat-1", role: "assistant", characterId: "a", extra: { hiddenFromAICharacterIds: ["b", "outside-roster"] } }];
+const requestsBeforeRegenerate = injectedRequests.length;
 await registeredMessagePolicies[0].afterPersist({
   chatId: "chat-1",
   messageId: "regenerated",
@@ -256,33 +332,31 @@ await registeredMessagePolicies[0].afterPersist({
   kind: "regenerate",
   message: currentMessages[0],
 });
-assert(currentMessages[0].extra.marinaraPresence.presentCharacterIds.join(",") === "a", "regenerate updates existing message visibility after generation");
+assert(injectedRequests.length === requestsBeforeRegenerate, "regenerate preserves existing visibility when no omnipresent repair is needed");
+assert(currentMessages[0].extra.hiddenFromAICharacterIds.join(",") === "b,outside-roster", "regenerate does not restamp the active roster");
 
-currentMessages = [{ id: "history", role: "user", extra: { marinaraPresence: { presentCharacterIds: ["a"] }, hiddenFromAICharacterIds: ["b"] } }];
-testChat = { ...testChat, characterIds: ["a", "b"], metadata: { ...testChat.metadata, inactiveCharacterIds: [] } };
-const metadataWritesBeforeChatChange = metadataWriteCount;
+const metadataWritesBeforeInactiveChange = metadataWriteCount;
 await registeredChatPolicies[0].onChanged({
   chatId: "chat-1",
   source: "metadata",
   changedKeys: ["inactiveCharacterIds"],
   chat: testChat,
 });
-assert(metadataWriteCount === metadataWritesBeforeChatChange + 1, "chat change callback runs roster reconciliation");
-assert(testChat.metadata.marinaraPresencePackage.rosterCharacterIds.join(",") === "a,b", "chat change callback reconciles the active roster");
+assert(metadataWriteCount === metadataWritesBeforeInactiveChange, "unchanged roster reconciliation does not rewrite chat metadata");
 
 currentMessages = [
-  { id: "positive", role: "user", extra: { hiddenFromAICharacterIds: [], marinaraPresence: { presentCharacterIds: ["a"] } } },
-  { id: "legacy", role: "user", extra: { hiddenFromAICharacterIds: ["b"] } },
+  { id: "legacy-positive", role: "user", extra: { hiddenFromAICharacterIds: [], marinaraPresence: { presentCharacterIds: ["a"] } } },
+  { id: "native", role: "user", extra: { hiddenFromAICharacterIds: ["b"] } },
   { id: "global", role: "user", extra: { hiddenFromAI: true, hiddenFromAICharacterIds: ["b"] } },
 ];
 const resyncResult = await registeredRouteHandlers.get("POST /chat/:chatId/command")(
   { params: { chatId: "chat-1" }, body: { text: "/presence resync" } },
   replyStub(),
 );
-assert(resyncResult.updated === 2 && resyncResult.skippedGlobal === 1, "resync reports updated and skipped messages");
-assert(currentMessages.find((message) => message.id === "positive").extra.hiddenFromAICharacterIds.join(",") === "b", "resync repairs native IDs from positive presence");
-assert(currentMessages.find((message) => message.id === "legacy").extra.marinaraPresence.presentCharacterIds.join(",") === "a", "resync adopts legacy native state into positive presence");
-assert(!currentMessages.find((message) => message.id === "global").extra.marinaraPresence, "resync leaves globally hidden messages unchanged");
+assert(resyncResult.updated === 0, "resync does not rebuild native visibility from legacy positive records");
+assert(currentMessages.find((message) => message.id === "legacy-positive").extra.hiddenFromAICharacterIds.length === 0, "resync leaves native visibility authoritative");
+assert(currentMessages.find((message) => message.id === "native").extra.hiddenFromAICharacterIds.join(",") === "b", "resync preserves explicit native hidden IDs");
+assert(currentMessages.find((message) => message.id === "global").extra.hiddenFromAICharacterIds.join(",") === "b", "resync leaves globally hidden messages unchanged");
 assert(!injectedRequests.some((request) => request.url.includes("summary") || request.url.includes("lorebook")), "Presence does not touch summaries or lorebooks");
 
 await selfCheck({ api: { runtime } });
@@ -290,6 +364,7 @@ delete globalThis[bridgeSymbol];
 const serverRoutesSource = fs.readFileSync(new URL("../src/server/routes.js", import.meta.url), "utf8");
 assert(!serverRoutesSource.includes("stampGeneratedUserMessageSoon"), "Presence no longer polls for generated user messages");
 assert(!serverRoutesSource.includes("setTimeout"), "Presence server lifecycle contains no polling timer");
+assert(serverRoutesSource.includes("Presence refused an unguarded message visibility write"), "every message visibility write requires an explicit scope guard");
 console.log("Presence checks passed.");
 
 function replyStub() {
@@ -307,4 +382,13 @@ function replyStub() {
 
 function assert(condition, message) {
   if (!condition) throw new Error(`Presence check failed: ${message}`);
+}
+
+function assertThrows(operation, message) {
+  try {
+    operation();
+  } catch {
+    return;
+  }
+  throw new Error(`Presence check failed: ${message}`);
 }
