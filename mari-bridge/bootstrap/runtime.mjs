@@ -9,6 +9,10 @@ import { createGroupSelectorRegistry } from "../src/server/group-selector-regist
 import { createTurnHandoffRegistry } from "../src/server/turn-handoff-registry.js";
 import { createMessageRegistry } from "../src/server/message-registry.js";
 import { createChatRegistry } from "../src/server/chat-registry.js";
+import {
+  createSpatialDirectiveCompatibilityStreamFilter,
+  normalizeAssistantSpatialDirectives,
+} from "../src/server/spatial-directive-compat.js";
 import { prepareClientOverlay } from "../src/server/client-overlay.js";
 import { handoffToServerOverlay, prepareServerOverlay, serverOverlayProcessState } from "../src/server/server-overlay.js";
 
@@ -47,7 +51,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.33";
+kernel.version = "1.0.34";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -155,6 +159,10 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
     turnHandoffRegistry,
     messageRegistry,
     chatRegistry,
+    spatialDirectiveCompatibility: {
+      normalizeResponse: normalizeAssistantSpatialDirectives,
+      createStreamFilter: createSpatialDirectiveCompatibilityStreamFilter,
+    },
     hostRequest,
     patches: Object.entries(kernel.patches).map(([id, status]) => ({ id, status })),
   });
@@ -673,6 +681,10 @@ export function patchServerModule(url, inputSource) {
             "        const turnHandoffStreamFilter = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.createStreamFilter({",
             "          chatId: input.chatId, chatMetadata: chatMeta, chatMode, impersonate: input.impersonate === true,",
             "        }) ?? null;",
+            "        const bridgedSpatialDirectiveStreamFilter =",
+            "          hierarchicalMapsEnabledForChat && (requestChatMode === \"roleplay\" || requestChatMode === \"game\")",
+            "            ? globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.spatialDirectiveHooks?.createStreamFilter() ?? null",
+            "            : null;",
             "        const spatialDirectiveStreamFilter =",
           ].join("\n"),
           "turn.handoff-stream-filter",
@@ -682,7 +694,8 @@ export function patchServerModule(url, inputSource) {
           "          const visibleText = spatialDirectiveStreamFilter?.push(text) ?? text;",
           [
             "          const handoffVisibleText = turnHandoffStreamFilter?.push(text) ?? text;",
-            "          const visibleText = spatialDirectiveStreamFilter?.push(handoffVisibleText) ?? handoffVisibleText;",
+            "          const bridgedSpatialText = bridgedSpatialDirectiveStreamFilter?.push(handoffVisibleText) ?? handoffVisibleText;",
+            "          const visibleText = spatialDirectiveStreamFilter?.push(bridgedSpatialText) ?? bridgedSpatialText;",
           ].join("\n"),
           "turn.handoff-stream-push",
         );
@@ -691,9 +704,22 @@ export function patchServerModule(url, inputSource) {
           "            const pendingSpatialText = spatialDirectiveStreamFilter?.flush() ?? \"\";",
           [
             "            const pendingTurnHandoffText = turnHandoffStreamFilter?.flush() ?? \"\";",
-            "            const pendingSpatialText = (pendingTurnHandoffText ? spatialDirectiveStreamFilter?.push(pendingTurnHandoffText) ?? pendingTurnHandoffText : \"\") + (spatialDirectiveStreamFilter?.flush() ?? \"\");",
+            "            const pendingBridgedSpatialText = (pendingTurnHandoffText ? bridgedSpatialDirectiveStreamFilter?.push(pendingTurnHandoffText) ?? pendingTurnHandoffText : \"\") + (bridgedSpatialDirectiveStreamFilter?.flush() ?? \"\");",
+            "            const pendingSpatialText = (pendingBridgedSpatialText ? spatialDirectiveStreamFilter?.push(pendingBridgedSpatialText) ?? pendingBridgedSpatialText : \"\") + (spatialDirectiveStreamFilter?.flush() ?? \"\");",
           ].join("\n"),
           "turn.handoff-stream-flush",
+        );
+        source = replaceExact(
+          source,
+          "            const parsedSpatial = extractAssistantSpatialDirective(fullResponse);",
+          "            const parsedSpatial = extractAssistantSpatialDirective(globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.spatialDirectiveHooks?.normalizeResponse(fullResponse) ?? fullResponse);",
+          "spatial.directive-compat-response",
+        );
+        source = replaceExact(
+          source,
+          "                    const parsedRewriteSpatial = extractAssistantSpatialDirective(editedText);",
+          "                    const parsedRewriteSpatial = extractAssistantSpatialDirective(globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.spatialDirectiveHooks?.normalizeResponse(editedText) ?? editedText);",
+          "spatial.directive-compat-rewrite",
         );
         source = replaceExact(
           source,

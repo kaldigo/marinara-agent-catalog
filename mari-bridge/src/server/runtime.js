@@ -27,6 +27,7 @@ export function createBridgeRuntime(options = {}) {
   const turnHandoffRegistry = options.turnHandoffRegistry ?? null;
   const messageRegistry = options.messageRegistry ?? null;
   const chatRegistry = options.chatRegistry ?? null;
+  const spatialDirectiveCompatibility = options.spatialDirectiveCompatibility ?? null;
   const hostRequest = typeof options.hostRequest === "function" ? options.hostRequest : null;
 
   function snapshot() {
@@ -312,6 +313,12 @@ export function createBridgeRuntime(options = {}) {
       : null,
     chatHooks: chatRegistry
       ? Object.freeze({ notifyChanged: chatRegistry.notifyChanged })
+      : null,
+    spatialDirectiveHooks: spatialDirectiveCompatibility
+      ? Object.freeze({
+          normalizeResponse: spatialDirectiveCompatibility.normalizeResponse,
+          createStreamFilter: spatialDirectiveCompatibility.createStreamFilter,
+        })
       : null,
     getSnapshot: snapshot,
     markReady() {

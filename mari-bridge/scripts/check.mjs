@@ -12,6 +12,10 @@ import { createTurnHandoffRegistry, __test as turnHandoffTest } from "../src/ser
 import { createMessageRegistry } from "../src/server/message-registry.js";
 import { createChatRegistry } from "../src/server/chat-registry.js";
 import {
+  createSpatialDirectiveCompatibilityStreamFilter,
+  normalizeAssistantSpatialDirectives,
+} from "../src/server/spatial-directive-compat.js";
+import {
   patchActiveChatEvents,
   patchAgentSuiteBridge,
   patchChatInputBridge,
@@ -196,6 +200,30 @@ assert.equal(escapedMarkerFilter.push("Visible &lt;next_spea"), "Visibl");
 assert.equal(escapedMarkerFilter.push("ker&gt;char-2&lt;/next_speaker&gt;"), "e ");
 assert.equal(escapedMarkerFilter.flush(), "");
 
+assert.equal(
+  normalizeAssistantSpatialDirectives('The lift opens.\n<spatial_move: destination_id="tower_level_1"/>'),
+  'The lift opens.\n[spatial_move: destination_id="tower_level_1"]',
+);
+assert.equal(
+  normalizeAssistantSpatialDirectives("<spatial_discover name='Hidden Room' relation='enter' />"),
+  "[spatial_discover: name='Hidden Room' relation='enter']",
+);
+assert.equal(
+  normalizeAssistantSpatialDirectives('<spatial_moveable destination_id="unchanged"/>'),
+  '<spatial_moveable destination_id="unchanged"/>',
+);
+const spatialCompatibilityFilter = createSpatialDirectiveCompatibilityStreamFilter();
+assert.equal(spatialCompatibilityFilter.push("The lift opens.\n<spa"), "The lift opens.\n");
+assert.equal(spatialCompatibilityFilter.push('tial_move: destination_id="tower_'), "");
+assert.equal(
+  spatialCompatibilityFilter.push('level_1"/>'),
+  '[spatial_move: destination_id="tower_level_1"]',
+);
+assert.equal(spatialCompatibilityFilter.flush(), "");
+const incompleteSpatialCompatibilityFilter = createSpatialDirectiveCompatibilityStreamFilter();
+assert.equal(incompleteSpatialCompatibilityFilter.push("Keep <spatial_move:"), "Keep ");
+assert.equal(incompleteSpatialCompatibilityFilter.flush(), "<spatial_move:");
+
 const messageRegistry = createMessageRegistry();
 const persistedMessages = [];
 messageRegistry.register("presence", {
@@ -340,7 +368,7 @@ const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", impo
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.33");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.34");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -804,7 +832,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.33"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.34"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -880,6 +908,7 @@ for (const relativePath of [
   "src/server/turn-handoff-registry.js",
   "src/server/message-registry.js",
   "src/server/chat-registry.js",
+  "src/server/spatial-directive-compat.js",
   "src/server/client-overlay.js",
   "src/client/runtime.js",
 ]) {
@@ -1116,12 +1145,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.4",
-  bridgeVersion: "1.0.33",
+  bridgeVersion: "1.0.34",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.33");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.34");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   serverOverlayTest.withoutMariBridgeExecArgs([
@@ -1197,6 +1226,29 @@ const patchedGeneratePersist = patchServerModule("file:///engine/routes/generate
 assert.match(patchedGeneratePersist, /messageHooks\?\.notifyPersisted/u);
 assert.match(patchedGeneratePersist, /kind: input\.regenerateMessageId \? "regenerate" : input\.continueMessageId \? "continue" : "create"/u);
 assert.equal(globalThis[kernelSymbol].patches["message.persist-generate"], "applied");
+
+const spatialGenerateFixture = [
+  "        const spatialDirectiveStreamFilter =",
+  "          hierarchicalMapsEnabledForChat ? createAssistantSpatialDirectiveStreamFilter() : null;",
+  "          const visibleText = spatialDirectiveStreamFilter?.push(text) ?? text;",
+  "            const pendingSpatialText = spatialDirectiveStreamFilter?.flush() ?? \"\";",
+  "            const parsedSpatial = extractAssistantSpatialDirective(fullResponse);",
+  "                    const parsedRewriteSpatial = extractAssistantSpatialDirective(editedText);",
+].join("\n");
+const patchedSpatialGenerate = patchServerModule(
+  "file:///engine/routes/generate.routes.js",
+  spatialGenerateFixture,
+);
+assert.match(patchedSpatialGenerate, /bridgedSpatialDirectiveStreamFilter/u);
+assert.match(
+  patchedSpatialGenerate,
+  /const bridgedSpatialDirectiveStreamFilter =\s+hierarchicalMapsEnabledForChat &&/u,
+);
+assert.match(patchedSpatialGenerate, /spatialDirectiveHooks\?\.createStreamFilter/u);
+assert.match(patchedSpatialGenerate, /spatialDirectiveHooks\?\.normalizeResponse\(fullResponse\)/u);
+assert.match(patchedSpatialGenerate, /spatialDirectiveHooks\?\.normalizeResponse\(editedText\)/u);
+assert.equal(globalThis[kernelSymbol].patches["spatial.directive-compat-response"], "applied");
+assert.equal(globalThis[kernelSymbol].patches["spatial.directive-compat-rewrite"], "applied");
 
 const macroEngineFixture = `
 function replaceBalancedMacros(input, replacer) {
