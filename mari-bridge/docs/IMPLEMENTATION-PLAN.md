@@ -38,8 +38,12 @@ button, GameState wrapper route, message store, or application shell.
 
 ### Bootstrap and compatibility
 
-- persistent preload/client overlay under `DATA_DIR/mari-bridge`;
+- persistent main-thread preload/runtime under `DATA_DIR/mari-bridge`;
+- complete copied server overlay keyed by Mari Bridge version, with the native
+  Engine version treated as an exact compatibility gate;
 - exact Engine version and anchor-count checks before transformation;
+- one guarded server-overlay handoff with worker-thread exclusion and explicit
+  launcher/process cleanup;
 - no patch application on unsupported or changed targets;
 - bridge-first server and client activation;
 - deterministic health, capability, diagnostics, and consumer session state;

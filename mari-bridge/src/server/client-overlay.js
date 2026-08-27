@@ -4,19 +4,26 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v22";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v24";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 const CLIENT_RUNTIME_PATCH_TOKEN = '["__MARI_BRIDGE_NATIVE_PATCHES__"]';
 
-export function versionAssetReferences(source, assetNames, fingerprint) {
-  return assetNames.reduce(
-    (result, name) => result.replaceAll(name, `${name}?mariBridge=${fingerprint}`),
-    source,
-  );
-}
-
 function escapePattern(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+export function createAssetReferenceVersioner(assetNames, fingerprint) {
+  const names = [...new Set(assetNames)]
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length || left.localeCompare(right));
+  if (names.length === 0) return (source) => String(source);
+  const pattern = new RegExp(names.map(escapePattern).join("|"), "gu");
+  const suffix = `?mariBridge=${fingerprint}`;
+  return (source) => String(source).replace(pattern, (name) => `${name}${suffix}`);
+}
+
+export function versionAssetReferences(source, assetNames, fingerprint) {
+  return createAssetReferenceVersioner(assetNames, fingerprint)(source);
 }
 
 export function patchChatInputBridge(source) {
@@ -130,6 +137,37 @@ export function patchChatSettingsBridge(source) {
     patched = `${patched.slice(0, insertion.index)}${insertion.text}${patched.slice(insertion.index)}`;
   }
   return patched;
+}
+
+export function patchImpersonateSettingsBridge(source) {
+  const marker = "ui.chatSettings.impersonatesection.useCyoaAsDirection";
+  if (!source.includes(marker) || !source.includes("ui.chatSettings.impersonatesection.skipAgents")) return null;
+  const identifier = "[A-Za-z_$][\\w$]*";
+  const switchPattern = new RegExp(
+    `(?<jsx>${identifier})\\.jsx\\((?<switch>${identifier}),\\{label:(?<localize>${identifier})\\("${escapePattern(marker)}"\\)`,
+    "gu",
+  );
+  const switches = [...source.matchAll(switchPattern)];
+  if (switches.length !== 1) {
+    throw new Error(`Mari Bridge Impersonate settings patch expected one CYOA SettingsSwitch, found ${switches.length}`);
+  }
+  const match = switches[0];
+  const propsStart = match.index + match[0].lastIndexOf("{");
+  const propsEnd = findMatchingDelimiter(source, propsStart, "{", "}");
+  if (source[propsEnd + 1] !== ")") {
+    throw new Error("Mari Bridge Impersonate settings patch could not identify the SettingsSwitch call boundary");
+  }
+  const prefix = source.slice(Math.max(0, match.index - 8_000), match.index);
+  const presetPattern = new RegExp(
+    `(?:const |,)(?<preset>${identifier})=${identifier}\\((?<state>${identifier})=>\\k<state>\\.impersonatePresetId\\)`,
+    "gu",
+  );
+  const presetMatches = [...prefix.matchAll(presetPattern)];
+  const presetId = presetMatches.at(-1)?.groups?.preset;
+  if (!presetId) throw new Error("Mari Bridge Impersonate settings patch could not identify the native preset selection");
+  const insertion = `,${CLIENT_SYMBOL_EXPRESSION}?.renderNativeImpersonateSetting({react:globalThis.React,jsx:${match.groups.jsx},native:{SettingsSwitch:${match.groups.switch}},context:{presetId:${presetId}}})`;
+  const end = propsEnd + 2;
+  return `${source.slice(0, end)}${insertion}${source.slice(end)}`;
 }
 
 function findMatchingDelimiter(source, start, open, close) {
@@ -590,6 +628,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     .map((entry) => entry.name);
   let chatInputPatchCount = 0;
   let chatSettingsPatchCount = 0;
+  let impersonateSettingsPatchCount = 0;
   let agentSuitePatchCount = 0;
   let slashCommandListPatchCount = 0;
   let trackerPanelPatchCount = 0;
@@ -622,6 +661,12 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     if (chatSettingsPatched !== null) {
       assetSource = chatSettingsPatched;
       chatSettingsPatchCount += 1;
+      changed = true;
+    }
+    const impersonateSettingsPatched = attemptAssetPatch("client.impersonate-settings", patchImpersonateSettingsBridge, assetSource);
+    if (impersonateSettingsPatched !== null) {
+      assetSource = impersonateSettingsPatched;
+      impersonateSettingsPatchCount += 1;
       changed = true;
     }
     const agentSuitePatched = attemptAssetPatch("client.agent-suite-tracker-data", patchAgentSuiteBridge, assetSource);
@@ -678,6 +723,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     ["client.command-drafts", chatInputPatchCount, 2, "chat input assets"],
     ["client.command-drafts", roleplayDraftPlaceholderPatchCount, 1, "Roleplay draft placeholder asset"],
     ["client.native-agent-settings", chatSettingsPatchCount, 1, "chat settings asset"],
+    ["client.impersonate-settings", impersonateSettingsPatchCount, 1, "Impersonate settings asset"],
     ["client.agent-suite-tracker-data", agentSuitePatchCount, 1, "Agent Suite asset"],
     ["client.commands", slashCommandListPatchCount, 1, "slash command list asset"],
     ["client.tracker-sections", trackerPanelPatchCount, 1, "Tracker panel asset"],
@@ -700,19 +746,20 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     injectClientRuntimePatches(bridgeClientRuntime, appliedPatches),
   );
   assetJavaScriptNames.push(bridgeRuntimeName);
+  const versionReferences = createAssetReferenceVersioner(assetJavaScriptNames, fingerprint);
   for (const name of assetJavaScriptNames) {
     const assetPath = join(assetsRoot, name);
-    await writeFile(assetPath, versionAssetReferences(await readFile(assetPath, "utf8"), assetJavaScriptNames, fingerprint));
+    await writeFile(assetPath, versionReferences(await readFile(assetPath, "utf8")));
   }
   const serviceWorkerPath = join(temporary, "sw.js");
   try {
-    await writeFile(serviceWorkerPath, versionAssetReferences(await readFile(serviceWorkerPath, "utf8"), assetJavaScriptNames, fingerprint));
+    await writeFile(serviceWorkerPath, versionReferences(await readFile(serviceWorkerPath, "utf8")));
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }
   await writeFile(
     copiedIndexPath,
-    versionAssetReferences(copiedIndex, assetJavaScriptNames, fingerprint),
+    versionReferences(copiedIndex),
   );
   const failedPatchRecords = [...failedPatches].map(([id, detail]) => ({ id, detail }));
   await writeFile(

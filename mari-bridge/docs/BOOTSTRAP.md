@@ -27,8 +27,8 @@ VOLUME /app/data
 
 Installed capability packages live under
 `DATA_DIR/capability-packages`. Runtime snapshots live under
-`DATA_DIR/capability-runtime-snapshots` and are recreated, so the preload must
-be copied to a stable `DATA_DIR/mari-bridge/bootstrap` path.
+`DATA_DIR/capability-runtime-snapshots` and are recreated, so the preload and
+its implementation modules are copied to stable `DATA_DIR/mari-bridge` paths.
 
 The runtime image's application and client build live below `/app` and are not
 the persistent user-data contract. The application process drops to the `node`
@@ -56,38 +56,46 @@ not the normal install path.
 
 ## Package-owned bootstrap
 
-The proposed zero-configuration Docker/POSIX sequence is:
+The implemented zero-configuration sequence is:
 
 1. Install the package. `restartRequired: true` prevents unsafe live
    activation.
-2. On the user's normal restart, Marinara starts without the loader and
-   activates Mari Bridge late.
-3. Mari Bridge writes/updates the stable loader, patch definitions, client
-   overlay inputs, and a bootstrap guard below `DATA_DIR`.
-4. It registers a one-shot callback for a safe point after Fastify has completed
-   startup. The exact hook/timing must be proven with a regression fixture.
-5. The callback invokes `await app.close()` before replacement. This is
-   mandatory: Marinara's `onClose` stops capability runtimes and the sidecar,
-   flushes file-backed storage, and releases the writer lease.
-6. On POSIX Node 24, replace the current application child with
-   `process.execve(process.execPath, args, env)`. Arguments preserve existing
-   `process.execArgv` and application arguments while adding exactly one
-   `--import=<stable register.mjs>`.
-7. Set an inherited guard such as `MARI_BRIDGE_BOOTSTRAPPED=1` and include a
-   loader-active symbol/probe. The second start must not bootstrap again.
-8. The Docker entrypoint continues waiting on the same child PID. The new Node
-   process registers hooks before importing Marinara.
+2. If Marinara starts without the stable preload, the installer materializes
+   `register.mjs` plus its runtime modules under `DATA_DIR/mari-bridge` and
+   schedules one guarded restart after Fastify reaches `onReady`.
+3. The restart first calls `await app.close()`, which stops capability
+   runtimes, flushes file-backed storage, and releases the writer lease. POSIX
+   uses `process.execve`; Windows development uses one hidden replacement
+   process and exits the original process.
+4. The stable `register.mjs` dispatcher checks `isMainThread` before importing
+   the implementation. Worker threads inherit `NODE_OPTIONS`, but they do not
+   prepare patches, copy the server, or perform a handoff.
+5. The main-thread runtime verifies the exact Engine version and every patch
+   anchor, copies the complete server distribution plus the shared
+   distribution into `DATA_DIR/mari-bridge/server`, links its normal runtime
+   dependencies back to the native installation, and applies the verified
+   transforms only to that writable copy.
+6. A ready marker records the server-overlay format, Mari Bridge version, and
+   Engine version. A matching pair reuses the verified copy; a Bridge version
+   change rebuilds it; an Engine version mismatch fails closed without trying
+   to reinterpret the old copy.
+7. The native process performs one direct handoff to the copied server entry.
+   Environment markers identify that exact entry/version and a depth guard
+   refuses recursive handoff. The handoff also carries the original Engine root
+   explicitly, so the replacement does not infer it from the data-directory
+   layout. The replacement imports the already-installed Bridge runtime and
+   runs the patched environment without depending on capability-package
+   activation order.
 
 Do not call `execve` directly from package activation. At that point the
 database is open and buffered writes/writer-lease cleanup depend on
 `app.close()`.
 
-Because Docker's parent invocation still lacks `--import`, an install-only
-solution may perform this quick internal bootstrap bounce on each cold
-container start. An externally configured preload avoids the bounce but is not
-required.
+After the stable preload is part of the normal launch environment, cold starts
+skip the installer bounce. They may still perform the single native-to-overlay
+handoff; the handoff launcher exits and only the overlay server remains.
 
-## Argument reconstruction
+## Argument reconstruction and process ownership
 
 The implementation must test argument handling rather than concatenate a shell
 command. Conceptually:
@@ -107,14 +115,20 @@ const args = [
 
 Use the direct process API; never invoke a shell. Validate that `entry` and the
 stable loader path are absolute or safely resolved. Preserve inspector and
-other legitimate Node flags.
+other legitimate Node flags. Remove the inherited Mari Bridge import from
+`NODE_OPTIONS` before starting the replacement and add one explicit import to
+the argument vector. Tests must assert that the launcher exits, one overlay
+process owns the server port, and no generic pre-handoff server retains the
+writer lease.
 
 ## Local development
 
 The same patch engine should be testable without Docker:
 
 - Server production-build testing: launch Node directly with
-  `node --import <bridge-register> packages/server/dist/index.js`.
+  `node --import <bridge-register> packages/server/dist/index.js`, verify the
+  handoff target, then count the port-owning process rather than matching only
+  the original command line.
 - Client production-overlay testing: build Marinara, create the verified
   overlay under a temporary/test data directory, and run the patched static
   root.
@@ -152,6 +166,6 @@ Provide a documented environment escape hatch such as
 `MARI_BRIDGE_DISABLE=1`. The preload should check it before transformations.
 
 If a bootstrap guard is present but the loader-active probe is absent, log the
-inconsistent state and start native Marinara rather than looping. A maximum
-bootstrap-attempt marker and last-failure record should be persisted for
-diagnostics.
+inconsistent state and start native Marinara rather than looping. The
+installer bounce and server-overlay handoff have separate attempt/depth guards;
+neither may retry recursively.

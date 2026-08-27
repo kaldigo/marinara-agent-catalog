@@ -14,7 +14,9 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/server/message-registry.js",
   "src/server/chat-registry.js",
   "src/server/client-overlay.js",
+  "src/server/server-overlay.js",
   "src/client/runtime.js",
+  "bootstrap/runtime.mjs",
   // Commit the preload entry last, after every module it imports exists.
   "bootstrap/register.mjs",
 ]);

@@ -61,12 +61,18 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
       NODE_OPTIONS: withoutMariBridgeImports(process.env.NODE_OPTIONS),
     });
     if (process.platform === "win32") {
-      spawn(process.execPath, args, {
+      const child = spawn(process.execPath, args, {
+        detached: true,
         env: environment,
         stdio: "inherit",
         windowsHide: true,
       });
-      return;
+      await new Promise((resolve, reject) => {
+        child.once("spawn", resolve);
+        child.once("error", reject);
+      });
+      child.unref();
+      process.exit(0);
     }
     process.execve(process.execPath, [process.execPath, ...args], environment);
   };

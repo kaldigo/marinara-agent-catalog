@@ -453,7 +453,14 @@ Draft requests use Marinara's native request fields. `generationGuide` carries
 guidance without replacing the impersonation prompt. An impersonation draft may
 send `impersonateContinuation` to place an existing draft in the provider's
 assistant-prefill position; the dry-run result then includes the generated
-`continuation` separately. Non-impersonation dry runs may opt into reasoning
+`continuation` separately. If a provider echoes the exact prefill, the bridge
+removes that exact prefix from the structured continuation. The injected native
+**Preset handles impersonation** switch sends
+`impersonatePresetOwnsInstructions: true` only when a specific Impersonate
+preset is selected. The dry-run route then omits the normal Impersonate prompt
+template while retaining generation guidance and provider-level continuation.
+With the switch disabled, both fresh drafts and continuations retain the normal
+Impersonate template. Non-impersonation dry runs may opt into reasoning
 with `includeReasoning: true`, producing `thinking` stream events and a final
 `reasoning` value. Impersonation runs always suppress reasoning exposure.
 

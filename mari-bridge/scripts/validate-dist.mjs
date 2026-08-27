@@ -14,10 +14,12 @@ assert.equal(manifest.contributions, undefined);
 for (const entrypoint of Object.values(manifest.entrypoints)) await fs.access(path.join(root, entrypoint));
 for (const required of [
   "bootstrap/register.mjs",
+  "bootstrap/runtime.mjs",
   "src/server/runtime.js",
   "src/server/result-registry.js",
   "src/server/tracker-context-registry.js",
   "src/server/turn-handoff-registry.js",
+  "src/server/server-overlay.js",
   "src/client/runtime.js",
 ]) {
   await fs.access(path.join(root, required));

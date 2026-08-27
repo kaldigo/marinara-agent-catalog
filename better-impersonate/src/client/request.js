@@ -9,11 +9,18 @@ export function buildImpersonateDraftRequest(mode, guidance) {
     impersonate: true,
     ...(guidance
       ? {
-          generationGuide: mode === "inner_state"
-            ? `Private inner state for {{user}}: ${guidance}\nUse this as quiet emotional context, not dialogue or a required outcome.`
-            : guidance,
+          generationGuide: guidance,
           generationGuideSource: "guide",
         }
       : {}),
   };
+}
+
+export function extractContinuationSuffix(original, generated) {
+  const draft = String(original ?? "");
+  const content = String(generated ?? "");
+  if (!draft || !content) return content;
+  if (content.startsWith(draft)) return content.slice(draft.length);
+  if (draft.startsWith(content)) return "";
+  return content;
 }

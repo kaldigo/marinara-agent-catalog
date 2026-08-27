@@ -17,6 +17,7 @@ import {
   patchChatInputBridge,
   patchChatSettingsBridge,
   patchGenerationControllerEvents,
+  patchImpersonateSettingsBridge,
   patchQueryClientBridge,
   patchRoleplayHudBridge,
   patchRoleplayBackgroundBridge,
@@ -29,6 +30,12 @@ import {
 } from "../src/server/client-overlay.js";
 import { schedulePackageBootstrapRestart, __test as bootstrapRestartTest } from "../src/server/bootstrap-restart.js";
 import { installBootstrapFile, requiresBootstrapHandoff } from "../src/server/bootstrap-install.js";
+import {
+  isServerOverlayEntry,
+  prepareServerOverlay,
+  serverOverlayProcessState,
+  __test as serverOverlayTest,
+} from "../src/server/server-overlay.js";
 import { MariBridgeUnavailableError } from "../src/shared/contracts.js";
 
 const runtime = createBridgeRuntime({ capabilities: ["runtime.health"] });
@@ -260,18 +267,23 @@ globalThis.addEventListener = (type, listener) => {
 function dispatchClientEvent(type, detail) {
   for (const listener of clientEventListeners.get(type) ?? []) listener({ type, detail });
 }
-globalThis.fetch = async () => ({
-  ok: true,
-  async json() {
-    return {
-      status: "ok",
-      version: "2.4.4",
-      capabilityPackages: {
-        packages: [{ id: "mari-bridge", version: "0.2.0", readiness: "ready", ready: true }],
-      },
-    };
-  },
-});
+globalThis.fetch = async (input) => {
+  const spatial = String(input).includes("/api/chats/chat-1/spatial-context");
+  const body = spatial
+    ? { currentLocationId: "location-fetch", definition: { revision: 5, locations: [] } }
+    : {
+        status: "ok",
+        version: "2.4.4",
+        capabilityPackages: {
+          packages: [{ id: "mari-bridge", version: "0.2.0", readiness: "ready", ready: true }],
+        },
+      };
+  return {
+    ok: true,
+    clone() { return { async json() { return body; } }; },
+    async json() { return body; },
+  };
+};
 globalThis.HTMLElement = class HTMLElement {
   constructor(classes = []) {
     this.attributes = new Map();
@@ -289,9 +301,14 @@ globalThis.HTMLElement = class HTMLElement {
     return child;
   }
 };
+const localStorageValues = new Map();
 Object.defineProperty(globalThis, "localStorage", {
   configurable: true,
-  value: { getItem() { return null; } },
+  value: {
+    getItem(key) { return localStorageValues.get(key) ?? null; },
+    setItem(key, value) { localStorageValues.set(key, String(value)); },
+    removeItem(key) { localStorageValues.delete(key); },
+  },
 });
 globalThis.customElements = {
   get(name) { return customElementDefinitions.get(name); },
@@ -310,6 +327,7 @@ const allNativeClientPatches = [
   "client.command-drafts",
   "client.commands",
   "client.generation-lifecycle",
+  "client.impersonate-settings",
   "client.native-agent-settings",
   "client.quick-replies",
   "client.roleplay-background",
@@ -320,14 +338,16 @@ const allNativeClientPatches = [
 const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8"))
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
+const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.27");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.33");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("spatial.context"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("ui.impersonate-settings"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.tracker-section"), true);
 assert.equal(typeof globalThis[clientSymbol].renderNativeTrackerSections, "function");
 assert.equal(customElements.get("marinara-capability-mari-bridge"), undefined);
@@ -389,6 +409,10 @@ assert.deepEqual(globalThis[clientSymbol].resolveBackgroundProps({}, "/location.
   url: "/location.png",
   blurPx: 7,
 });
+nativeBackgroundState.chatBackground = "/stale-remount.png";
+assert.equal(globalThis[clientSymbol].bindRoleplayBackgroundStore(nativeBackgroundStore), true);
+await new Promise((resolve) => queueMicrotask(resolve));
+assert.equal(nativeBackgroundState.chatBackground, "/location.png");
 await backgroundSession.close();
 const queryListeners = new Set();
 const spatialQuery = {
@@ -418,9 +442,12 @@ assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-b");
 spatialQuery.state.data = { ...spatialQuery.state.data, currentLocationId: "location-c" };
 for (const listener of queryListeners) listener({ type: "updated", action: { type: "fetch" }, query: spatialQuery });
 assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-b");
+await observedSpatialFetch("/api/chats/chat-1/spatial-context", { method: "PUT" });
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-fetch");
 spatialQuery.queryKey = ["spatial-context", "chat-1", "game-map-reconciliation"];
 for (const listener of queryListeners) listener({ type: "updated", action: { type: "success" }, query: spatialQuery });
-assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-b");
+assert.equal(spatialSnapshots.at(-1).data.currentLocationId, "location-fetch");
 await spatialSession.close();
 const clientSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "client-test",
@@ -498,6 +525,21 @@ const fakeJsx = {
     return { type, props, key };
   },
 };
+const nativeImpersonateSetting = globalThis[clientSymbol].renderNativeImpersonateSetting({
+  react: { useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot(); } },
+  jsx: fakeJsx,
+  native: { SettingsSwitch() {} },
+  context: { presetId: "preset-1" },
+});
+const nativeImpersonateSwitch = nativeImpersonateSetting.type(nativeImpersonateSetting.props);
+assert.equal(nativeImpersonateSwitch.props.label, "Preset handles impersonation");
+assert.equal(nativeImpersonateSwitch.props.checked, false);
+assert.equal(nativeImpersonateSwitch.props.disabled, false);
+nativeImpersonateSwitch.props.onChange(true);
+assert.equal(localStorageValues.get("mari-bridge:impersonate-preset-owns-instructions"), "true");
+localStorageValues.set("marinara-engine-ui", JSON.stringify({
+  state: { impersonatePresetId: "preset-1", impersonatePromptTemplate: "Native impersonate prompt" },
+}));
 const nativeTrackerOrder = globalThis[clientSymbol].renderNativeTrackerSections({
   react: { useSyncExternalStore() {} },
   jsx: fakeJsx,
@@ -523,9 +565,14 @@ await featureSession.close();
 assert.equal(trackerUiPublishes, 3);
 assert.equal(globalThis[clientSymbol].resolveAgentSuiteTrackerSlice("feature-test"), undefined);
 unsubscribeTrackerUi();
+let expectedPresetOwnsInstructions = true;
 globalThis.fetch = async (url, options) => {
   assert.equal(url, "/api/generate/dryRun");
   const requestBody = JSON.parse(String(options?.body ?? "{}"));
+  if (requestBody.impersonate === true) {
+    assert.equal(requestBody.impersonatePresetOwnsInstructions, expectedPresetOwnsInstructions);
+    if (expectedPresetOwnsInstructions) assert.equal(requestBody.impersonatePresetId, "preset-1");
+  }
   const events = requestBody.includeReasoning === true
     ? [
         'data: {"type":"dryrun_started","data":{"runId":"run-reasoning"}}\n\n',
@@ -577,6 +624,16 @@ assert.deepEqual(
   }),
   { content: " world", continuation: " world", reasoning: "", runId: "run-continuation" },
 );
+nativeImpersonateSwitch.props.onChange(false);
+expectedPresetOwnsInstructions = false;
+assert.equal(await draftSession.drafts.generate({
+  chatId: "chat-1",
+  body: { impersonate: true, impersonateContinuation: "Hello" },
+  output: "continuation",
+}), " world");
+nativeImpersonateSwitch.props.onChange(true);
+localStorageValues.set("marinara-engine-ui", JSON.stringify({ state: { impersonatePresetId: null } }));
+assert.equal(await draftSession.drafts.generate({ chatId: "chat-1", body: { impersonate: true } }), "Hello world");
 const reasoningUpdates = [];
 assert.deepEqual(
   await draftSession.drafts.generate({
@@ -636,6 +693,10 @@ assert.equal(
   ),
   'import("./ChatRoleplaySurface-abc.js?mariBridge=overlay123");import("./vendor.js?mariBridge=overlay123");',
 );
+assert.equal(
+  versionAssetReferences("vendor.js vendor.js.map", ["vendor.js", "vendor.js.map"], "onepass"),
+  "vendor.js?mariBridge=onepass vendor.js.map?mariBridge=onepass",
+);
 const chatSettingsFixture = [
   'react.jsxs("div",{"data-chat-agent-entry":agent.id,className:"one",children:[first]});',
   'react.jsxs("div",{"data-chat-agent-entry":other.id,className:"two",children:[second]});',
@@ -643,6 +704,14 @@ const chatSettingsFixture = [
 const patchedChatSettings = patchChatSettingsBridge(chatSettingsFixture);
 assert.equal((patchedChatSettings.match(/marinara-mari-bridge-agent-settings/gu) ?? []).length, 2);
 assert.match(patchedChatSettings, /"agent-id":agent\.id/u);
+const impersonateSettingsFixture = [
+  'import{r as react,j as jsx}from"./vendor-react-test.js";',
+  'function Impersonate(){const first=1,preset=store(state=>state.impersonatePresetId);return jsx.jsxs("div",{children:[jsx.jsx(SettingsSwitch,{label:t("ui.chatSettings.impersonatesection.skipAgents"),checked:false}),jsx.jsx(SettingsSwitch,{label:t("ui.chatSettings.impersonatesection.useCyoaAsDirection"),checked:false})]})}',
+].join("");
+const patchedImpersonateSettings = patchImpersonateSettingsBridge(impersonateSettingsFixture);
+assert.match(patchedImpersonateSettings, /renderNativeImpersonateSetting/u);
+assert.match(patchedImpersonateSettings, /SettingsSwitch:SettingsSwitch/u);
+assert.match(patchedImpersonateSettings, /presetId:preset/u);
 const agentSuiteFixture = [
   'import{r as react}from"./vendor-react-test.js";',
   'const slices={};',
@@ -709,6 +778,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-one.js"), chatInputFi
 await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-two.js"), chatInputFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "slash-commands.js"), slashCommandListFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "chat-settings.js"), chatSettingsFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "impersonate-settings.js"), impersonateSettingsFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "agent-suite.js"), agentSuiteFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanelFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
@@ -734,7 +804,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.27"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.33"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -804,6 +874,7 @@ await installer.activate({
 await installer.selfCheck();
 for (const relativePath of [
   "bootstrap/register.mjs",
+  "bootstrap/runtime.mjs",
   "src/shared/contracts.js",
   "src/server/runtime.js",
   "src/server/turn-handoff-registry.js",
@@ -835,6 +906,12 @@ const bootstrapAttempt = JSON.parse(
 );
 assert.equal(bootstrapAttempt.attempts, 0);
 assert.equal(bootstrapAttempt.status, "preload-active");
+const bootstrapRestartSource = await fs.readFile(new URL("../src/server/bootstrap-restart.js", import.meta.url), "utf8");
+assert.match(bootstrapRestartSource, /process\.platform !== "win32" && typeof process\.execve !== "function"/u);
+assert.match(bootstrapRestartSource, /detached: true/u);
+assert.match(bootstrapRestartSource, /child\.unref\(\)/u);
+assert.match(bootstrapRestartSource, /process\.exit\(0\)/u);
+assert.match(bootstrapRestartSource, /process\.execve\(process\.execPath/u);
 delete globalThis[kernelSymbol];
 await fs.rm(bootstrapFixtureRoot, { recursive: true, force: true });
 
@@ -866,10 +943,32 @@ assert.equal(prepared.chatMessages[0].content, "Hello ");
 const finalized = await prompts.finalizeAssemblerMessages(prepared, prepared.chatMessages);
 assert.equal(finalized[0].content, "Package state");
 assert.equal(finalized[1].contextKind, "history");
-const bootstrapPatchSource = await fs.readFile(new URL("../bootstrap/register.mjs", import.meta.url), "utf8");
+const bootstrapDispatcherSource = await fs.readFile(new URL("../bootstrap/register.mjs", import.meta.url), "utf8");
+const bootstrapPatchSource = await fs.readFile(new URL("../bootstrap/runtime.mjs", import.meta.url), "utf8");
+const serverOverlaySource = await fs.readFile(new URL("../src/server/server-overlay.js", import.meta.url), "utf8");
 const installerSource = await fs.readFile(new URL("../src/server/index.js", import.meta.url), "utf8");
+assert.match(bootstrapDispatcherSource, /isMainThread/u);
+assert.match(bootstrapDispatcherSource, /if \(isMainThread\) await import\("\.\/runtime\.mjs"\)/u);
+assert.doesNotMatch(bootstrapDispatcherSource, /prepareClientOverlay|prepareServerOverlay|handoffToServerOverlay/u);
+const workerGuardResult = spawnSync(process.execPath, [
+  `--import=${new URL("../bootstrap/register.mjs", import.meta.url).href}`,
+  "--input-type=module",
+  "--eval",
+  [
+    'import { Worker } from "node:worker_threads";',
+    'const worker = new Worker(\'import { parentPort } from "node:worker_threads"; parentPort.postMessage(Boolean(globalThis[Symbol.for("marinara.mari-bridge.kernel.v1")]));\', { eval: true, type: "module" });',
+    'worker.once("message", (value) => console.log(String(value)));',
+  ].join("\n"),
+], { encoding: "utf8" });
+assert.equal(workerGuardResult.status, 0, workerGuardResult.stderr);
+assert.equal(workerGuardResult.stdout.trim(), "false");
 assert.match(bootstrapPatchSource, /createInjectedServerRuntime/u);
 assert.match(bootstrapPatchSource, /prepareClientOverlay/u);
+assert.match(bootstrapPatchSource, /prepareServerOverlay/u);
+assert.match(bootstrapPatchSource, /handoffToServerOverlay/u);
+assert.doesNotMatch(bootstrapPatchSource, /registerHooks|nextLoad\(url/u);
+assert.match(serverOverlaySource, /join\(resolve\(dataDir\), "mari-bridge"\)/u);
+assert.match(serverOverlaySource, /MARI_BRIDGE_ENGINE_ROOT/u);
 assert.match(bootstrapPatchSource, /bindHost/u);
 assert.match(bootstrapPatchSource, /requirePrivilegedAccess/u);
 assert.match(bootstrapPatchSource, /\/api\/mari-bridge\/health/u);
@@ -879,6 +978,8 @@ assert.match(bootstrapPatchSource, /prompt\.generate-fallback/u);
 assert.match(bootstrapPatchSource, /prompt\.active-agents\.assembler/u);
 assert.match(bootstrapPatchSource, /prompt\.active-agents\.context/u);
 assert.match(bootstrapPatchSource, /prompt\.active-agents\.macro/u);
+assert.match(bootstrapPatchSource, /prompt\.active-agents\.dry-run/u);
+assert.match(bootstrapPatchSource, /prompt\.group-macros\.preview/u);
 assert.match(bootstrapPatchSource, /active-agents/u);
 assert.match(bootstrapPatchSource, /group_scenario_override/u);
 assert.match(bootstrapPatchSource, /group_mode/u);
@@ -918,10 +1019,119 @@ assert.doesNotMatch(
   bootstrapPatchSource,
   /"          chatId: input\.chatId, chatMetadata: chatMeta, chatMode, targetCharacterId: targetCharId/u,
 );
-const { decodeModuleSource, patchCommittedTrackerActiveGuard, patchServerModule } = await import(
-  new URL(`../bootstrap/register.mjs?check=${Date.now()}`, import.meta.url)
+const { decodeModuleSource, detectMarinaraEngine, patchCommittedTrackerActiveGuard, patchServerModule } = await import(
+  new URL(`../bootstrap/runtime.mjs?check=${Date.now()}`, import.meta.url)
 );
 assert.equal(decodeModuleSource(new TextEncoder().encode("export const value = 1;")), "export const value = 1;");
+
+const serverOverlayFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mari-bridge-server-overlay-"));
+const serverOverlayDist = path.join(serverOverlayFixtureRoot, "packages", "server", "dist");
+const serverOverlayDataDir = path.join(serverOverlayFixtureRoot, "runtime-data");
+const sharedOverlayDist = path.join(serverOverlayFixtureRoot, "packages", "shared", "dist");
+await fs.mkdir(path.join(serverOverlayDist, "services"), { recursive: true });
+await fs.mkdir(path.join(sharedOverlayDist, "utils"), { recursive: true });
+await fs.mkdir(path.join(serverOverlayFixtureRoot, "packages", "server", "node_modules", "fastify"), { recursive: true });
+await fs.writeFile(path.join(serverOverlayFixtureRoot, "package.json"), JSON.stringify({
+  name: "marinara-engine",
+  version: "2.4.4",
+}));
+await fs.writeFile(path.join(serverOverlayFixtureRoot, "packages", "shared", "package.json"), JSON.stringify({
+  name: "@marinara-engine/shared",
+  type: "module",
+  exports: { ".": "./dist/index.js" },
+}));
+await fs.writeFile(path.join(serverOverlayDist, "index.js"), "export const entry = true;\n");
+await fs.writeFile(path.join(serverOverlayDist, "untouched.js"), "export const untouched = true;\n");
+await fs.writeFile(path.join(serverOverlayDist, "services", "patched.js"), "export const native = true;\n");
+await fs.writeFile(
+  path.join(serverOverlayFixtureRoot, "packages", "server", "node_modules", "fastify", "package.json"),
+  JSON.stringify({ name: "fastify", version: "fixture" }),
+);
+await fs.writeFile(path.join(sharedOverlayDist, "index.js"), 'export * from "./utils/macro-engine.js";\n');
+await fs.writeFile(path.join(sharedOverlayDist, "utils", "macro-engine.js"), "export const nativeMacro = true;\n");
+const overlayTargets = [
+  ["services/patched.js", ["packages", "server", "dist", "services", "patched.js"]],
+  ["utils/macro-engine.js", ["packages", "shared", "dist", "utils", "macro-engine.js"]],
+];
+const preparedServerOverlay = await prepareServerOverlay({
+  engineRoot: serverOverlayFixtureRoot,
+  dataDir: serverOverlayDataDir,
+  engineVersion: "2.4.4",
+  bridgeVersion: "1.0.31",
+  patchTargets: overlayTargets,
+  patchModule: (_url, source) => `${source.trimEnd()}\nexport const bridged = true;\n`,
+});
+assert.equal(preparedServerOverlay.root, path.join(serverOverlayDataDir, "mari-bridge", "server"));
+assert.equal(preparedServerOverlay.engineRoot, path.resolve(serverOverlayFixtureRoot));
+assert.equal(
+  JSON.parse(await fs.readFile(path.join(preparedServerOverlay.root, ".mari-bridge-ready.json"), "utf8")).engineRoot,
+  path.resolve(serverOverlayFixtureRoot),
+);
+assert.equal(isServerOverlayEntry(preparedServerOverlay.entry, preparedServerOverlay), true);
+assert.equal(
+  await fs.realpath(path.join(preparedServerOverlay.root, "node_modules", "fastify")),
+  await fs.realpath(path.join(serverOverlayFixtureRoot, "packages", "server", "node_modules", "fastify")),
+);
+assert.deepEqual(
+  detectMarinaraEngine("missing-entry.js", path.join(serverOverlayFixtureRoot, "missing"), serverOverlayFixtureRoot),
+  Object.freeze({ root: path.resolve(serverOverlayFixtureRoot), version: "2.4.4" }),
+);
+assert.deepEqual(serverOverlayProcessState(preparedServerOverlay, {}), { active: false, depth: 0 });
+assert.deepEqual(serverOverlayProcessState(preparedServerOverlay, {
+  MARI_BRIDGE_SERVER_OVERLAY_VERSION: "1.0.31",
+  MARI_BRIDGE_SERVER_OVERLAY_ENTRY: preparedServerOverlay.entry,
+  MARI_BRIDGE_SERVER_HANDOFF_DEPTH: "1",
+}), { active: true, depth: 1 });
+assert.deepEqual(serverOverlayProcessState(preparedServerOverlay, {
+  MARI_BRIDGE_SERVER_OVERLAY_VERSION: "1.0.29",
+  MARI_BRIDGE_SERVER_OVERLAY_ENTRY: preparedServerOverlay.entry,
+  MARI_BRIDGE_SERVER_HANDOFF_DEPTH: "1",
+}), { active: false, depth: 1 });
+assert.match(await fs.readFile(path.join(preparedServerOverlay.root, "services", "patched.js"), "utf8"), /bridged = true/u);
+assert.match(await fs.readFile(path.join(preparedServerOverlay.root, "untouched.js"), "utf8"), /untouched = true/u);
+assert.match(
+  await fs.readFile(path.join(
+    preparedServerOverlay.root,
+    "node_modules",
+    "@marinara-engine",
+    "shared",
+    "dist",
+    "utils",
+    "macro-engine.js",
+  ), "utf8"),
+  /bridged = true/u,
+);
+assert.deepEqual(
+  await prepareServerOverlay({
+    engineRoot: serverOverlayFixtureRoot,
+    dataDir: serverOverlayDataDir,
+    engineVersion: "2.4.4",
+    bridgeVersion: "1.0.31",
+    patchTargets: overlayTargets,
+    patchModule: () => { throw new Error("cached server overlay should not rebuild"); },
+  }),
+  preparedServerOverlay,
+);
+const rebuiltServerOverlay = await prepareServerOverlay({
+  engineRoot: serverOverlayFixtureRoot,
+  dataDir: serverOverlayDataDir,
+  engineVersion: "2.4.4",
+  bridgeVersion: "1.0.33",
+  patchTargets: overlayTargets,
+  patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
+});
+assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.33");
+assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
+assert.deepEqual(
+  serverOverlayTest.withoutMariBridgeExecArgs([
+    "--trace-warnings",
+    "--import=file:///data/mari-bridge/bootstrap/register.mjs",
+    "--enable-source-maps",
+  ]),
+  ["--trace-warnings", "--enable-source-maps"],
+);
+await fs.rm(serverOverlayFixtureRoot, { recursive: true, force: true });
 const packageStartupFixture = `async start(app) {
         for (const runtimePackage of await capabilityPackageManager.runtimePackages()) {
             await this.activateOne(app, runtimePackage, true, false);
@@ -1131,6 +1341,7 @@ const patchedAssemblerFixture = patchServerModule(
   assemblerPatchFixture,
 );
 assert.match(patchedAssemblerFixture, /groupMode: input\.groupMode/u);
+assert.match(patchedAssemblerFixture, /activeAgentIds: input\.activeAgentIds \?\? \[\]/u);
 assert.match(patchedAssemblerFixture, /mariBridgeNestedOutletSources/u);
 assert.match(patchedAssemblerFixture, /mariBridgeSectionNeedsOutletScan\(section\)/u);
 assert.match(patchedAssemblerFixture, /group_scenario_override/u);
@@ -1138,6 +1349,8 @@ assert.match(patchedAssemblerFixture, /group_scenario_override/u);
 const dryRunRouteFixture = [
   "        const returnPrompt = body.returnPrompt === true;",
   "        const wrapLastMessage = body.wrapLastMessage === true;",
+  "        if (impersonate) {",
+  "            const impersonateInstruction = buildImpersonateInstruction({",
   "            finalMessages.push({ role: \"assistant\", content: assistantPrefill.trimEnd() });",
   "        }",
   "        finalMessages = injectOwnerSpatialPrompt(finalMessages, promptSpatialProjection);",
@@ -1163,6 +1376,8 @@ const dryRunRouteFixture = [
   "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
   "                idleDuration: promptIdleDuration,",
   "                impersonate,",
+  "                enableAgents: false,",
+  "                activeAgentIds: [],",
   "            promptMacroContext.agentData = {",
   "                ...promptMacroContext.agentData,",
   "                ...assembled.macroAgentData,",
@@ -1176,10 +1391,25 @@ const patchedDryRunRouteFixture = patchServerModule(
 assert.equal((patchedDryRunRouteFixture.match(/dryRunGroupChatMode/gu) ?? []).length, 2);
 assert.equal((patchedDryRunRouteFixture.match(/allCharacterIds\.length > 1 \? dryRunGroupChatMode/gu) ?? []).length, 2);
 assert.match(patchedDryRunRouteFixture, /promptMacroContext\.outlets = assembled\.lorebookScanResult\?\.outlets/u);
+assert.match(patchedDryRunRouteFixture, /activeAgentIds: dryRunActiveAgentIds/u);
 assert.match(patchedDryRunRouteFixture, /impersonateContinuation/u);
+assert.match(patchedDryRunRouteFixture, /impersonate && !impersonatePresetOwnsInstructions/u);
+assert.match(patchedDryRunRouteFixture, /extractImpersonateContinuation/u);
 assert.match(patchedDryRunRouteFixture, /captureReasoning: includeReasoning/u);
 assert.match(patchedDryRunRouteFixture, /type: "thinking"/u);
-assert.match(patchedDryRunRouteFixture, /continuation: impersonateContinuation \? content : undefined/u);
+assert.equal((patchedDryRunRouteFixture.match(/continuation: extractImpersonateContinuation\(content\)/gu) ?? []).length, 2);
+
+const promptsRouteFixture = [
+  "            chatMessages: mappedMessages,",
+  "            activeLorebookIds: Array.isArray(chatMeta.activeLorebookIds) ? chatMeta.activeLorebookIds : [],",
+].join("\n");
+const patchedPromptsRouteFixture = patchServerModule(
+  "file:///engine/routes/prompts.routes.js",
+  promptsRouteFixture,
+);
+assert.match(patchedPromptsRouteFixture, /activeAgentIds: chatMeta\.enableAgents === false/u);
+assert.match(patchedPromptsRouteFixture, /groupMode: characterIds\.length > 1/u);
+assert.match(patchedPromptsRouteFixture, /groupScenarioOverrideText/u);
 
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";

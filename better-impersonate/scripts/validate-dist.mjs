@@ -13,8 +13,9 @@ assert(!fs.existsSync(path.join(packageRoot, "agents.json")), "distribution cont
 assert(JSON.stringify(manifest.contributions?.slots) === JSON.stringify(["chat-runtime"]), "only chat runtime is extended");
 assert(client.includes('command: "/impersonate_draft"'), "underscore draft command is registered");
 assert(client.includes('command: "/impersonate_continue"'), "underscore continue command is registered");
-assert(client.includes('command: "/impersonate_thinking"'), "underscore thinking command is registered");
 assert(client.includes('commands: ["/impersonate_last"]'), "underscore last-guidance command is registered");
+assert(!client.includes("/impersonate_thinking"), "removed thinking mode is absent");
+assert(client.includes("lastGeneratedDraft"), "generated output is tracked separately from guidance");
 assert(!client.includes("/impersonate-draft"), "non-native hyphen aliases are absent");
 assert(client.includes('"generation.draft"'), "native dry-run generation is used");
 assert(client.includes('"commands.draft-write"'), "native draft writing is used");

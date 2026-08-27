@@ -35,11 +35,19 @@ must follow that surface's native interaction contract.
 
 ## Runtime layers
 
-### 1. Early server loader
+### 1. Early server runtime and copied overlay
 
-A Node preload stored under the persistent data directory registers synchronous
-module load hooks before Marinara's entrypoint is imported. It transforms only
-known server modules and inserts calls to a global bridge adapter.
+A Node preload stored under the persistent data directory runs before
+Marinara's entrypoint is imported. Its tiny dispatcher imports the runtime only
+on the main thread, because `NODE_OPTIONS` is inherited by Engine workers.
+
+The runtime validates known server modules, copies the complete server and
+shared distributions into `DATA_DIR/mari-bridge/server`, links normal runtime
+dependencies to the native installation, and applies count-checked transforms
+only to that writable copy. It then performs one guarded handoff to the copied
+entry while carrying the original Engine root explicitly. A ready marker keyed
+by Engine and Mari Bridge versions makes subsequent starts reuse the verified
+copy. The original Engine distribution remains unchanged.
 
 The registry identity should use a versioned global symbol rather than a string
 property:
@@ -49,12 +57,12 @@ const PROMPT_CONTROL = Symbol.for("marinara.prompt-control.v1");
 ```
 
 Patched Engine code calls a small, synchronous adapter. The preload constructs
-the registry before importing Engine code; consumer packages only add their
-scoped contributions later. If the registry is absent, every adapter call must
-return the unchanged native value.
+the registry before the copied Engine entry is imported; consumer packages
+only add their scoped contributions later. If the registry is absent, every
+adapter call must return the unchanged native value.
 
-The loader is the patch mechanism. The bootstrap bounce described in
-`BOOTSTRAP.md` is only a way to ensure the loader runs early enough without
+The copied overlay is the patch mechanism. The bootstrap bounce described in
+`BOOTSTRAP.md` only ensures the persistent runtime starts early enough without
 requiring Docker configuration.
 
 ### 2. Installer package
@@ -146,7 +154,8 @@ The early loader must make activation order deterministic:
 
 ```text
 preload kernel and patch registry
-  -> verify required Engine patches
+  -> verify required Engine patches and prepare/reuse the copied server overlay
+  -> hand off once to the copied server entry
   -> prepare the verified client overlay
   -> create and mark the injected server registry ready
   -> bind it to the native Fastify host
@@ -282,6 +291,8 @@ DATA_DIR/mari-bridge/
     loader.mjs
   client/
     <engine-fingerprint>/
+  server/
+    <copied server distribution>
   compatibility/
     supported-builds.json
   diagnostics/

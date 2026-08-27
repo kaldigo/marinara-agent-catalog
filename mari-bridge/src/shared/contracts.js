@@ -1,5 +1,5 @@
 export const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 7 });
-export const MARI_BRIDGE_IMPLEMENTATION_VERSION = "1.0.27";
+export const MARI_BRIDGE_IMPLEMENTATION_VERSION = "1.0.33";
 export const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
 export const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 export const MARI_BRIDGE_KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
