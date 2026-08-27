@@ -4,6 +4,48 @@ const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
 const TURN_HANDOFF_TAG = "marinara-mari-bridge-turn-handoff";
 const NATIVE_PATCHES = new Set(["__MARI_BRIDGE_NATIVE_PATCHES__"]);
+const IMPERSONATE_PRESET_OWNS_INSTRUCTIONS_KEY = "mari-bridge:impersonate-preset-owns-instructions";
+const SPATIAL_FETCH_OBSERVER_SYMBOL = Symbol.for("marinara.mari-bridge.spatial-fetch-observer.v1");
+
+const impersonatePresetSettingSubscribers = new Set();
+let impersonatePresetOwnsInstructions = readStoredImpersonatePresetSetting();
+
+function readStoredImpersonatePresetSetting() {
+  try {
+    return globalThis.localStorage?.getItem(IMPERSONATE_PRESET_OWNS_INSTRUCTIONS_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function publishImpersonatePresetSetting() {
+  for (const subscriber of [...impersonatePresetSettingSubscribers]) subscriber();
+}
+
+function setImpersonatePresetOwnsInstructions(value) {
+  const next = value === true;
+  if (next === impersonatePresetOwnsInstructions) return;
+  impersonatePresetOwnsInstructions = next;
+  try {
+    globalThis.localStorage?.setItem(IMPERSONATE_PRESET_OWNS_INSTRUCTIONS_KEY, String(next));
+  } catch {
+    // The native toggle still works for the current page when persistence is unavailable.
+  }
+  publishImpersonatePresetSetting();
+}
+
+function subscribeImpersonatePresetSetting(listener) {
+  impersonatePresetSettingSubscribers.add(listener);
+  return () => impersonatePresetSettingSubscribers.delete(listener);
+}
+
+globalThis.addEventListener?.("storage", (event) => {
+  if (event?.key !== IMPERSONATE_PRESET_OWNS_INSTRUCTIONS_KEY) return;
+  const next = readStoredImpersonatePresetSetting();
+  if (next === impersonatePresetOwnsInstructions) return;
+  impersonatePresetOwnsInstructions = next;
+  publishImpersonatePresetSetting();
+});
 
 function setClientDiagnostic(name, value) {
   const root = globalThis.document?.documentElement;
@@ -257,10 +299,53 @@ function readNativeImpersonateOptions() {
       ...(presetId ? { impersonatePresetId: presetId } : {}),
       ...(connectionId ? { impersonateConnectionId: connectionId } : {}),
       impersonateBlockAgents: state?.impersonateBlockAgents === true,
+      impersonatePresetOwnsInstructions: Boolean(presetId && impersonatePresetOwnsInstructions),
     };
   } catch {
     return {};
   }
+}
+
+function createNativeImpersonateSettingRenderer() {
+  const componentCache = new WeakMap();
+
+  function componentFor(react, jsx) {
+    let Setting = componentCache.get(react);
+    if (Setting) return Setting;
+    Setting = function ImpersonatePresetSetting({ native, presetId }) {
+      const checked = react.useSyncExternalStore(
+        subscribeImpersonatePresetSetting,
+        () => impersonatePresetOwnsInstructions,
+        () => impersonatePresetOwnsInstructions,
+      );
+      return jsx.jsx(native.SettingsSwitch, {
+        label: "Preset handles impersonation",
+        help: "Use the selected preset as the complete impersonation prompt and skip the normal Impersonate prompt template.",
+        description: presetId
+          ? "Do not add the Impersonate prompt template to generations using this preset."
+          : "Select a specific Impersonate preset to enable this option.",
+        helpPosition: "label",
+        checked,
+        onChange: setImpersonatePresetOwnsInstructions,
+        disabled: !presetId,
+        labelPosition: "start",
+        className: "justify-between rounded-md px-2 py-1.5 text-left",
+        labelClassName: "text-xs font-semibold",
+      });
+    };
+    componentCache.set(react, Setting);
+    return Setting;
+  }
+
+  return function renderNativeImpersonateSetting(input = {}) {
+    const { react, jsx, native, context } = input;
+    if (!react?.useSyncExternalStore || !jsx?.jsx || !native?.SettingsSwitch) return null;
+    const Setting = componentFor(react, jsx);
+    return jsx.jsx(Setting, {
+      native,
+      presetId: typeof context?.presetId === "string" && context.presetId.trim() ? context.presetId : null,
+    }, "mari-bridge:impersonate-preset-setting");
+  };
 }
 
 async function readChatImpersonatePrompt(chatId) {
@@ -989,22 +1074,42 @@ function createRoleplayBackgroundService(activeChat) {
 
   function apply(input) {
     const state = nativeStore?.getState?.();
-    if (typeof state?.setChatBackground !== "function") return false;
+    if (typeof state?.setChatBackground !== "function") {
+      setClientDiagnostic("data-mari-bridge-background-apply-last", `${input.chatId}:store-unavailable`);
+      return false;
+    }
     live = input;
     pending = null;
-    state.setChatBackground(input.url);
+    if (state.chatBackground !== input.url) state.setChatBackground(input.url);
+    setClientDiagnostic("data-mari-bridge-background-apply-last", `${input.chatId}:applied`);
     return true;
   }
 
   function bindStore(store) {
     if (typeof store !== "function" || typeof store.getState !== "function") return false;
     nativeStore = store;
-    if (pending?.chatId === activeChat.getSnapshot().chatId && !pendingReplayScheduled) {
+    const replay = pending?.chatId === activeChat.getSnapshot().chatId
+      ? pending
+      : live?.chatId === activeChat.getSnapshot().chatId
+        ? live
+        : null;
+    setClientDiagnostic(
+      "data-mari-bridge-background-bind-last",
+      `${activeChat.getSnapshot().chatId ?? ""}:${replay ? "replay" : "none"}`,
+    );
+    if (replay && store.getState().chatBackground !== replay.url && !pendingReplayScheduled) {
       pendingReplayScheduled = true;
-      // Store discovery runs inside ChatArea render; replay after that render stack.
+      // Store discovery runs inside ChatArea render. Replaying the current live
+      // contribution as well as a first-time pending write lets the native
+      // chat-remount restore effect settle without leaving stale cached state.
       queueMicrotask(() => {
         pendingReplayScheduled = false;
-        if (pending?.chatId === activeChat.getSnapshot().chatId) apply(pending);
+        const current = pending?.chatId === activeChat.getSnapshot().chatId
+          ? pending
+          : live?.chatId === activeChat.getSnapshot().chatId
+            ? live
+            : null;
+        if (current) apply(current);
       });
     }
     return true;
@@ -1012,15 +1117,21 @@ function createRoleplayBackgroundService(activeChat) {
 
   function set(ownerId, input) {
     const chatId = String(input?.chatId ?? "").trim();
-    if (!chatId || activeChat.getSnapshot().chatId !== chatId) return false;
+    const activeChatId = activeChat.getSnapshot().chatId;
+    if (!chatId || activeChatId !== chatId) {
+      setClientDiagnostic("data-mari-bridge-background-set-last", `${chatId}:${activeChatId ?? ""}:inactive`);
+      return false;
+    }
     const url = typeof input?.url === "string" && input.url.trim() ? input.url.trim() : null;
     const blurPx = Math.max(0, Math.min(24, Math.round(Number(input?.blurPx) || 0)));
     const next = Object.freeze({ ownerId, chatId, url, blurPx });
     if (!apply(next)) {
       live = next;
       pending = next;
+      setClientDiagnostic("data-mari-bridge-background-set-last", `${chatId}:${activeChatId}:queued`);
       return false;
     }
+    setClientDiagnostic("data-mari-bridge-background-set-last", `${chatId}:${activeChatId}:applied`);
     return true;
   }
 
@@ -1066,12 +1177,53 @@ function createSpatialContextLifecycle() {
     return Object.freeze({ chatId, data });
   }
 
+  function publishValue(chatId, data, source) {
+    const normalizedChatId = String(chatId ?? "").trim();
+    if (!normalizedChatId || !data || typeof data !== "object" || Array.isArray(data)) return;
+    const current = Object.freeze({ chatId: normalizedChatId, data });
+    latestByChat.set(current.chatId, current);
+    const event = Object.freeze({ source, detail: current });
+    setClientDiagnostic("data-mari-bridge-spatial-publish-last", `${source}:${current.chatId}:${subscribers.size}`);
+    for (const subscriber of [...subscribers]) subscriber(current, event);
+  }
+
   function publish(query, source) {
     const current = read(query);
     if (!current) return;
-    latestByChat.set(current.chatId, current);
-    const event = Object.freeze({ source, detail: current });
-    for (const subscriber of [...subscribers]) subscriber(current, event);
+    publishValue(current.chatId, current.data, source);
+  }
+
+  function observeSpatialContextFetches() {
+    if (globalThis[SPATIAL_FETCH_OBSERVER_SYMBOL] || typeof globalThis.fetch !== "function") return;
+    const nativeFetch = globalThis.fetch.bind(globalThis);
+    const observedFetch = async (input, init) => {
+      const response = await nativeFetch(input, init);
+      if (!response?.ok || typeof response.clone !== "function") return response;
+      const rawUrl = typeof input === "string" ? input : String(input?.url ?? "");
+      let match = null;
+      try {
+        match = new URL(rawUrl, globalThis.location?.href ?? "http://localhost/").pathname
+          .match(/^\/api\/chats\/([^/]+)\/spatial-context(?:\/|$)/u);
+      } catch {
+        return response;
+      }
+      if (!match) return response;
+      const chatId = decodeURIComponent(match[1]);
+      const method = String(init?.method ?? input?.method ?? "GET").toUpperCase();
+      void response.clone().json().then((body) => {
+        const data = body?.spatial && typeof body.spatial === "object" && !Array.isArray(body.spatial)
+          ? body.spatial
+          : body;
+        if (data?.definition && typeof data.definition === "object" && !Array.isArray(data.definition)) {
+          publishValue(chatId, data, `fetch:${method}`);
+          setClientDiagnostic("data-mari-bridge-spatial-fetch-last", `${method}:${chatId}`);
+        }
+      }).catch(() => {});
+      return response;
+    };
+    globalThis.fetch = observedFetch;
+    globalThis[SPATIAL_FETCH_OBSERVER_SYMBOL] = Object.freeze({ fetch: observedFetch });
+    setClientDiagnostic("data-mari-bridge-spatial-fetch", "ready");
   }
 
   function bindQueryClient(next) {
@@ -1089,6 +1241,8 @@ function createSpatialContextLifecycle() {
     return true;
   }
 
+  observeSpatialContextFetches();
+
   return Object.freeze({
     bindQueryClient,
     getSnapshot(chatId) {
@@ -1097,10 +1251,15 @@ function createSpatialContextLifecycle() {
     subscribe(listener, options = {}) {
       if (typeof listener !== "function") throw new TypeError("Mari Bridge spatial-context listener must be a function");
       subscribers.add(listener);
+      setClientDiagnostic("data-mari-bridge-spatial-subscriber-count", String(subscribers.size));
       if (options.emitCurrent !== false) {
         for (const current of latestByChat.values()) listener(current, Object.freeze({ source: "snapshot", detail: current }));
       }
-      return () => subscribers.delete(listener);
+      return () => {
+        const removed = subscribers.delete(listener);
+        setClientDiagnostic("data-mari-bridge-spatial-subscriber-count", String(subscribers.size));
+        return removed;
+      };
     },
   });
 }
@@ -1118,6 +1277,7 @@ function createClientRuntime(serverHealth) {
   const agentSuiteTrackerData = createAgentSuiteTrackerDataRegistry();
   const mountNativeSlot = createNativeSlotMounter();
   const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui);
+  const renderNativeImpersonateSetting = createNativeImpersonateSettingRenderer();
   const capabilities = new Set([
     "client.bridge-first",
     "consumer.sessions",
@@ -1137,11 +1297,12 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.generation-lifecycle")) capabilities.add("generation.lifecycle");
   if (NATIVE_PATCHES.has("client.quick-replies")) capabilities.add("quick-replies.input-macro");
   if (NATIVE_PATCHES.has("client.native-agent-settings")) capabilities.add("ui.agent-settings");
+  if (NATIVE_PATCHES.has("client.impersonate-settings")) capabilities.add("ui.impersonate-settings");
   if (NATIVE_PATCHES.has("client.tracker-sections")) capabilities.add("ui.tracker-section");
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.27",
+    implementationVersion: "1.0.33",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1318,6 +1479,7 @@ function createClientRuntime(serverHealth) {
     },
     ui,
     mountNativeSlot,
+    renderNativeImpersonateSetting,
     renderNativeTrackerSections,
     turnHandoff,
   });
@@ -1327,7 +1489,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.4",
-    implementationVersion: "1.0.27",
+    implementationVersion: "1.0.33",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);

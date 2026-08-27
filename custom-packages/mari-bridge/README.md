@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.27` supports Marinara Engine 2.4.4 and keeps the injected client
+Version `1.0.33` supports Marinara Engine 2.4.4 and keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
 tracker-context sections, native Agent Suite tracker-data registrations, and
@@ -50,14 +50,19 @@ post-save callback after Marinara's native GameState refresh, allowing their
 package-owned surfaces to invalidate cached display data immediately. Dry-run
 generation now accepts native generation guidance, supports provider-level
 impersonation continuation prefills with an explicit continuation result, and
-can expose reasoning on non-impersonation runs when the caller opts in. Tracker
+can expose reasoning on non-impersonation runs when the caller opts in. The
+native Impersonate settings section also receives a native `SettingsSwitch`
+for presets that already contain their own impersonation instructions. When a
+specific preset and that switch are active, dry-run impersonation omits only
+the normal Impersonate prompt template; guidance and continuation prefills keep
+their native roles. Tracker
 contributions are inserted inside Marinara's ordered section list and receive
 the native section header, collapse behavior, edit mode, active-agent state,
 and rerun callback; consumers provide only descriptors and feature-specific
 body content. It also
-retains the injected loader, SDK dependency gate, prompt kernel, and first
-client lifecycle patches. Count-checked transforms build the complete runtime
-inside the preload, patch both preset assembly and no-preset provider
+retains the injected runtime, SDK dependency gate, prompt kernel, and first
+client lifecycle patches. Count-checked transforms build a complete copied
+server distribution before launch, patch both preset assembly and no-preset provider
 preparation, and emit native active-chat and generation-controller events. The
 installed package is only the versioned installer and restart handoff; consumer
 ordering no longer depends on its activation. The injected runtime also owns per-chat streamed dry runs through
@@ -102,12 +107,15 @@ capability client. It does not fetch package health or wait for the
 `mari-bridge` client package, and there is no package-load ordering or polling
 delay.
 
-Before registering Node loader hooks, the preload requires an exact supported
-Engine version and preflights every target module and anchor. A version mismatch,
-missing module, or changed anchor applies no patches: Marinara starts with its
-native code, Mari Bridge exposes diagnostics only, and all consumer packages
-remain stopped. This is the safe rollback boundary; patches are never removed
-after an Engine module has begun evaluating.
+Before creating an overlay, the preload requires an exact supported Engine
+version and preflights every target module and anchor. A version mismatch,
+missing module, or changed anchor creates no patched server and leaves native
+Marinara untouched. For a supported Engine, the complete built server tree is
+copied into `DATA_DIR/mari-bridge/server` and patched on disk. Its metadata
+records the Engine and Mari Bridge versions; a Bridge version change rebuilds
+the copy. The live process then starts from that copied `index.js`, with the
+original Engine root carried explicitly and runtime dependencies linked to the
+native installation.
 
 The package writes a stable preload under `DATA_DIR` and contains the POSIX
 first-start `execve` bounce with a persistent loop guard. The direct local

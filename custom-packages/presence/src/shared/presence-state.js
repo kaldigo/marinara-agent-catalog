@@ -1,5 +1,3 @@
-import { PRESENCE_MESSAGE_KEY, PRESENCE_SCHEMA_VERSION } from "./constants.js";
-
 export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds, alwaysPresentCharacterIds = [] }) {
   const normalizedExtra = normalizeObject(extra);
   const roster = uniqueStrings(rosterIds);
@@ -15,22 +13,54 @@ export function buildPresenceExtraPatch({ extra, rosterIds, presentCharacterIds,
   return {
     hiddenFromAI: normalizedExtra.hiddenFromAI === true ? true : false,
     hiddenFromAICharacterIds,
-    [PRESENCE_MESSAGE_KEY]: {
-      version: PRESENCE_SCHEMA_VERSION,
-      presentCharacterIds: present,
-      updatedAt: new Date().toISOString(),
-    },
   };
+}
+
+export function buildVisibilityDeltaPatch({ extra, hiddenCharacterIds = [], visibleCharacterIds = [] }) {
+  const normalizedExtra = normalizeObject(extra);
+  const hidden = new Set(uniqueStrings(normalizedExtra.hiddenFromAICharacterIds));
+  for (const characterId of uniqueStrings(hiddenCharacterIds)) hidden.add(characterId);
+  for (const characterId of uniqueStrings(visibleCharacterIds)) hidden.delete(characterId);
+  return {
+    hiddenFromAI: normalizedExtra.hiddenFromAI === true,
+    hiddenFromAICharacterIds: [...hidden],
+  };
+}
+
+export function visibilityPatchChanges(extra, patch) {
+  return visibilityChangedCharacterIds(extra, patch).length > 0;
+}
+
+export function assertVisibilityPatchScope({ extra, patch, allowedCharacterIds, operation = "Presence mutation" }) {
+  const normalizedExtra = normalizeObject(extra);
+  const normalizedPatch = normalizeObject(patch);
+  const currentGlobal = normalizedExtra.hiddenFromAI === true;
+  const nextGlobal = normalizedPatch.hiddenFromAI === true;
+  if (currentGlobal !== nextGlobal) {
+    throw new Error(`${operation} attempted to change global Hide From AI state`);
+  }
+  const allowed = new Set(uniqueStrings(allowedCharacterIds));
+  const unexpected = visibilityChangedCharacterIds(normalizedExtra, normalizedPatch)
+    .filter((characterId) => !allowed.has(characterId));
+  if (unexpected.length) {
+    throw new Error(`${operation} attempted to change unrelated character visibility: ${unexpected.join(", ")}`);
+  }
+  return normalizedPatch;
+}
+
+export function visibilityChangedCharacterIds(extra, patch) {
+  const current = new Set(uniqueStrings(normalizeObject(extra).hiddenFromAICharacterIds));
+  const next = new Set(uniqueStrings(normalizeObject(patch).hiddenFromAICharacterIds));
+  return uniqueStrings([
+    ...[...current].filter((id) => !next.has(id)),
+    ...[...next].filter((id) => !current.has(id)),
+  ]);
 }
 
 export function readPresenceState(message, rosterIds) {
   const extra = normalizeObject(message?.extra);
   const roster = uniqueStrings(rosterIds);
   const rosterSet = new Set(roster);
-  const storedPresence = normalizeObject(extra[PRESENCE_MESSAGE_KEY]);
-  if (Array.isArray(storedPresence.presentCharacterIds)) {
-    return new Set(uniqueStrings(storedPresence.presentCharacterIds).filter((id) => rosterSet.has(id)));
-  }
   const hidden = new Set(uniqueStrings(extra.hiddenFromAICharacterIds).filter((id) => rosterSet.has(id)));
   return new Set(roster.filter((id) => !hidden.has(id)));
 }

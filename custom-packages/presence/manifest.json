@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
     "min": "2.4.4",
@@ -39,8 +39,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "0f4ddcc5e652c076a4509d918a8ab33e55a2ff195545d831fe3def1a25a6e934",
-      "bytes": 10106
+      "sha256": "22876b0b5e338373fa67896ad3a1a3ba95cf073a16cbcbbc67ddf740ad0a3c21",
+      "bytes": 10824
     },
     {
       "path": "server.mjs",
@@ -49,8 +49,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "41cbdb28aceabc5aef41f6512df546b3d5fa384c012a508597b67c515c78f533",
-      "bytes": 6816
+      "sha256": "b18ae390beb9da3e1bf395c9271d0c7aaa927cedd535a95f10054c933a85ad34",
+      "bytes": 7502
     },
     {
       "path": "src/server/command-router.js",
@@ -59,23 +59,23 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "0dff820bcf4906e6719ba4a57d22a20b07a4c66136e5823718462cda9ef22636",
-      "bytes": 1282
+      "sha256": "b02d16663bad8520b13b45a824f5db2a51da2755816bf2a466b7dd6dfdd9beb7",
+      "bytes": 1434
     },
     {
       "path": "src/server/routes.js",
-      "sha256": "fd3ab74c10bef00963a63e2ae0652eab1f634b01477dc664a143b4b71fcffe7d",
-      "bytes": 18721
+      "sha256": "642f97095e54fa3aa7d170da1676d4a25e8ba45a65a23a76d6abfa318ee4c493",
+      "bytes": 18784
     },
     {
       "path": "src/shared/chat-state.js",
-      "sha256": "06da7a4731612d8e6c2655136494a098fd4ea0c5bda4d2c8c7b3f7c01177f371",
-      "bytes": 986
+      "sha256": "f95a0a07a2b683293bc1149a6c6d3497f2174d5e191ffc9fbd9aa2396a98fca5",
+      "bytes": 1065
     },
     {
       "path": "src/shared/constants.js",
-      "sha256": "dff4857c718da031adf76d374af04fba75e012b02d35721e9f9bdf1358b9a325",
-      "bytes": 208
+      "sha256": "3d6bce3150d94bd770fa19e1674a832ac125e183fd0cb6ac3cac0b38c875e19c",
+      "bytes": 152
     },
     {
       "path": "src/shared/index.js",
@@ -89,13 +89,13 @@
     },
     {
       "path": "src/shared/presence-state.js",
-      "sha256": "b527ace78bcec68863a6c14aee14895d91f1ff197db954fb5970f5144b3e9ce5",
-      "bytes": 2204
+      "sha256": "103b47da35f09fe336454e78256e0472a50d51a721008e26873f0813ecb27288",
+      "bytes": 3610
     },
     {
       "path": "src/shared/roster.js",
-      "sha256": "50a97422a78b9e86b6a026a74326660afac610a2b630897f571cdec9970b5ba8",
-      "bytes": 1166
+      "sha256": "c4ba5497499b83da51e3a703746c603253d27f77aff2323a01ca47adf525f87e",
+      "bytes": 1585
     }
   ],
   "permissions": [

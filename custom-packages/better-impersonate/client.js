@@ -70,6 +70,68 @@
     }
   }
 
+  // src/client/recall.js
+  const RECALL_PREFIX = "mari-better-impersonate:recall:";
+  const LEGACY_GUIDANCE_PREFIX = "mari-si-guidance:";
+
+  function emptyRecall() {
+    return { lastGuidance: "", lastGeneratedDraft: "" };
+  }
+
+  function readRecall(storage, chatId) {
+    const id = String(chatId ?? "").trim();
+    if (!storage || !id) return emptyRecall();
+    try {
+      const raw = storage.getItem(`${RECALL_PREFIX}${id}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          lastGuidance: typeof parsed?.lastGuidance === "string" ? parsed.lastGuidance : "",
+          lastGeneratedDraft: typeof parsed?.lastGeneratedDraft === "string" ? parsed.lastGeneratedDraft : "",
+        };
+      }
+      return {
+        lastGuidance: storage.getItem(`${LEGACY_GUIDANCE_PREFIX}${id}`) || "",
+        lastGeneratedDraft: "",
+      };
+    } catch {
+      return emptyRecall();
+    }
+  }
+
+  function writeRecall(storage, chatId, recall) {
+    const id = String(chatId ?? "").trim();
+    if (!storage || !id) return;
+    try {
+      storage.setItem(`${RECALL_PREFIX}${id}`, JSON.stringify({
+        version: 1,
+        lastGuidance: recall.lastGuidance,
+        lastGeneratedDraft: recall.lastGeneratedDraft,
+      }));
+      storage.removeItem?.(`${LEGACY_GUIDANCE_PREFIX}${id}`);
+    } catch {
+      // Recall is optional and must never block draft generation.
+    }
+  }
+
+  function rememberImpersonateRequest(storage, chatId, input) {
+    const guidance = String(input ?? "");
+    const recall = readRecall(storage, chatId);
+    if (!guidance || guidance === recall.lastGeneratedDraft) return recall;
+    const next = { ...recall, lastGuidance: guidance };
+    writeRecall(storage, chatId, next);
+    return next;
+  }
+
+  function rememberGeneratedDraft(storage, chatId, output) {
+    const recall = readRecall(storage, chatId);
+    const next = { ...recall, lastGeneratedDraft: String(output ?? "") };
+    writeRecall(storage, chatId, next);
+    return next;
+  }
+
+  const __test = Object.freeze({ RECALL_PREFIX, LEGACY_GUIDANCE_PREFIX });
+
   // src/client/request.js
   function buildImpersonateDraftRequest(mode, guidance) {
     if (mode === "continue") {
@@ -82,18 +144,24 @@
       impersonate: true,
       ...(guidance
         ? {
-            generationGuide: mode === "inner_state"
-              ? `Private inner state for {{user}}: ${guidance}\nUse this as quiet emotional context, not dialogue or a required outcome.`
-              : guidance,
+            generationGuide: guidance,
             generationGuideSource: "guide",
           }
         : {}),
     };
   }
 
+  function extractContinuationSuffix(original, generated) {
+    const draft = String(original ?? "");
+    const content = String(generated ?? "");
+    if (!draft || !content) return content;
+    if (content.startsWith(draft)) return content.slice(draft.length);
+    if (draft.startsWith(content)) return "";
+    return content;
+  }
+
   // src/client/runtime.js
   const PACKAGE_ID = "better-impersonate";
-  const LAST_GUIDANCE_PREFIX = "mari-si-guidance:";
 
   if (!customElements.get("marinara-capability-better-impersonate")) {
     customElements.define("marinara-capability-better-impersonate", class BetterImpersonateCapability extends HTMLElement {
@@ -135,13 +203,6 @@
           usage: "/impersonate_continue <current draft>",
           mode: "continue",
         }),
-        registerDraftCommand(bridgeSession, {
-          id: "impersonate-thinking",
-          command: "/impersonate_thinking",
-          description: "Generate a persona draft guided by private thoughts or feelings",
-          usage: "/impersonate_thinking <private guidance>",
-          mode: "inner_state",
-        }),
         bridgeSession.commands.register({
           id: "impersonate-last",
           commands: ["/impersonate_last"],
@@ -175,16 +236,14 @@
     if (!guidance && mode !== "impersonate") {
       return {
         handled: true,
-        feedback: mode === "continue"
-          ? "Usage: /impersonate_continue <current persona draft>"
-          : "Usage: /impersonate_thinking <private thoughts or feelings>",
+        feedback: "Usage: /impersonate_continue <current persona draft>",
       };
     }
     if (!context?.chatId || typeof context.setDraft !== "function") {
       throw new Error("This command requires an active Roleplay chat.");
     }
 
-    rememberGuidance(context.chatId, mode, guidance);
+    if (mode === "impersonate") rememberImpersonateRequest(globalThis.localStorage, context.chatId, guidance);
     let received = false;
     try {
       const generation = bridgeSession.drafts.generate({
@@ -201,6 +260,7 @@
       const content = await generation;
       const result = renderDraft(mode, guidance, content).trimEnd();
       context.setDraft(result);
+      rememberGeneratedDraft(globalThis.localStorage, context.chatId, result);
       return { handled: true, draft: result };
     } catch (error) {
       if (!received && guidance) context.setDraft(guidance);
@@ -220,38 +280,16 @@
     if (!context?.chatId || typeof context.setDraft !== "function") {
       throw new Error("This command requires an active Roleplay chat.");
     }
-    const previous = readLastGuidance(context.chatId);
+    const previous = readRecall(globalThis.localStorage, context.chatId).lastGuidance;
     if (!previous.trim()) return { handled: true, feedback: "No saved guidance for this chat." };
     context.setDraft(previous);
     return { handled: true, draft: previous };
   }
 
-  function rememberGuidance(chatId, mode, input) {
-    if (!chatId || !input || (mode !== "impersonate" && mode !== "inner_state")) return;
-    try {
-      globalThis.localStorage?.setItem(`${LAST_GUIDANCE_PREFIX}${chatId}`, input);
-    } catch {
-      // Guidance restoration is optional.
-    }
-  }
-
-  function readLastGuidance(chatId) {
-    try {
-      return globalThis.localStorage?.getItem(`${LAST_GUIDANCE_PREFIX}${chatId}`) || "";
-    } catch {
-      return "";
-    }
-  }
-
   function renderDraft(mode, original, generated) {
     const content = String(generated ?? "");
     if (mode !== "continue") return content;
-    return original + draftJoiner(original, content) + content;
-  }
-
-  function draftJoiner(left, right) {
-    if (!left || !right || /[\s"'([{]$/u.test(left) || /^[\s.,!?;:)"'\]}]/u.test(right)) return "";
-    return " ";
+    return original + extractContinuationSuffix(original, content);
   }
 
   void cleanupImpersonateCommands;
