@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
   "engine": {
     "min": "2.4.4",
@@ -22,8 +22,8 @@
     },
     {
       "path": "bootstrap/runtime.mjs",
-      "sha256": "831f126a8610f92b67c2c3c6fced23bc5a71e9d357a89dc2d3bfabccf64c9465",
-      "bytes": 60887
+      "sha256": "b073e5308372a051066b95ea0e416781cadbc0ead3e683af951ad6ce089f52ae",
+      "bytes": 62811
     },
     {
       "path": "server.mjs",
@@ -32,7 +32,7 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "b63dafd1089eaa219b94ea5a9d2f41bdd3be19360ec85afac31b2249baefd331",
+      "sha256": "0f5733282dad41a03c8208749910fabad25553cbcaee29c650690c568c2627c9",
       "bytes": 62574
     },
     {
@@ -62,8 +62,8 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "d2d871241f58408d0339d92409df95ed836c39398231161915b5defca70a6af7",
-      "bytes": 2654
+      "sha256": "e6faff7e2f3dadd529314b09a257509e34ba857d990ef06dbbe168cda4a69103",
+      "bytes": 2698
     },
     {
       "path": "src/server/message-registry.js",
@@ -87,13 +87,18 @@
     },
     {
       "path": "src/server/runtime.js",
-      "sha256": "bd175df44183556bd50d98a8180803e4808da50c316a4be5f77a4fddd4903fcd",
-      "bytes": 13202
+      "sha256": "7ccc735df9382b884b59bd871e3830353636b3e8f84494ff95c1108d7ef942c8",
+      "bytes": 13553
     },
     {
       "path": "src/server/server-overlay.js",
       "sha256": "509b5ce2a97ebc9cb36a4678ba88466fad26bff163c64ce129cd0514a1017514",
       "bytes": 9607
+    },
+    {
+      "path": "src/server/spatial-directive-compat.js",
+      "sha256": "4e72113b937c70348f0a61785e719e8a387d8c2e6f0673f95a5cf091a470adf3",
+      "bytes": 2393
     },
     {
       "path": "src/server/tracker-context-registry.js",
@@ -107,7 +112,7 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "4ee3853eca9a3f9e7ac42e374c86d2095aa1e48ba882cc63da6cc8e1d4629323",
+      "sha256": "d9f7b0d155579eb99804b4190a2140417f9924a65ae318a29d5bb3f9458f82f4",
       "bytes": 1841
     }
   ],

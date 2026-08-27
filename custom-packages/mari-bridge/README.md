@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.33` supports Marinara Engine 2.4.4 and keeps the injected client
+Version `1.0.34` supports Marinara Engine 2.4.4 and keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
 tracker-context sections, native Agent Suite tracker-data registrations, and
@@ -99,6 +99,11 @@ replayed as soon as the native store binds, so package activation order cannot
 drop the initial background. The `spatial.context` capability observes the
 shared native TanStack Query cache and publishes successful spatial-context
 updates from World Maps without intercepting requests or probing its UI.
+The server overlay also normalizes model-emitted XML-like spatial commands such
+as `<spatial_move: destination_id="location-id"/>` immediately before native
+World Maps parsing. The compatibility stream filter hides that form while it is
+generated; native World Maps remains responsible for validation, movement,
+suppression, persistence, and visible response cleanup.
 
 The client runtime is emitted inside the patched client overlay and imported as
 a static dependency of Marinara's main module. ESM dependency evaluation and
