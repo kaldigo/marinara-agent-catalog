@@ -1,6 +1,6 @@
 {
   "name": "marinara-tracker-profile-details-package",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "description": "Promotes selected GameState tracker fields into native character and persona profile details.",

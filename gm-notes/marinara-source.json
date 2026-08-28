@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package",
+    "sharedRoots": ["_mari-bridge"]
+  },
+  "package": {
+    "id": "gm-notes",
+    "name": "GM Notes",
+    "description": "Maintains a focused ledger of durable reminders, unresolved threads, and continuity diagnostics in committed tracker context.",
+    "engine": {
+      "min": "2.4.4",
+      "maxExclusive": "2.4.5"
+    },
+    "kind": ["agent"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "routes", "storage", "ui"],
+    "restartRequired": true
+  }
+}

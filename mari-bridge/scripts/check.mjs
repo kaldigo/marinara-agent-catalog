@@ -213,6 +213,7 @@ trackerRegistry.register("tracker-owner", {
   agentTypes: ["notes"],
   formatCommitted: () => ({ label: "Notes", content: "Remember this." }),
   formatAgentState: () => ({ notes: ["Remember this."] }),
+  filterCustomTrackerFields: (_scope, fields) => fields.filter((field) => field.name !== "Owned"),
 });
 assert.equal(trackerRegistry.hasActive(["notes"]), true);
 const trackerParts = [];
@@ -225,6 +226,21 @@ assert.deepEqual(trackerParts, ["<Notes>Remember this.</Notes>"]);
 const trackerSummary = {};
 trackerRegistry.appendAgentState({ activeAgentIds: ["notes"] }, trackerSummary);
 assert.deepEqual(trackerSummary, { notes: { notes: ["Remember this."] } });
+assert.deepEqual(
+  trackerRegistry.filterCustomTrackerFields(
+    { activeAgentIds: ["notes"] },
+    [{ name: "Owned", value: "Package" }, { name: "Other", value: "Native" }],
+  ),
+  [{ name: "Other", value: "Native" }],
+);
+assert.deepEqual(
+  trackerRegistry.filterCustomTrackerFields(
+    { activeAgentIds: ["different-agent"] },
+    [{ name: "Owned", value: "Package" }],
+  ),
+  [{ name: "Owned", value: "Package" }],
+);
+assert.equal("filterCustomTrackerFields" in trackerRegistry.snapshot()[0], false);
 
 const groupRegistry = createGroupSelectorRegistry();
 groupRegistry.register("group-owner", {
@@ -478,7 +494,7 @@ const clientSource = `${trackerDetailRegistrySource}\n${(await fs.readFile(new U
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.37");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.38");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -988,7 +1004,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.37"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.38"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -1303,12 +1319,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.4",
-  bridgeVersion: "1.0.37",
+  bridgeVersion: "1.0.38",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.37");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.38");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   serverOverlayTest.withoutMariBridgeExecArgs([
@@ -1750,6 +1766,57 @@ const patchedPromptsRouteFixture = patchServerModule(
 assert.match(patchedPromptsRouteFixture, /activeAgentIds: chatMeta\.enableAgents === false/u);
 assert.match(patchedPromptsRouteFixture, /groupMode: characterIds\.length > 1/u);
 assert.match(patchedPromptsRouteFixture, /groupScenarioOverrideText/u);
+
+const committedTrackerContextFixture = [
+  'import { compactQuestProgressForContext, formatCustomTrackerFieldForPrompt } from "@marinara-engine/shared";',
+  "function formatCharacterLine(character) {",
+  "    const details = [];",
+  "    if (character.mood)",
+  "        details.push(`mood: ${character.mood}`);",
+  "    if (character.appearance)",
+  "        details.push(`appearance: ${character.appearance}`);",
+  "    if (character.outfit)",
+  "        details.push(`outfit: ${character.outfit}`);",
+  "    if (character.thoughts)",
+  "        details.push(`thoughts: ${character.thoughts}`);",
+  "}",
+  "export function buildCommittedTrackerContextBlock(args) {",
+  "  if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;",
+  "    const snap = args.latestGameState ?? {};",
+  "    const trackerParts = [];",
+  "    if (hasCharTracker) {",
+  "        const presentChars = parseMaybeJson(snap.presentCharacters);",
+  "        if (Array.isArray(presentChars) && presentChars.length > 0) {",
+  "            const charLines = presentChars.map(formatCharacterLine).filter(isNonEmptyLine);",
+  "        }",
+  "    }",
+  "    if (snap.playerStats) {",
+  "        const stats = parseMaybeJson(snap.playerStats);",
+  "        if (stats) {",
+  "            if (hasCustomTracker && Array.isArray(stats.customTrackerFields) && stats.customTrackerFields.length > 0) {",
+  "                const customLines = stats.customTrackerFields.map(formatCustomTrackerFieldForPrompt);",
+  "                trackerParts.push(wrapContent(customLines.join(\"\\n\"), \"Custom Tracker\", args.wrapFormat));",
+  "            }",
+  "        }",
+  "    }",
+  "    const playerNotes =",
+  "        typeof args.chatMetadata.gamePlayerNotes === \"string\" ? args.chatMetadata.gamePlayerNotes.trim() : \"\";",
+  "}",
+].join("\n");
+const patchedCommittedTrackerContext = patchServerModule(
+  "file:///engine/services/generation/committed-tracker-context.js",
+  committedTrackerContextFixture,
+);
+assert.match(patchedCommittedTrackerContext, /normalizeTrackerHiddenFields/u);
+assert.match(patchedCommittedTrackerContext, /compatibility shim: main committed tracker/u);
+assert.match(patchedCommittedTrackerContext, /normalizeTrackerHiddenFields\(parseMaybeJson\(snap\.hiddenTrackerFields\)\)/u);
+assert.match(patchedCommittedTrackerContext, /!mariBridgeFieldHidden\("mood"\)/u);
+assert.match(patchedCommittedTrackerContext, /formatCharacterLine\(character, index, mariBridgeHiddenTrackerFields\)/u);
+assert.match(patchedCommittedTrackerContext, /filterCustomTrackerFields/u);
+assert.match(patchedCommittedTrackerContext, /mariBridgeCustomTrackerFields\.map\(formatCustomTrackerFieldForPrompt\)/u);
+assert.match(patchedCommittedTrackerContext, /appendCommittedSections/u);
+assert.equal(globalThis[kernelSymbol].patches["tracker.context-custom-fields"], "applied");
+assert.equal(globalThis[kernelSymbol].patches["compat.hidden-tracker-context.map"], "applied");
 
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";

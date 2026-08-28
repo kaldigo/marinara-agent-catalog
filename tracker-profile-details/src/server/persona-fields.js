@@ -4,6 +4,42 @@ function normalizeName(value) {
   return String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/gu, " ");
 }
 
+const PERSONA_DETAIL_FIELD_NAMES = new Set(PERSONA_DETAIL_FIELDS.map(normalizeName));
+
+function parseRecord(value) {
+  if (typeof value === "string") {
+    try {
+      return parseRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+export function filterPersonaDetailFieldsFromCustomTracker(_scope, fields) {
+  if (!Array.isArray(fields)) return fields;
+  return fields.filter((field) => !PERSONA_DETAIL_FIELD_NAMES.has(normalizeName(field?.name)));
+}
+
+export function formatPersonaDetailContext(scope) {
+  const gameState = parseRecord(scope?.latestGameState);
+  const playerStats = parseRecord(gameState?.playerStats);
+  const fields = Array.isArray(playerStats?.customTrackerFields) ? playerStats.customTrackerFields : [];
+  const values = new Map();
+  for (const field of fields) {
+    const name = normalizeName(field?.name);
+    if (!PERSONA_DETAIL_FIELD_NAMES.has(name) || values.has(name)) continue;
+    const value = typeof field?.value === "string" ? field.value.trim() : "";
+    if (value) values.set(name, value);
+  }
+  const lines = PERSONA_DETAIL_FIELDS.flatMap((name) => {
+    const value = values.get(normalizeName(name));
+    return value ? [`${name}: ${value}`] : [];
+  });
+  return lines.length > 0 ? { label: "Persona Details", content: lines.join("\n") } : null;
+}
+
 function encodeSegment(value) {
   return encodeURIComponent(String(value ?? "").trim() || "_").replace(/\./gu, "%2E");
 }
