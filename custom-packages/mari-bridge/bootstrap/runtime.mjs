@@ -52,7 +52,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.35";
+kernel.version = "1.0.36";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -483,6 +483,29 @@ export function patchServerModule(url, inputSource) {
         }
         return source;
       }
+      if (url.endsWith("/utils/tracker-field-locks.js")) {
+        source = replaceExact(
+          source,
+          "function mergeCharacterCustomFieldsWithLocks(nextFields, currentFields, locks, character, characterIndex) {",
+          [
+            "function mariBridgeFilterLegacyBlankNullCharacterCustomFields(fields) {",
+            "    if (!fields || typeof fields !== \"object\" || Array.isArray(fields) || !Object.prototype.hasOwnProperty.call(fields, \"\") || fields[\"\"] !== null)",
+            "        return fields;",
+            "    const filtered = { ...fields };",
+            "    delete filtered[\"\"];",
+            "    return filtered;",
+            "}",
+            "function mergeCharacterCustomFieldsWithLocks(nextFields, currentFields, locks, character, characterIndex) {",
+            "    // Mari Bridge Engine 2.4.4 compatibility shim: the native lock merge can",
+            "    // resurrect a legacy { \"\": null } custom field. Remove this once upstream",
+            "    // normalizes character custom-field keys before merging tracker state.",
+            "    nextFields = mariBridgeFilterLegacyBlankNullCharacterCustomFields(nextFields);",
+            "    currentFields = mariBridgeFilterLegacyBlankNullCharacterCustomFields(currentFields);",
+          ].join("\n"),
+          "compat.character-custom-field.blank-null-lock-merge",
+        );
+        return source;
+      }
       if (url.endsWith("/services/agents/agent-executor.js")) {
         source = replaceExact(
           source,
@@ -562,6 +585,70 @@ export function patchServerModule(url, inputSource) {
             "  const playerNotes =",
           ].join("\n"),
           "tracker.context-committed",
+        );
+        return source;
+      }
+      if (url.endsWith("/routes/generate/generate-route-utils.js")) {
+        source = replaceExact(
+          source,
+          "const MAX_TRACKER_CHARACTER_HISTORY = 50;",
+          [
+            "function mariBridgeFilterLegacyBlankNullCharacterCustomFields(fields) {",
+            "    if (!isPlainRecord(fields) || !Object.prototype.hasOwnProperty.call(fields, \"\") || fields[\"\"] !== null)",
+            "        return fields;",
+            "    const filtered = { ...fields };",
+            "    delete filtered[\"\"];",
+            "    return filtered;",
+            "}",
+            "function mariBridgeFilterLegacyBlankNullTrackerCharacter(character) {",
+            "    const customFields = mariBridgeFilterLegacyBlankNullCharacterCustomFields(character.customFields);",
+            "    return customFields === character.customFields ? character : { ...character, customFields };",
+            "}",
+            "function mariBridgeFilterLegacyBlankNullTrackerCharacters(characters) {",
+            "    return Array.isArray(characters)",
+            "        ? characters.map((character) => isPlainRecord(character) ? mariBridgeFilterLegacyBlankNullTrackerCharacter(character) : character)",
+            "        : characters;",
+            "}",
+            "const MAX_TRACKER_CHARACTER_HISTORY = 50;",
+          ].join("\n"),
+          "compat.character-custom-field.blank-null-helper",
+        );
+        source = replaceExact(
+          source,
+          "            history.push(value);",
+          [
+            "            // Mari Bridge Engine 2.4.4 compatibility shim: malformed legacy",
+            "            // tracker history can repeatedly prompt the agent with { \"\": null }.",
+            "            // Remove this once upstream normalizes character custom-field keys.",
+            "            history.push(mariBridgeFilterLegacyBlankNullTrackerCharacter(value));",
+          ].join("\n"),
+          "compat.character-custom-field.blank-null-history",
+        );
+        source = replaceExact(
+          source,
+          [
+            "        const previousCustomFields = isPlainRecord(previous?.customFields) ? previous.customFields : null;",
+            "        const nextCustomFields = isPlainRecord(character.customFields) ? character.customFields : null;",
+            "        if (previousCustomFields) {",
+          ].join("\n"),
+          [
+            "        const previousCustomFields = mariBridgeFilterLegacyBlankNullCharacterCustomFields(previous?.customFields);",
+            "        const nextCustomFields = mariBridgeFilterLegacyBlankNullCharacterCustomFields(character.customFields);",
+            "        if (nextCustomFields !== character.customFields)",
+            "            character.customFields = nextCustomFields;",
+            "        if (isPlainRecord(previousCustomFields)) {",
+          ].join("\n"),
+          "compat.character-custom-field.blank-null-preserve",
+        );
+        source = replaceExact(
+          source,
+          "        presentCharacters: parseJsonField(row.presentCharacters, []),",
+          [
+            "        // Apply the same narrow compatibility filter at the GameState read",
+            "        // boundary so the malformed legacy entry is not sent back to agents.",
+            "        presentCharacters: mariBridgeFilterLegacyBlankNullTrackerCharacters(parseJsonField(row.presentCharacters, [])),",
+          ].join("\n"),
+          "compat.character-custom-field.blank-null-game-state",
         );
         return source;
       }
@@ -1222,8 +1309,10 @@ const SERVER_PATCH_TARGETS = Object.freeze([
   ["routes/prompts.routes.js", ["packages", "server", "dist", "routes", "prompts.routes.js"]],
   ["services/prompt/macro-context.js", ["packages", "server", "dist", "services", "prompt", "macro-context.js"]],
   ["utils/macro-engine.js", ["packages", "shared", "dist", "utils", "macro-engine.js"]],
+  ["utils/tracker-field-locks.js", ["packages", "shared", "dist", "utils", "tracker-field-locks.js"]],
   ["services/agents/agent-executor.js", ["packages", "server", "dist", "services", "agents", "agent-executor.js"]],
   ["services/generation/committed-tracker-context.js", ["packages", "server", "dist", "services", "generation", "committed-tracker-context.js"]],
+  ["routes/generate/generate-route-utils.js", ["packages", "server", "dist", "routes", "generate", "generate-route-utils.js"]],
   ["routes/generate.routes.js", ["packages", "server", "dist", "routes", "generate.routes.js"]],
   ["routes/generate/dry-run-route.js", ["packages", "server", "dist", "routes", "generate", "dry-run-route.js"]],
   ["routes/generate/retry-agents-route.js", ["packages", "server", "dist", "routes", "generate", "retry-agents-route.js"]],

@@ -7,4 +7,4 @@ Promotes selected GameState fields into the native docked tracker profile layout
 - Promoted rows keep native edit, lock, and delete-mode behavior.
 - The Persona Stats agent contract is extended so it can update the four persona fields.
 
-The package depends on Mari Bridge 1.0.35 / API 1.8 and Marinara Engine 2.4.4.
+The package depends on Mari Bridge 1.0.36 / API 1.8 and Marinara Engine 2.4.4.

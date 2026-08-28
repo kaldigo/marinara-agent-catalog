@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v25";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v26";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 const CLIENT_RUNTIME_PATCH_TOKEN = '["__MARI_BRIDGE_NATIVE_PATCHES__"]';
 
@@ -27,6 +27,12 @@ export function patchTrackerDetailFieldsBridge(source) {
     "k=Object.entries(e.customFields??{}).map(([R,Z])=>[R,Z,At(Z)])",
     `k=(${CLIENT_SYMBOL_EXPRESSION}?.filterCharacterTrackerDetailFields(e.customFields)??Object.entries(e.customFields??{})).map(([R,Z])=>[R,Z,At(Z)])`,
     "compact character detail filter",
+  );
+  patched = replaceOne(
+    patched,
+    "U=v.length>0||k.length>0||b,H=U",
+    `U=v.length>0||k.length>0||b||${CLIENT_SYMBOL_EXPRESSION}?.hasCharacterTrackerDetailFields(e.customFields)===!0,H=U`,
+    "compact character detail density",
   );
   patched = replaceOne(
     patched,
