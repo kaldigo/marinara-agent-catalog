@@ -478,7 +478,7 @@ const clientSource = `${trackerDetailRegistrySource}\n${(await fs.readFile(new U
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.35");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.36");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -630,6 +630,11 @@ assert.deepEqual(
   globalThis[clientSymbol].filterCharacterTrackerDetailFields({ Activity: "Talking", Other: "Kept", Location: "Bar" }),
   [["Other", "Kept"]],
 );
+assert.equal(
+  globalThis[clientSymbol].hasCharacterTrackerDetailFields({ Activity: "Talking", Location: "Bar" }),
+  true,
+);
+assert.equal(globalThis[clientSymbol].hasCharacterTrackerDetailFields({ Other: "Kept" }), false);
 featureSession.commands.register({
   id: "probe",
   commands: ["/probe"],
@@ -673,6 +678,19 @@ const fakeJsx = {
     return { type, props, key };
   },
 };
+featureSession.tracker.registerDetailFields({
+  id: "ordered-persona-details",
+  target: "persona",
+  fields: [{ name: "Outfit", icon: "shirt" }],
+});
+const renderedPersonaDetails = globalThis[clientSymbol].renderPersonaTrackerDetailFields({
+  jsx: fakeJsx,
+  native: { InlineEdit() {} },
+  fields: [{ name: "Outfit", value: "Coat" }],
+  onUpdateFields() {},
+});
+assert.equal(renderedPersonaDetails.length, 1);
+assert.match(renderedPersonaDetails[0].props.className, /rounded-\[5px\].*border.*bg-\[image:var\(--tracker-profile-field-material\)\]/u);
 const nativeImpersonateSetting = globalThis[clientSymbol].renderNativeImpersonateSetting({
   react: { useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot(); } },
   jsx: fakeJsx,
@@ -892,7 +910,7 @@ assert.equal(
 );
 const trackerDetailFixture = [
   'const trackerDetailMarker="ui.trackerPanel.charactertrackercard.outfit";',
-  'function compact(){k=Object.entries(e.customFields??{}).map(([R,Z])=>[R,Z,At(Z)]);onToggleHidden:()=>O("outfit")})]})}',
+  'function compact(){k=Object.entries(e.customFields??{}).map(([R,Z])=>[R,Z,At(Z)]);U=v.length>0||k.length>0||b,H=U;onToggleHidden:()=>O("outfit")})]})}',
   'function gs({character:e,onUpdate:a,sizeProfile:t,characterIndex:o}){const s=[{hidden:u("outfit"),value:e.outfit}].filter(d=>!d.hidden||i);return r.jsx("div",{children:s.map(d=>r.jsx(ps,{icon:d.icon,accessibleLabel:d.accessibleLabel,value:d.value,placeholder:d.placeholder,onSave:d.onSave,sizeProfile:t,fieldKey:d.key,lockKey:c(d.key),hidden:d.hidden,hideMode:i,onToggleHidden:()=>b(d.key)},d.key))})}',
   'function featured(){I=Object.entries(e.customFields??{}).map(([F,Q])=>[F,Q,At(Q)]);r.jsx(gs,{character:e,onUpdate:d,sizeProfile:f,characterIndex:g})}',
   'function Qi({persona:e,status:a,spriteExpression:t,trackerPanelSide:o,statDisplayMode:n,resolveStatIcon:i,personaStats:l,action:f,onSaveStatus:c,onUpdatePersonaStats:u,onAddPersonaStat:b,deleteMode:s,addMode:d,queuePersonaPortraitSave:p,flushPersonaPortraitSave:g,collapsed:x=!1,onToggleCollapsed:_}){{fieldLocks:T,lockMode:w,onToggleFieldLock:C}=Ce();r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:Y()})}',
@@ -900,6 +918,7 @@ const trackerDetailFixture = [
 ].join("");
 const patchedTrackerDetails = patchTrackerDetailFieldsBridge(trackerDetailFixture);
 assert.match(patchedTrackerDetails, /renderCompactCharacterTrackerDetailFields/u);
+assert.match(patchedTrackerDetails, /hasCharacterTrackerDetailFields\(e\.customFields\)/u);
 assert.match(patchedTrackerDetails, /resolveFeaturedCharacterTrackerDetailFields/u);
 assert.match(patchedTrackerDetails, /renderPersonaTrackerDetailFields/u);
 assert.match(patchedTrackerDetails, /a\|\|w\|\|!le\(T,zr\(\)\)\?Y\(\):null/u);
@@ -966,7 +985,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.35"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.36"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -1281,12 +1300,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.4",
-  bridgeVersion: "1.0.35",
+  bridgeVersion: "1.0.36",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.35");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.36");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   serverOverlayTest.withoutMariBridgeExecArgs([
@@ -1347,6 +1366,136 @@ assert.match(patchedChatsRoute, /source: "chat"/u);
 assert.match(patchedChatsRoute, /source: "metadata"/u);
 assert.equal(globalThis[kernelSymbol].patches["chat.changed-root"], "applied");
 assert.equal(globalThis[kernelSymbol].patches["chat.changed-metadata"], "applied");
+
+const trackerCharacterUtilsFixture = `
+function isPlainRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function trackerCharacterIdKey(value) { return typeof value.characterId === "string" ? value.characterId : ""; }
+function trackerCharacterNameKey(value) { return typeof value.name === "string" ? value.name : ""; }
+function trackerCharacterKey(value) { return trackerCharacterIdKey(value) || trackerCharacterNameKey(value); }
+function mergeTrackerStats(_previous, next) { return next; }
+function isNpcTrackerAvatarPath() { return false; }
+function isTrackerAvatarCrop() { return false; }
+export function parseJsonField(value, fallback) { return typeof value === "string" ? JSON.parse(value) : (value ?? fallback); }
+const MAX_TRACKER_CHARACTER_HISTORY = 50;
+export function collectLatestTrackerCharacterHistory(snapshots) {
+    const history = [];
+    const seenIds = new Set();
+    const seenNames = new Set();
+    for (const snapshot of snapshots) {
+        const characters = parseJsonField(snapshot.presentCharacters, []);
+        for (const value of characters) {
+            if (!isPlainRecord(value))
+                continue;
+            const id = trackerCharacterIdKey(value);
+            const name = trackerCharacterNameKey(value);
+            if ((id && seenIds.has(id)) || (!id && name && seenNames.has(name)))
+                continue;
+            history.push(value);
+            if (id)
+                seenIds.add(id);
+            if (name)
+                seenNames.add(name);
+            if (history.length >= MAX_TRACKER_CHARACTER_HISTORY)
+                return history;
+        }
+    }
+    return history;
+}
+export function preserveTrackerCharacterUiFields(nextCharacters, previousCharacters) {
+    const previousByKey = new Map(previousCharacters.map((character) => [trackerCharacterKey(character), character]));
+    for (const character of nextCharacters) {
+        const previous = previousByKey.get(trackerCharacterKey(character));
+        const previousCustomFields = isPlainRecord(previous?.customFields) ? previous.customFields : null;
+        const nextCustomFields = isPlainRecord(character.customFields) ? character.customFields : null;
+        if (previousCustomFields) {
+            character.customFields = { ...previousCustomFields, ...(nextCustomFields ?? {}) };
+        }
+        character.stats = mergeTrackerStats(previous?.stats, character.stats);
+    }
+}
+export function parseGameStateRow(row) {
+    return {
+        presentCharacters: parseJsonField(row.presentCharacters, []),
+    };
+}
+`;
+const patchedTrackerCharacterUtils = patchServerModule(
+  "file:///engine/routes/generate/generate-route-utils.js",
+  trackerCharacterUtilsFixture,
+);
+const trackerCharacterUtils = await import(
+  `data:text/javascript;base64,${Buffer.from(patchedTrackerCharacterUtils).toString("base64")}`
+);
+const trackerHistory = trackerCharacterUtils.collectLatestTrackerCharacterHistory([{
+  presentCharacters: JSON.stringify([
+    { characterId: "char-1", name: "Kira", customFields: { Location: "Bar", "": null } },
+    { characterId: "char-2", name: "Mina", customFields: { "": "intentional" } },
+  ]),
+}]);
+assert.deepEqual(trackerHistory[0].customFields, { Location: "Bar" });
+assert.deepEqual(trackerHistory[1].customFields, { "": "intentional" });
+assert.deepEqual(
+  trackerCharacterUtils.parseGameStateRow({
+    presentCharacters: JSON.stringify([{ characterId: "char-1", customFields: { Location: "Bar", "": null } }]),
+  }).presentCharacters[0].customFields,
+  { Location: "Bar" },
+);
+const nextTrackerCharacters = [{ characterId: "char-1", name: "Kira", customFields: { Activity: "Talking", "": null }, stats: [] }];
+trackerCharacterUtils.preserveTrackerCharacterUiFields(nextTrackerCharacters, [{
+  characterId: "char-1",
+  name: "Kira",
+  customFields: { Location: "Bar", "": null },
+  stats: [],
+}]);
+assert.deepEqual(nextTrackerCharacters[0].customFields, { Location: "Bar", Activity: "Talking" });
+assert.equal(globalThis[kernelSymbol].patches["compat.character-custom-field.blank-null-history"], "applied");
+assert.equal(globalThis[kernelSymbol].patches["compat.character-custom-field.blank-null-preserve"], "applied");
+assert.equal(globalThis[kernelSymbol].patches["compat.character-custom-field.blank-null-game-state"], "applied");
+
+const trackerFieldLocksFixture = `
+function isTrackerFieldLocked() { return false; }
+function characterCustomFieldTrackerLockKey() { return "fixture"; }
+function mergeCharacterCustomFieldsWithLocks(nextFields, currentFields, locks, character, characterIndex) {
+    let next = nextFields ? { ...(currentFields ?? {}), ...nextFields } : currentFields ? { ...currentFields } : null;
+    const current = currentFields ?? {};
+    let hasLockedField = false;
+    for (const [name, value] of Object.entries(current)) {
+        const nameLocked = isTrackerFieldLocked(locks, characterCustomFieldTrackerLockKey(character, characterIndex, name, "name"));
+        const valueLocked = isTrackerFieldLocked(locks, characterCustomFieldTrackerLockKey(character, characterIndex, name, "value"));
+        if (nameLocked || valueLocked) {
+            hasLockedField = true;
+            const nextValue = (next ?? {})[name];
+            (next ??= {})[name] = valueLocked ? value : typeof nextValue === "string" ? nextValue : value;
+        }
+    }
+    return nextFields || hasLockedField || Object.keys(current).length > 0 ? (next ?? undefined) : undefined;
+}
+export { mergeCharacterCustomFieldsWithLocks };
+`;
+const patchedTrackerFieldLocks = patchServerModule(
+  "file:///engine/utils/tracker-field-locks.js",
+  trackerFieldLocksFixture,
+);
+const trackerFieldLocks = await import(
+  `data:text/javascript;base64,${Buffer.from(patchedTrackerFieldLocks).toString("base64")}`
+);
+assert.deepEqual(
+  trackerFieldLocks.mergeCharacterCustomFieldsWithLocks(
+    { Activity: "Talking", "": null },
+    { Location: "Bar", "": null },
+    {},
+    { characterId: "char-1" },
+    0,
+  ),
+  { Location: "Bar", Activity: "Talking" },
+);
+assert.deepEqual(
+  trackerFieldLocks.mergeCharacterCustomFieldsWithLocks({ "": "intentional" }, { "": null }, {}, {}, 0),
+  { "": "intentional" },
+);
+assert.equal(globalThis[kernelSymbol].patches["compat.character-custom-field.blank-null-lock-merge"], "applied");
 
 const generatePersistFixture = `async function persist(input, savedMsg, savedSwipeIndex) {
           if (

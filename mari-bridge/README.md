@@ -41,7 +41,7 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.35` supports Marinara Engine 2.4.4 and keeps the injected client
+Version `1.0.36` supports Marinara Engine 2.4.4 and keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
 tracker-context sections, native Agent Suite tracker-data registrations, and
@@ -64,7 +64,11 @@ retains the injected runtime, SDK dependency gate, prompt kernel, and first
 client lifecycle patches. Count-checked transforms build a complete copied
 server distribution before launch, patch both preset assembly and no-preset provider
 preparation, and emit native active-chat and generation-controller events. The
-installed package is only the versioned installer and restart handoff; consumer
+server overlay also filters only the malformed legacy character custom-field
+entry `{ "": null }` from tracker history, preservation, and lock merges. This
+is an Engine 2.4.4 compatibility shim and should be removed once upstream
+normalizes character custom-field keys at ingestion.
+The installed package is only the versioned installer and restart handoff; consumer
 ordering no longer depends on its activation. The injected runtime also owns per-chat streamed dry runs through
 `generation.draft`; patched Roleplay commands receive `context.setDraft(text)`,
 which writes through Marinara's persisted draft store after the originating

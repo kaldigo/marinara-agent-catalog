@@ -1,5 +1,8 @@
 const TARGETS = new Set(["character", "persona"]);
 
+const PERSONA_DETAIL_FIELD_CLASS =
+  "relative mx-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden rounded-[5px] border border-[color-mix(in_srgb,var(--tracker-profile-dialogue-border)_42%,transparent)] bg-[image:var(--tracker-profile-field-material)] px-1.5 py-[0.1875rem] text-[0.6875rem] leading-[0.875rem] shadow-[inset_0_1px_2px_color-mix(in_srgb,var(--background)_34%,transparent)] [background-blend-mode:var(--tracker-profile-field-material-blend)] before:pointer-events-none before:absolute before:inset-x-3 before:top-0 before:h-px before:bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--tracker-profile-dialogue-border)_48%,transparent),transparent)] before:opacity-70 before:[mask-image:linear-gradient(90deg,transparent_0%,black_20%,black_78%,transparent_100%)] before:content-['']";
+
 function normalizeName(value) {
   return String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/gu, " ");
 }
@@ -145,6 +148,9 @@ export function createTrackerDetailFieldRegistry() {
         .filter(([name]) => !promoted.has(normalizeName(name)))
         .map(([name, value]) => [name, value]);
     },
+    hasCharacterFields(customFields) {
+      return characterEntries(customFields).length > 0;
+    },
     filterPersonaFields(fields) {
       const promoted = promotedNames("persona");
       return (Array.isArray(fields) ? fields : []).filter((field) => !promoted.has(normalizeName(field?.name)));
@@ -205,7 +211,7 @@ export function createTrackerDetailFieldRegistry() {
           onUpdateFields((Array.isArray(fields) ? fields : []).filter((field) => normalizeName(field?.name) !== normalized));
         };
         return jsx.jsxs("div", {
-          className: "relative mx-0.5 flex min-h-6 items-center gap-1 px-1.5 py-[0.1875rem] text-[0.6875rem]",
+          className: PERSONA_DETAIL_FIELD_CLASS,
           children: [
             jsx.jsx("span", {
               className: "relative z-[1] flex h-4 w-4 shrink-0 items-center justify-center text-[color-mix(in_srgb,var(--tracker-profile-accent-solid)_64%,var(--tracker-profile-text)_36%)]",

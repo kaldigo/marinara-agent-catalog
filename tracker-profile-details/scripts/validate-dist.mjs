@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 const root = new URL("../dist/package/", import.meta.url);
 const manifest = JSON.parse(await fs.readFile(new URL("manifest.json", root), "utf8"));
 assert.equal(manifest.id, "tracker-profile-details");
-assert.equal(manifest.version, "1.0.0");
+assert.equal(manifest.version, "1.0.1");
 assert.equal(manifest.entrypoints.client, "client.js");
 assert.equal(manifest.entrypoints.server, "server.mjs");
 assert.deepEqual(manifest.permissions, ["agent-runtime", "ui"]);
