@@ -478,7 +478,7 @@ const clientSource = `${trackerDetailRegistrySource}\n${(await fs.readFile(new U
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.36");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.37");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -920,6 +920,9 @@ const patchedTrackerDetails = patchTrackerDetailFieldsBridge(trackerDetailFixtur
 assert.match(patchedTrackerDetails, /renderCompactCharacterTrackerDetailFields/u);
 assert.match(patchedTrackerDetails, /hasCharacterTrackerDetailFields\(e\.customFields\)/u);
 assert.match(patchedTrackerDetails, /resolveFeaturedCharacterTrackerDetailFields/u);
+assert.match(patchedTrackerDetails, /d\.mariBridgeOnRemove&&mariBridgeDeleteMode/u);
+assert.match(patchedTrackerDetails, /relative grid h-full min-h-0 grid-rows-\[minmax\(0,1fr\)\] overflow-hidden/u);
+assert.match(patchedTrackerDetails, /fieldKey:d\.mariBridgeOnRemove\?"outfit":d\.key/u);
 assert.match(patchedTrackerDetails, /renderPersonaTrackerDetailFields/u);
 assert.match(patchedTrackerDetails, /a\|\|w\|\|!le\(T,zr\(\)\)\?Y\(\):null/u);
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
@@ -985,7 +988,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.36"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.37"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -1300,12 +1303,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.4",
-  bridgeVersion: "1.0.36",
+  bridgeVersion: "1.0.37",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.36");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.37");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   serverOverlayTest.withoutMariBridgeExecArgs([
