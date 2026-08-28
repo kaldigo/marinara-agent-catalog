@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": ["npm", "run", "build"],
+    "outputDir": "dist/package",
+    "sharedRoots": ["_mari-bridge"]
+  },
+  "package": {
+    "id": "tracker-profile-details",
+    "name": "Tracker Profile Details",
+    "description": "Shows selected GameState custom fields as ordered native character and persona profile details.",
+    "engine": {
+      "min": "2.4.4",
+      "maxExclusive": "2.4.5"
+    },
+    "kind": ["agent"],
+    "permissions": ["agent-runtime", "ui"],
+    "restartRequired": true
+  }
+}

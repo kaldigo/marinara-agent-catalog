@@ -1,4 +1,6 @@
-const API_VERSION = Object.freeze({ major: 1, minor: 7 });
+import { createTrackerDetailFieldRegistry } from "./tracker-detail-field-registry.js";
+
+const API_VERSION = Object.freeze({ major: 1, minor: 8 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
@@ -1274,6 +1276,7 @@ function createClientRuntime(serverHealth) {
   const commands = createCommandRegistry();
   const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
+  const trackerDetailFields = createTrackerDetailFieldRegistry();
   const agentSuiteTrackerData = createAgentSuiteTrackerDataRegistry();
   const mountNativeSlot = createNativeSlotMounter();
   const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui);
@@ -1299,10 +1302,11 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.native-agent-settings")) capabilities.add("ui.agent-settings");
   if (NATIVE_PATCHES.has("client.impersonate-settings")) capabilities.add("ui.impersonate-settings");
   if (NATIVE_PATCHES.has("client.tracker-sections")) capabilities.add("ui.tracker-section");
+  if (NATIVE_PATCHES.has("client.tracker-detail-fields")) capabilities.add("tracker.detail-fields");
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.34",
+    implementationVersion: "1.0.35",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1422,6 +1426,16 @@ function createClientRuntime(serverHealth) {
             return cleanup;
           },
         }),
+        tracker: Object.freeze({
+          registerDetailFields(input) {
+            if (!required.includes("tracker.detail-fields")) {
+              throw new Error(`${consumerId} did not require tracker.detail-fields`);
+            }
+            const cleanup = trackerDetailFields.register(consumerId, input);
+            cleanups.push(cleanup);
+            return cleanup;
+          },
+        }),
         async close(reason = "Mari Bridge client consumer closed") {
           if (closed) return;
           closed = true;
@@ -1477,6 +1491,29 @@ function createClientRuntime(serverHealth) {
         agentSuiteTrackerData.getVersion,
       );
     },
+    useTrackerDetailFields(react) {
+      if (!react?.useSyncExternalStore) return trackerDetailFields.getVersion();
+      return react.useSyncExternalStore(
+        trackerDetailFields.subscribe,
+        trackerDetailFields.getVersion,
+        trackerDetailFields.getVersion,
+      );
+    },
+    filterCharacterTrackerDetailFields(customFields) {
+      return trackerDetailFields.filterCharacterFields(customFields);
+    },
+    filterPersonaTrackerDetailFields(fields) {
+      return trackerDetailFields.filterPersonaFields(fields);
+    },
+    renderCompactCharacterTrackerDetailFields(input) {
+      return trackerDetailFields.renderCompactCharacterFields(input);
+    },
+    resolveFeaturedCharacterTrackerDetailFields(input) {
+      return trackerDetailFields.resolveFeaturedCharacterFields(input);
+    },
+    renderPersonaTrackerDetailFields(input) {
+      return trackerDetailFields.renderPersonaFields(input);
+    },
     ui,
     mountNativeSlot,
     renderNativeImpersonateSetting,
@@ -1489,7 +1526,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.4",
-    implementationVersion: "1.0.34",
+    implementationVersion: "1.0.35",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);

@@ -6,6 +6,8 @@ import path from "node:path";
 import { createBridgeRuntime } from "../src/server/runtime.js";
 import { createPromptRegistry } from "../src/server/prompt-registry.js";
 import { createAgentResultRegistry } from "../src/server/result-registry.js";
+import { createAgentPromptRegistry } from "../src/server/agent-prompt-registry.js";
+import { createTrackerDetailFieldRegistry } from "../src/client/tracker-detail-field-registry.js";
 import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
 import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
 import { createTurnHandoffRegistry, __test as turnHandoffTest } from "../src/server/turn-handoff-registry.js";
@@ -29,6 +31,7 @@ import {
   patchRoleplayDraftPlaceholderBridge,
   patchSlashCommandListBridge,
   patchTrackerPanelBridge,
+  patchTrackerDetailFieldsBridge,
   prepareClientOverlay,
   versionAssetReferences,
 } from "../src/server/client-overlay.js";
@@ -100,6 +103,109 @@ assert.equal(resultRegistry.hasResultType("notes_update"), true);
 assert.equal((await resultRegistry.apply({ result: { success: true, type: "notes_update", agentType: "notes", data: { value: 1 } } })).handled, true);
 assert.deepEqual(resultCalls, [{ value: 1 }]);
 assert.equal((await resultRegistry.apply({ result: { success: true, type: "notes_update", agentType: "other" } })).handled, false);
+
+const agentPromptRegistry = createAgentPromptRegistry();
+agentPromptRegistry.register("detail-owner", {
+  id: "persona-details",
+  agentTypes: ["persona-stats"],
+  content: "Include trackerFields.",
+});
+assert.equal(
+  await agentPromptRegistry.extend("persona-stats", "Native contract", {}),
+  "Native contract\n\nInclude trackerFields.",
+);
+assert.equal(await agentPromptRegistry.extend("character-tracker", "Native contract", {}), "Native contract");
+const agentPromptRuntime = createBridgeRuntime({ capabilities: ["agent.prompt"], agentPromptRegistry });
+agentPromptRuntime.markReady();
+const agentPromptSession = agentPromptRuntime.registerConsumer({
+  consumerId: "agent-prompt-test",
+  api: { major: 1, minMinor: 8 },
+  require: ["agent.prompt"],
+});
+agentPromptSession.agentPrompts.register({
+  id: "second-extension",
+  agentTypes: ["persona-stats"],
+  content: "Keep fixed order.",
+});
+const extendedAgentPrompt = await agentPromptRuntime.agentPromptHooks.extend("persona-stats", "Native contract", {});
+assert.match(extendedAgentPrompt, /Keep fixed order\./u);
+assert.match(extendedAgentPrompt, /Include trackerFields\./u);
+await agentPromptRuntime.dispose();
+
+const detailRegistry = createTrackerDetailFieldRegistry();
+detailRegistry.register("detail-owner", {
+  id: "character-details",
+  target: "character",
+  fields: [
+    { name: "Location", icon: "location" },
+    { name: "Movement", icon: "movement" },
+    { name: "Activity", icon: "activity" },
+  ],
+});
+detailRegistry.register("detail-owner", {
+  id: "persona-details",
+  target: "persona",
+  fields: [
+    { name: "Outfit", icon: "shirt" },
+    { name: "Location", icon: "location" },
+  ],
+});
+assert.deepEqual(
+  detailRegistry.filterCharacterFields({ Activity: "Talking", Other: "Kept", Location: "Bar", Movement: "Still" }),
+  [["Other", "Kept"]],
+);
+assert.deepEqual(
+  detailRegistry.filterPersonaFields([{ name: "Location", value: "Bar" }, { name: "Other", value: "Kept" }]),
+  [{ name: "Other", value: "Kept" }],
+);
+assert.deepEqual(detailRegistry.snapshot("character").map((field) => field.name), ["Location", "Movement", "Activity"]);
+const detailJsx = {
+  jsx(type, props, key) { return { type, props, key }; },
+  jsxs(type, props, key) { return { type, props, key }; },
+};
+let updatedCharacter = null;
+let removedCharacterField = null;
+const compactDetailRows = detailRegistry.renderCompactCharacterFields({
+  jsx: detailJsx,
+  native: { Field: "NativeCompactField" },
+  character: {
+    characterId: "char-1",
+    name: "Kira",
+    customFields: { Activity: "Talking", Movement: "Still", Location: "Bar" },
+  },
+  characterIndex: 0,
+  onUpdate: (character) => { updatedCharacter = character; },
+  onRemove: (name) => { removedCharacterField = name; },
+  deleteMode: true,
+});
+assert.deepEqual(compactDetailRows.map((row) => row.props.children[0].props.accessibleLabel), ["Location", "Movement", "Activity"]);
+compactDetailRows[0].props.children[0].props.onSave("Courtyard");
+assert.equal(updatedCharacter.customFields.Location, "Courtyard");
+compactDetailRows[1].props.children[1].props.onClick();
+assert.equal(removedCharacterField, "Movement");
+assert.match(compactDetailRows[0].props.children[0].props.lockKey, /^characters\.id:char-1\.custom\.Location\.value$/u);
+
+let personaFieldsUpdate = null;
+let personaLocksUpdate = null;
+const personaRows = detailRegistry.renderPersonaFields({
+  jsx: detailJsx,
+  native: { InlineEdit: "NativeInlineEdit" },
+  fields: [
+    { name: "Location", value: "Hall" },
+    { name: "Outfit", value: "Coat" },
+    { name: "Other", value: "Kept" },
+  ],
+  onUpdateFields: (fields) => { personaFieldsUpdate = fields; },
+  onUpdateFieldLocks: (update) => { personaLocksUpdate = update({ "player.custom.name:Location.value": true, "other.lock": true }); },
+  deleteMode: true,
+  fieldLocks: { "player.custom.name:Outfit.value": true },
+  lockMode: false,
+});
+assert.deepEqual(personaRows.map((row) => row.props.children[1].props.placeholder), ["Outfit", "Location"]);
+assert.equal(personaRows[0].props.children[1].props.locked, true);
+personaRows[1].props.children[2].props.onClick();
+assert.deepEqual(personaFieldsUpdate.map((field) => field.name), ["Outfit", "Other"]);
+assert.deepEqual(personaLocksUpdate, { "other.lock": true });
 
 const trackerRegistry = createTrackerContextRegistry();
 trackerRegistry.register("tracker-owner", {
@@ -362,13 +468,17 @@ const allNativeClientPatches = [
   "client.roleplay-hud",
   "client.spatial-context",
   "client.tracker-sections",
+  "client.tracker-detail-fields",
 ];
-const clientSource = (await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8"))
+const trackerDetailRegistrySource = (await fs.readFile(new URL("../src/client/tracker-detail-field-registry.js", import.meta.url), "utf8"))
+  .replace(/^export /gmu, "");
+const clientSource = `${trackerDetailRegistrySource}\n${(await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8"))
+  .replace(/^import .*?;\r?\n/gmu, "")}`
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.34");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.35");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -377,6 +487,7 @@ assert.equal(globalThis[clientSymbol].capabilities.has("spatial.context"), true)
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.impersonate-settings"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.tracker-section"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("tracker.detail-fields"), true);
 assert.equal(typeof globalThis[clientSymbol].renderNativeTrackerSections, "function");
 assert.equal(customElements.get("marinara-capability-mari-bridge"), undefined);
 assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
@@ -508,8 +619,17 @@ await clientSession.close();
 const featureSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "feature-test",
   api: { major: 1, minMinor: 0 },
-  require: ["agent-suite.tracker-data", "commands", "quick-replies.input-macro", "ui.agent-settings", "ui.tracker-section"],
+  require: ["agent-suite.tracker-data", "commands", "quick-replies.input-macro", "tracker.detail-fields", "ui.agent-settings", "ui.tracker-section"],
 });
+featureSession.tracker.registerDetailFields({
+  id: "ordered-details",
+  target: "character",
+  fields: [{ name: "Location", icon: "location" }, { name: "Activity", icon: "activity" }],
+});
+assert.deepEqual(
+  globalThis[clientSymbol].filterCharacterTrackerDetailFields({ Activity: "Talking", Other: "Kept", Location: "Bar" }),
+  [["Other", "Kept"]],
+);
 featureSession.commands.register({
   id: "probe",
   commands: ["/probe"],
@@ -770,6 +890,19 @@ assert.equal(
   patchTrackerPanelBridge('const selector = \'[data-component="TrackerDataSidebarDesktop.right"]\';'),
   null,
 );
+const trackerDetailFixture = [
+  'const trackerDetailMarker="ui.trackerPanel.charactertrackercard.outfit";',
+  'function compact(){k=Object.entries(e.customFields??{}).map(([R,Z])=>[R,Z,At(Z)]);onToggleHidden:()=>O("outfit")})]})}',
+  'function gs({character:e,onUpdate:a,sizeProfile:t,characterIndex:o}){const s=[{hidden:u("outfit"),value:e.outfit}].filter(d=>!d.hidden||i);return r.jsx("div",{children:s.map(d=>r.jsx(ps,{icon:d.icon,accessibleLabel:d.accessibleLabel,value:d.value,placeholder:d.placeholder,onSave:d.onSave,sizeProfile:t,fieldKey:d.key,lockKey:c(d.key),hidden:d.hidden,hideMode:i,onToggleHidden:()=>b(d.key)},d.key))})}',
+  'function featured(){I=Object.entries(e.customFields??{}).map(([F,Q])=>[F,Q,At(Q)]);r.jsx(gs,{character:e,onUpdate:d,sizeProfile:f,characterIndex:g})}',
+  'function Qi({persona:e,status:a,spriteExpression:t,trackerPanelSide:o,statDisplayMode:n,resolveStatIcon:i,personaStats:l,action:f,onSaveStatus:c,onUpdatePersonaStats:u,onAddPersonaStat:b,deleteMode:s,addMode:d,queuePersonaPortraitSave:p,flushPersonaPortraitSave:g,collapsed:x=!1,onToggleCollapsed:_}){{fieldLocks:T,lockMode:w,onToggleFieldLock:C}=Ce();r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:Y()})}',
+  'function Wl({activeChatId:e,activePersona:a,characterSpriteLookup:t,characterTrackerConfig:o,characterTrackerSettings:n,currentGameState:i,enabledAgentTypes:l,expressionSpritesEnabled:f,featuredCharacterCardKeys:c,flushPatch:u,gameStateRefreshing:b,orderedTrackerSections:s,patchField:d,patchPlayerStats:p,patchPlayerStatsMany:g,resolveSpriteCharacterId:x,spriteExpressions:_,trackerPanelCollapsedSections:A,trackerPanelSide:T,trackerPanelSizeProfile:w,trackerPanelThoughtBubbleDisplay:C,trackerStatDisplayMode:k,trackerPanelDockedThoughtsAlwaysVisible:v,trackerTemperatureUnit:j,toggleTrackerPanelSectionCollapsed:y,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N,resolveStatIcon:P,beforeCustomSections:B,afterCustomSections:W}){const X=va(),mariBridgeFixture=(V=Array.isArray(D?.customTrackerFields)?D.customTrackerFields:[],{onAddPersonaStat:ae,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N})}',
+].join("");
+const patchedTrackerDetails = patchTrackerDetailFieldsBridge(trackerDetailFixture);
+assert.match(patchedTrackerDetails, /renderCompactCharacterTrackerDetailFields/u);
+assert.match(patchedTrackerDetails, /resolveFeaturedCharacterTrackerDetailFields/u);
+assert.match(patchedTrackerDetails, /renderPersonaTrackerDetailFields/u);
+assert.match(patchedTrackerDetails, /a\|\|w\|\|!le\(T,zr\(\)\)\?Y\(\):null/u);
 const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
@@ -809,6 +942,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "chat-settings.js"), chatSettings
 await fs.writeFile(path.join(nativeAssetsRoot, "impersonate-settings.js"), impersonateSettingsFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "agent-suite.js"), agentSuiteFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanelFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "tracker-details.js"), trackerDetailFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "query-client.js"), queryClientFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background-store.js"), roleplayBackgroundStoreFixture);
@@ -832,7 +966,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.34"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.35"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -905,12 +1039,14 @@ for (const relativePath of [
   "bootstrap/runtime.mjs",
   "src/shared/contracts.js",
   "src/server/runtime.js",
+  "src/server/agent-prompt-registry.js",
   "src/server/turn-handoff-registry.js",
   "src/server/message-registry.js",
   "src/server/chat-registry.js",
   "src/server/spatial-directive-compat.js",
   "src/server/client-overlay.js",
   "src/client/runtime.js",
+  "src/client/tracker-detail-field-registry.js",
 ]) {
   await fs.access(path.join(bootstrapFixtureRoot, "mari-bridge", relativePath));
 }
@@ -1145,12 +1281,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.4",
-  bridgeVersion: "1.0.34",
+  bridgeVersion: "1.0.35",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.34");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.35");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   serverOverlayTest.withoutMariBridgeExecArgs([
