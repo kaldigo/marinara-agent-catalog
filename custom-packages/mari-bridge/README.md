@@ -41,10 +41,11 @@ tokens. Standard agent settings stay in Marinara's standard editor; an
 
 ## Current implementation boundary
 
-Version `1.0.37` supports Marinara Engine 2.4.4 and keeps the injected client
+Version `1.0.38` supports Marinara Engine 2.4.4 and keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
-tracker-context sections, native Agent Suite tracker-data registrations, and
+tracker-context sections, package-owned filtering of native Custom Tracker
+context fields, native Agent Suite tracker-data registrations, and
 native tracker-section contributions and Roleplay HUD mount points. Agent Suite tracker-data registrations receive a
 post-save callback after Marinara's native GameState refresh, allowing their
 package-owned surfaces to invalidate cached display data immediately. Dry-run
@@ -55,7 +56,10 @@ native Impersonate settings section also receives a native `SettingsSwitch`
 for presets that already contain their own impersonation instructions. When a
 specific preset and that switch are active, dry-run impersonation omits only
 the normal Impersonate prompt template; guidance and continuation prefills keep
-their native roles. Tracker
+their native roles. Engine 2.4.4 main-generation tracker context also receives
+a temporary compatibility shim that excludes hidden character fields, matching
+the native Agent context compactor; remove it after the upstream committed
+tracker formatter adopts that behavior. Tracker
 contributions are inserted inside Marinara's ordered section list and receive
 the native section header, collapse behavior, edit mode, active-agent state,
 and rerun callback; consumers provide only descriptors and feature-specific

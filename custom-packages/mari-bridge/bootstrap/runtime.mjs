@@ -52,7 +52,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.37";
+kernel.version = "1.0.38";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -90,6 +90,7 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
   const trackerContextPatchApplied =
     kernel.patches["tracker.context-committed-active"] === "applied" &&
     kernel.patches["tracker.context-committed"] === "applied" &&
+    kernel.patches["tracker.context-custom-fields"] === "applied" &&
     kernel.patches["tracker.context-agent"] === "applied";
   const groupSelectorPatchApplied =
     kernel.patches["group.selector-policy"] === "applied" &&
@@ -570,6 +571,84 @@ export function patchServerModule(url, inputSource) {
       }
       if (url.endsWith("/services/generation/committed-tracker-context.js")) {
         source = patchCommittedTrackerActiveGuard(source);
+        source = replaceExact(
+          source,
+          'import { compactQuestProgressForContext, formatCustomTrackerFieldForPrompt } from "@marinara-engine/shared";',
+          'import { characterTrackerLockKey, compactQuestProgressForContext, formatCustomTrackerFieldForPrompt, isTrackerFieldHidden, normalizeTrackerHiddenFields } from "@marinara-engine/shared";',
+          "compat.hidden-tracker-context.import",
+        );
+        source = replaceExact(
+          source,
+          "function formatCharacterLine(character) {",
+          "function formatCharacterLine(character, characterIndex, hiddenFields) {",
+          "compat.hidden-tracker-context.formatter",
+        );
+        source = replaceExact(
+          source,
+          [
+            "    const details = [];",
+            "    if (character.mood)",
+            "        details.push(`mood: ${character.mood}`);",
+            "    if (character.appearance)",
+            "        details.push(`appearance: ${character.appearance}`);",
+            "    if (character.outfit)",
+            "        details.push(`outfit: ${character.outfit}`);",
+            "    if (character.thoughts)",
+            "        details.push(`thoughts: ${character.thoughts}`);",
+          ].join("\n"),
+          [
+            "    const details = [];",
+            "    const mariBridgeFieldHidden = (field) => isTrackerFieldHidden(hiddenFields, characterTrackerLockKey(character, characterIndex, field));",
+            "    if (character.mood && !mariBridgeFieldHidden(\"mood\"))",
+            "        details.push(`mood: ${character.mood}`);",
+            "    if (character.appearance && !mariBridgeFieldHidden(\"appearance\"))",
+            "        details.push(`appearance: ${character.appearance}`);",
+            "    if (character.outfit && !mariBridgeFieldHidden(\"outfit\"))",
+            "        details.push(`outfit: ${character.outfit}`);",
+            "    if (character.thoughts && !mariBridgeFieldHidden(\"thoughts\"))",
+            "        details.push(`thoughts: ${character.thoughts}`);",
+          ].join("\n"),
+          "compat.hidden-tracker-context.fields",
+        );
+        source = replaceExact(
+          source,
+          "    if (hasCharTracker) {",
+          [
+            "    // Mari Bridge Engine 2.4.4 compatibility shim: main committed tracker",
+            "    // context does not honor hidden character fields even though agent context does.",
+            "    // Remove this shim once upstream applies the same compaction to both paths.",
+            "    const mariBridgeHiddenTrackerFields = normalizeTrackerHiddenFields(parseMaybeJson(snap.hiddenTrackerFields));",
+            "    if (hasCharTracker) {",
+          ].join("\n"),
+          "compat.hidden-tracker-context.state",
+        );
+        source = replaceExact(
+          source,
+          "const charLines = presentChars.map(formatCharacterLine).filter(isNonEmptyLine);",
+          "const charLines = presentChars.map((character, index) => formatCharacterLine(character, index, mariBridgeHiddenTrackerFields)).filter(isNonEmptyLine);",
+          "compat.hidden-tracker-context.map",
+        );
+        source = replaceExact(
+          source,
+          [
+            "            if (hasCustomTracker && Array.isArray(stats.customTrackerFields) && stats.customTrackerFields.length > 0) {",
+            "                const customLines = stats.customTrackerFields.map(formatCustomTrackerFieldForPrompt);",
+            "                trackerParts.push(wrapContent(customLines.join(\"\\n\"), \"Custom Tracker\", args.wrapFormat));",
+            "            }",
+          ].join("\n"),
+          [
+            "            const mariBridgeCustomTrackerFields = globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.trackerContextHooks?.filterCustomTrackerFields({",
+            "                activeAgentIds: args.activeAgentIds,",
+            "                latestGameState: snap,",
+            "                chatMetadata: args.chatMetadata,",
+            "            }, stats.customTrackerFields) ?? stats.customTrackerFields;",
+            "            if (hasCustomTracker && Array.isArray(mariBridgeCustomTrackerFields) && mariBridgeCustomTrackerFields.length > 0) {",
+            "                const customLines = mariBridgeCustomTrackerFields.map(formatCustomTrackerFieldForPrompt);",
+            "                trackerParts.push(wrapContent(customLines.join(\"\\n\"), \"Custom Tracker\", args.wrapFormat));",
+            "            }",
+          ].join("\n"),
+          "tracker.context-custom-fields",
+        );
         source = replaceExact(
           source,
           "const playerNotes =",

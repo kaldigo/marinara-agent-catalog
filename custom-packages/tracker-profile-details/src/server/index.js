@@ -1,5 +1,9 @@
 import { activateWithMariBridge } from "../../bridge-sdk/server.js";
-import { applyPersonaDetailResult } from "./persona-fields.js";
+import {
+  applyPersonaDetailResult,
+  filterPersonaDetailFieldsFromCustomTracker,
+  formatPersonaDetailContext,
+} from "./persona-fields.js";
 
 const PERSONA_PROMPT_EXTENSION = `Also track these PLAYER PERSONA scene details in GameState. Add this property to the same JSON object:
 "trackerFields": {
@@ -15,8 +19,8 @@ export async function activate(context) {
     context,
     {
       consumerId: "tracker-profile-details",
-      api: { major: 1, minMinor: 8 },
-      require: ["agent.prompt", "agent.result-types", "consumer.sessions", "runtime.health"],
+      api: { major: 1, minMinor: 9 },
+      require: ["agent.prompt", "agent.result-types", "consumer.sessions", "runtime.health", "tracker.context"],
     },
     async (bridgeSession) => {
       bridgeSession.agentPrompts.register({
@@ -29,6 +33,12 @@ export async function activate(context) {
         resultType: "persona_stats_update",
         agentTypes: ["persona-stats"],
         apply: applyPersonaDetailResult,
+      });
+      bridgeSession.trackerContext.register({
+        id: "persona-scene-details",
+        agentTypes: ["persona-stats"],
+        filterCustomTrackerFields: filterPersonaDetailFieldsFromCustomTracker,
+        formatCommitted: formatPersonaDetailContext,
       });
       context?.api?.runtime?.logger?.info?.("Tracker Profile Details activated through Mari Bridge.");
     },

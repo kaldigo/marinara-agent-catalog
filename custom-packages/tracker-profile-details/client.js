@@ -1,4 +1,4 @@
-const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 8 });
+const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 9 });
 const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
 const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 
@@ -78,7 +78,7 @@ if (!customElements.get(CAPABILITY_TAG)) {
 const cleanupTrackerProfileDetails = await activateClientWithMariBridge(
   {
     consumerId: "tracker-profile-details",
-    api: { major: 1, minMinor: 8 },
+    api: { major: 1, minMinor: 9 },
     require: ["client.bridge-first", "consumer.sessions", "runtime.health", "tracker.detail-fields"],
   },
   async (bridgeSession) => {

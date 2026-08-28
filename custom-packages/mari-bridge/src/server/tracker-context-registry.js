@@ -20,8 +20,12 @@ export function createTrackerContextRegistry() {
       [...new Set((input.agentTypes ?? []).map((value) => normalizeId(value, "agent type")))].sort(),
     );
     if (agentTypes.length === 0) throw new TypeError("Mari Bridge tracker-context registrations require agentTypes");
-    if (typeof input.formatCommitted !== "function" && typeof input.formatAgentState !== "function") {
-      throw new TypeError("Mari Bridge tracker-context registrations require a formatter");
+    if (
+      typeof input.formatCommitted !== "function"
+      && typeof input.formatAgentState !== "function"
+      && typeof input.filterCustomTrackerFields !== "function"
+    ) {
+      throw new TypeError("Mari Bridge tracker-context registrations require a formatter or custom-field filter");
     }
     const key = `${ownerId}:${id}`;
     if (registrations.has(key)) throw new Error(`Duplicate Mari Bridge tracker-context registration ${key}`);
@@ -32,6 +36,8 @@ export function createTrackerContextRegistry() {
       order: Number.isFinite(input.order) ? Number(input.order) : 0,
       formatCommitted: typeof input.formatCommitted === "function" ? input.formatCommitted : null,
       formatAgentState: typeof input.formatAgentState === "function" ? input.formatAgentState : null,
+      filterCustomTrackerFields:
+        typeof input.filterCustomTrackerFields === "function" ? input.filterCustomTrackerFields : null,
     }));
     return () => registrations.delete(key);
   }
@@ -71,10 +77,32 @@ export function createTrackerContextRegistry() {
       }
       return target;
     },
+    filterCustomTrackerFields(scope = {}, fields = []) {
+      if (!Array.isArray(fields)) return fields;
+      let filtered = fields;
+      for (const registration of sorted(scope.activeAgentIds)) {
+        if (!registration.filterCustomTrackerFields) continue;
+        const next = registration.filterCustomTrackerFields(
+          Object.freeze({ ...scope, ownerId: registration.ownerId }),
+          Object.freeze([...filtered]),
+        );
+        if (!Array.isArray(next)) {
+          throw new TypeError(
+            `Mari Bridge tracker-context custom-field filter ${registration.ownerId}:${registration.id} must return an array`,
+          );
+        }
+        filtered = next;
+      }
+      return filtered;
+    },
     snapshot() {
       return Object.freeze(
-        [...registrations.values()].map(({ formatCommitted: _committed, formatAgentState: _agent, ...value }) =>
-          Object.freeze(value)),
+        [...registrations.values()].map(({
+          formatCommitted: _committed,
+          formatAgentState: _agent,
+          filterCustomTrackerFields: _filter,
+          ...value
+        }) => Object.freeze(value)),
       );
     },
     clear() {

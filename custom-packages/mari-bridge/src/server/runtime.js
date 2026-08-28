@@ -304,6 +304,7 @@ export function createBridgeRuntime(options = {}) {
           hasActive: trackerContextRegistry.hasActive,
           appendCommittedSections: trackerContextRegistry.appendCommittedSections,
           appendAgentState: trackerContextRegistry.appendAgentState,
+          filterCustomTrackerFields: trackerContextRegistry.filterCustomTrackerFields,
         })
       : null,
     groupSelectorHooks: groupSelectorRegistry

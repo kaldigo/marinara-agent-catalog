@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "id": "gm-notes",
+  "name": "GM Notes",
+  "version": "1.1.0",
+  "description": "Maintains a focused ledger of durable reminders, unresolved threads, and continuity diagnostics.",
+  "engine": {
+    "min": "2.4.4",
+    "maxExclusive": "2.4.5"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "server": "server.mjs",
+    "client": "client.js",
+    "agents": "agents.json"
+  },
+  "contributions": {
+    "slots": [
+      "chat-runtime"
+    ]
+  },
+  "files": [
+    {
+      "path": "agents.json",
+      "sha256": "1f82aaa2c8e9ae8ba3861684cc92d3b45b7c9d924d84633d0354a1e671744805",
+      "bytes": 3029
+    },
+    {
+      "path": "bridge-sdk/contracts.js",
+      "sha256": "3cdddad1c964f6120e67988a9fb6018c7cefa1a2e0233e830db9d767b0a4730c",
+      "bytes": 1748
+    },
+    {
+      "path": "bridge-sdk/server.js",
+      "sha256": "ac9472aef2ba8c57d773b5a397375c078e1008c4c0bc0a1c3b4b4910e8dbcb3a",
+      "bytes": 1180
+    },
+    {
+      "path": "client.js",
+      "sha256": "f575c9a0c4e8144b87591d5918ba0ff23dcaefa659c51479f37cb064752058ae",
+      "bytes": 47341
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+      "bytes": 61
+    },
+    {
+      "path": "src/server/backfill.js",
+      "sha256": "32e58ff94d0fe0a184441b957409e2308927d51128a736696a5dcbd8bc046295",
+      "bytes": 15076
+    },
+    {
+      "path": "src/server/index.js",
+      "sha256": "de4ae89f739a8ad39ed95b58ce7e8cb382e5057c2832cdcec506800f9bb55fb2",
+      "bytes": 2710
+    },
+    {
+      "path": "src/server/routes.js",
+      "sha256": "f6e3a5673af29a987183baeab0b41f0bd21400c13ee00af72cf8de8cebd49481",
+      "bytes": 1425
+    },
+    {
+      "path": "src/shared/state.js",
+      "sha256": "f64ac00e94160173d4f05d86dc132471b56beb272b1fa60351af53e50e4063a4",
+      "bytes": 6807
+    }
+  ],
+  "permissions": [
+    "agent-runtime",
+    "chat-read",
+    "chat-write",
+    "routes",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": true
+}
