@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { createBridgeRuntime } from "../src/server/runtime.js";
 import { createPromptRegistry } from "../src/server/prompt-registry.js";
 import { createAgentResultRegistry } from "../src/server/result-registry.js";
+import { createAgentPromptRegistry } from "../src/server/agent-prompt-registry.js";
 import { createTrackerContextRegistry } from "../src/server/tracker-context-registry.js";
 import { createGroupSelectorRegistry } from "../src/server/group-selector-registry.js";
 import { createTurnHandoffRegistry } from "../src/server/turn-handoff-registry.js";
@@ -51,7 +52,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.34";
+kernel.version = "1.0.35";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -67,6 +68,7 @@ function recordPatchFailure(patchId, detail) {
 function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
   const promptRegistry = createPromptRegistry();
   const agentResultRegistry = createAgentResultRegistry();
+  const agentPromptRegistry = createAgentPromptRegistry();
   const trackerContextRegistry = createTrackerContextRegistry();
   const groupSelectorRegistry = createGroupSelectorRegistry();
   const turnHandoffRegistry = createTurnHandoffRegistry();
@@ -80,6 +82,11 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
     kernel.patches["agent.result-types"] === "applied" &&
     kernel.patches["agent.result-apply-main"] === "applied" &&
     kernel.patches["agent.result-apply-retry"] === "applied";
+  const agentPromptPatchApplied = [
+    "agent.prompt-extend",
+    "agent.prompt-extend-batch",
+    "agent.prompt-extend-single",
+  ].every((patchId) => kernel.patches[patchId] === "applied");
   const trackerContextPatchApplied =
     kernel.patches["tracker.context-committed-active"] === "applied" &&
     kernel.patches["tracker.context-committed"] === "applied" &&
@@ -145,6 +152,7 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
       ...(promptPatchApplied ? ["prompt.inject", "prompt.suppress", "prompt.transform-final", "prompt.transform-history"] : []),
       ...(clientOverlay ? ["client.bridge-first"] : []),
       ...(agentResultPatchApplied ? ["agent.result-types"] : []),
+      ...(agentPromptPatchApplied ? ["agent.prompt"] : []),
       ...(trackerContextPatchApplied ? ["tracker.context"] : []),
       ...(groupSelectorPatchApplied ? ["group.selector"] : []),
       ...(turnHandoffPatchApplied ? ["turn.handoff"] : []),
@@ -154,6 +162,7 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
     ],
     promptRegistry,
     agentResultRegistry,
+    agentPromptRegistry,
     trackerContextRegistry,
     groupSelectorRegistry,
     turnHandoffRegistry,
@@ -475,6 +484,46 @@ export function patchServerModule(url, inputSource) {
         return source;
       }
       if (url.endsWith("/services/agents/agent-executor.js")) {
+        source = replaceExact(
+          source,
+          [
+            "function renderAgentTemplatesForOutput(configs, context, options = {}) {",
+            "    const templates = new Map();",
+            "    const renderOptions = options.escapeValues === undefined ? {} : { escapeValues: options.escapeValues };",
+            "    for (const config of configs) {",
+            "        templates.set(config.type, renderAgentPromptTemplate(config.promptTemplate || getDefaultPromptForAgent(config), config.settings, context, renderOptions));",
+            "    }",
+            "    return templates;",
+            "}",
+          ].join("\n"),
+          [
+            "async function renderAgentTemplatesForOutput(configs, context, options = {}) {",
+            "    const templates = new Map();",
+            "    const renderOptions = options.escapeValues === undefined ? {} : { escapeValues: options.escapeValues };",
+            "    for (const config of configs) {",
+            "        const nativeTemplate = renderAgentPromptTemplate(config.promptTemplate || getDefaultPromptForAgent(config), config.settings, context, renderOptions);",
+            "        templates.set(config.type, await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.agentPromptHooks?.extend(config.type, nativeTemplate, context) ?? nativeTemplate);",
+            "    }",
+            "    return templates;",
+            "}",
+          ].join("\n"),
+          "agent.prompt-extend",
+        );
+        source = replaceExact(
+          source,
+          "const renderedTemplates = renderAgentTemplatesForOutput(configs, context, { escapeValues: true });",
+          "const renderedTemplates = await renderAgentTemplatesForOutput(configs, context, { escapeValues: true });",
+          "agent.prompt-extend-batch",
+        );
+        source = replaceExact(
+          source,
+          "const template = renderAgentPromptTemplate(config.promptTemplate || getDefaultPromptForAgent(config), config.settings, context, { escapeValues: normalizeAgentContextWrapFormat(context.wrapFormat) === \"xml\" });",
+          [
+            "const nativeTemplate = renderAgentPromptTemplate(config.promptTemplate || getDefaultPromptForAgent(config), config.settings, context, { escapeValues: normalizeAgentContextWrapFormat(context.wrapFormat) === \"xml\" });",
+            "        const template = await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.agentPromptHooks?.extend(config.type, nativeTemplate, context) ?? nativeTemplate;",
+          ].join("\n"),
+          "agent.prompt-extend-single",
+        );
         source = replaceExact(
           source,
           'if (typeof configured === "string" && AGENT_RESULT_TYPES.has(configured)) {',

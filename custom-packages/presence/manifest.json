@@ -29,7 +29,7 @@
     },
     {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "7a25487f8798b9249566e8a9839c949ac56a095158e99712dc1f5a25ca60ee1e",
+      "sha256": "a04424d373100ec658f5ec721bc434d3df4af660fb5885a63ef75960f3e81684",
       "bytes": 1748
     },
     {
@@ -39,7 +39,7 @@
     },
     {
       "path": "client.js",
-      "sha256": "22876b0b5e338373fa67896ad3a1a3ba95cf073a16cbcbbc67ddf740ad0a3c21",
+      "sha256": "dc6d083dbeee525f8ad5e84c6687089ffd6ec8fefb5e21de3a7b47e79e6e5292",
       "bytes": 10824
     },
     {

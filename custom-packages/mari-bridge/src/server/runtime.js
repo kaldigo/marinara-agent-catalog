@@ -22,6 +22,7 @@ export function createBridgeRuntime(options = {}) {
   let disposed = false;
   const promptRegistry = options.promptRegistry ?? null;
   const agentResultRegistry = options.agentResultRegistry ?? null;
+  const agentPromptRegistry = options.agentPromptRegistry ?? null;
   const trackerContextRegistry = options.trackerContextRegistry ?? null;
   const groupSelectorRegistry = options.groupSelectorRegistry ?? null;
   const turnHandoffRegistry = options.turnHandoffRegistry ?? null;
@@ -47,6 +48,7 @@ export function createBridgeRuntime(options = {}) {
       ),
       promptRegistrations: promptRegistry?.snapshot?.() ?? null,
       agentResultRegistrations: agentResultRegistry?.snapshot?.() ?? null,
+      agentPromptRegistrations: agentPromptRegistry?.snapshot?.() ?? null,
       trackerContextRegistrations: trackerContextRegistry?.snapshot?.() ?? null,
       groupSelectorRegistrations: groupSelectorRegistry?.snapshot?.() ?? null,
       turnHandoffRegistrations: turnHandoffRegistry?.snapshot?.() ?? null,
@@ -160,6 +162,16 @@ export function createBridgeRuntime(options = {}) {
           },
         })
       : null;
+    const agentPrompts = agentPromptRegistry
+      ? Object.freeze({
+          register(input) {
+            if (!ownsCapability("agent.prompt")) {
+              throw new Error(`${requirements.consumerId} did not require agent.prompt`);
+            }
+            return registerOwnedCleanup(agentPromptRegistry.register(requirements.consumerId, input));
+          },
+        })
+      : null;
     const trackerContext = trackerContextRegistry
       ? Object.freeze({
           register(input) {
@@ -231,6 +243,7 @@ export function createBridgeRuntime(options = {}) {
       getHealth: snapshot,
       prompts,
       agentResults,
+      agentPrompts,
       trackerContext,
       groupSelectors,
       turnHandoffs,
@@ -282,6 +295,9 @@ export function createBridgeRuntime(options = {}) {
           hasResultType: agentResultRegistry.hasResultType,
           apply: agentResultRegistry.apply,
         })
+      : null,
+    agentPromptHooks: agentPromptRegistry
+      ? Object.freeze({ extend: agentPromptRegistry.extend })
       : null,
     trackerContextHooks: trackerContextRegistry
       ? Object.freeze({
@@ -340,6 +356,7 @@ export function createBridgeRuntime(options = {}) {
       for (const record of records.reverse()) await record.close(reason);
       promptRegistry?.clear?.();
       agentResultRegistry?.clear?.();
+      agentPromptRegistry?.clear?.();
       trackerContextRegistry?.clear?.();
       groupSelectorRegistry?.clear?.();
       turnHandoffRegistry?.clear?.();

@@ -8,6 +8,7 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/server/runtime.js",
   "src/server/prompt-registry.js",
   "src/server/result-registry.js",
+  "src/server/agent-prompt-registry.js",
   "src/server/tracker-context-registry.js",
   "src/server/group-selector-registry.js",
   "src/server/turn-handoff-registry.js",
@@ -17,6 +18,7 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/server/client-overlay.js",
   "src/server/server-overlay.js",
   "src/client/runtime.js",
+  "src/client/tracker-detail-field-registry.js",
   "bootstrap/runtime.mjs",
   // Commit the preload entry last, after every module it imports exists.
   "bootstrap/register.mjs",
