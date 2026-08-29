@@ -246,6 +246,53 @@ function gmNotesAgentState(playerStats) {
 }
 
 
+const ADMIN_SECRET_STORAGE_KEY = "marinara_admin_secret";
+const CSRF_HEADER = "x-marinara-csrf";
+const CSRF_HEADER_VALUE = "1";
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function buildNativeJsonHeaders(options = {}, adminSecret = "") {
+  const headers = new Headers(options.headers ?? {});
+  headers.set("Accept", "application/json");
+  if (options.body !== undefined && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (UNSAFE_METHODS.has(String(options.method ?? "GET").toUpperCase())) {
+    headers.set(CSRF_HEADER, CSRF_HEADER_VALUE);
+  }
+  if (typeof adminSecret === "string" && adminSecret.trim()) {
+    headers.set("X-Admin-Secret", adminSecret.trim());
+  }
+  return headers;
+}
+
+function readAdminSecret() {
+  try {
+    return globalThis.window?.localStorage?.getItem(ADMIN_SECRET_STORAGE_KEY)?.trim() ?? "";
+  } catch {
+    // Storage can be unavailable in hardened browser contexts. The server will
+    // still allow privileged requests made from an authorized local origin.
+    return "";
+  }
+}
+
+async function nativeJson(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: buildNativeJsonHeaders(options, readAdminSecret()),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = data?.error || `Native request failed (${response.status})`;
+    if (response.status === 403) {
+      throw new Error(`Backfill needs Admin Access. Check Settings → Advanced → Admin Access. (${detail})`);
+    }
+    throw new Error(detail);
+  }
+  return data;
+}
+
+
 
 const PACKAGE_ID = "gm-notes";
 const TAG_NAME = "marinara-capability-gm-notes";
@@ -283,6 +330,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       "consumer.sessions",
       "generation.lifecycle",
       "runtime.health",
+      "ui.agent-settings",
       "ui.roleplay-hud",
       "ui.tracker-section",
     ],
@@ -338,9 +386,13 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
           this._adding = false;
           this._lockMode = false;
           this._removeMode = false;
-          if (this.chatId && state.cache.has(this.chatId)) {
+          if (this.getAttribute("view") === "settings") {
             this.render();
             void this.refreshBackfillStatus();
+            return;
+          }
+          if (this.chatId && state.cache.has(this.chatId)) {
+            this.render();
           } else void this.refresh(true);
           return;
         }
@@ -477,15 +529,20 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
 
       async refresh(force = false) {
         const view = this.getAttribute("view");
-        if (!this.chatId || !["tracker-section-body", "hud"].includes(view)) {
+        if (!this.chatId || !["tracker-section-body", "hud", "settings"].includes(view)) {
           this.hidden = true;
           this.replaceChildren();
           this.closePopover();
           return;
         }
+        if (view === "settings") {
+          this.hidden = false;
+          this.render();
+          void this.refreshBackfillStatus();
+          return;
+        }
         if (force || !state.cache.has(this.chatId)) await loadState(this.chatId, force);
         this.render();
-        void this.refreshBackfillStatus();
       }
 
       async refreshBackfillStatus() {
@@ -555,6 +612,12 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       }
 
       render() {
+        if (this.getAttribute("view") === "settings") {
+          this.hidden = !this.chatId;
+          this.closePopover();
+          this.innerHTML = this.hidden ? "" : renderBackfillSettings(this);
+          return;
+        }
         const data = state.cache.get(this.chatId);
         const nativeTracker = this.getAttribute("view") === "tracker-section-body"
           && this.capabilityProps?.nativeEnabled === true;
@@ -716,6 +779,12 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       agentIds: [PACKAGE_ID],
       rerunAgentId: PACKAGE_ID,
     });
+    const disposeSettings = bridgeSession.ui.register({
+      id: "backfill-settings",
+      slot: "agent.settings",
+      agentIds: [PACKAGE_ID],
+      view: "settings",
+    });
     const disposeAgentSuite = bridgeSession.agentSuite.registerTrackerData({
       agentId: PACKAGE_ID,
       label: "GM Notes",
@@ -732,6 +801,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
       for (const element of state.elements) {
         if (element._backfilling) element.stopBackfill("Backfill paused because the active chat changed. Run it again to resume.");
+        if (element.getAttribute("view") === "settings") void element.refresh();
       }
       if (chatId) void loadState(chatId, true);
     });
@@ -748,25 +818,11 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       disposeChat();
       disposeAgentSuite();
       disposeHud();
+      disposeSettings();
       disposeTracker();
     };
   },
 );
-
-async function nativeJson(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    credentials: "same-origin",
-    headers: {
-      Accept: "application/json",
-      ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(options.headers ?? {}),
-    },
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || `Native request failed (${response.status})`);
-  return data;
-}
 
 function parseRecord(value) {
   if (typeof value !== "string") return value && typeof value === "object" ? value : {};
@@ -799,7 +855,6 @@ function renderPanel(element, notes, { popover = false } = {}) {
   return `<header class="gm-notes-popover-header">
     <span class="gm-notes-panel-title">${noteIcon("0.625rem")} GM Notes (${notes.length})</span>
     <span class="gm-notes-panel-actions">
-      ${modeButton("backfill", element._backfilling ? "Stop historical backfill" : "Backfill GM Notes history", historyIcon(), element._backfilling)}
       ${modeButton("add-mode", "Add note", plusIcon(), element._adding)}
       ${modeButton("lock-mode", "Edit note locks", lockIcon(false), element._lockMode)}
       ${modeButton("remove-mode", "Remove notes", trashIcon(), element._removeMode, true)}
@@ -821,13 +876,12 @@ function renderPanelBody(element, notes, {
   removeMode = false,
 } = {}) {
   return `<div class="gm-notes-panel-body${popover ? " gm-notes-panel-body--popover" : ""}${tracker ? " gm-notes-panel-body--tracker" : ""}">
-    ${renderBackfillControl(element, { tracker })}
     ${addMode ? renderAddForm({ tracker }) : ""}
     ${renderGroups(element, notes, { tracker, lockMode, removeMode })}
   </div>`;
 }
 
-function renderBackfillControl(element, { tracker = false } = {}) {
+function renderBackfillSettings(element) {
   const progress = element._backfillProgress;
   const pending = progress && progress.done !== true;
   const message = element._backfillMessage || (
@@ -835,18 +889,13 @@ function renderBackfillControl(element, { tracker = false } = {}) {
       ? (progress.done ? "History is caught up." : `${progress.processed} of ${progress.total} history messages processed.`)
       : "Check and backfill earlier roleplay history."
   );
-  if (!tracker && !element._backfilling && !pending && !element._backfillMessage) return "";
-  const button = tracker
-    ? modeButton(
-      "backfill",
-      element._backfilling ? "Stop historical backfill" : "Backfill GM Notes history",
-      historyIcon(),
-      element._backfilling,
-    )
-    : "";
-  return `<div class="gm-notes-backfill${element._backfilling ? " is-running" : ""}" role="status">
-    ${button}<span>${escapeHtml(message)}</span>
-  </div>`;
+  const action = element._backfilling ? "Stop backfill" : (pending ? "Resume backfill" : "Backfill history");
+  return `<section class="gm-notes-backfill-settings${element._backfilling ? " is-running" : ""}">
+    <header><strong>Historical backfill</strong><p>Catch GM Notes up on completed turns from earlier in this Roleplay chat.</p></header>
+    <div role="status"><span>${escapeHtml(message)}</span>
+      <button type="button" data-gm-notes-action="backfill" aria-pressed="${element._backfilling}">${historyIcon()} ${action}</button>
+    </div>
+  </section>`;
 }
 
 function backfillChangeSummary(totals) {
@@ -953,10 +1002,13 @@ function ensureStyles() {
     .gm-notes-panel-body{display:grid;gap:.5rem;padding:.5rem}
     .gm-notes-panel-body--tracker{gap:.125rem;padding:.125rem .25rem .25rem}
     .gm-notes-panel-body--popover{max-height:22rem;overflow:auto}
-    .gm-notes-backfill{display:flex;min-width:0;align-items:center;gap:.375rem;border:1px solid color-mix(in srgb,var(--border) 45%,transparent);border-radius:.5rem;background:color-mix(in srgb,var(--muted) 12%,transparent);padding:.3rem .4rem;color:var(--muted-foreground);font-size:.625rem;line-height:1.35}
-    .gm-notes-backfill>span{min-width:0;flex:1;overflow-wrap:anywhere}.gm-notes-backfill.is-running{color:var(--foreground)}.gm-notes-backfill.is-running svg{animation:gm-notes-spin 1.25s linear infinite}
+    .gm-notes-backfill-settings{display:grid;gap:.625rem;border:1px solid var(--border);border-radius:.5rem;background:color-mix(in srgb,var(--background) 75%,transparent);padding:.75rem;color:var(--foreground)}
+    .gm-notes-backfill-settings header strong{font-size:.75rem}.gm-notes-backfill-settings header p{margin:.25rem 0 0;color:var(--muted-foreground);font-size:.625rem;line-height:1.4}
+    .gm-notes-backfill-settings>div{display:flex;min-width:0;align-items:center;gap:.625rem}.gm-notes-backfill-settings>div>span{min-width:0;flex:1;color:var(--muted-foreground);font-size:.625rem;line-height:1.4;overflow-wrap:anywhere}
+    .gm-notes-backfill-settings button{display:inline-flex;flex:none;align-items:center;justify-content:center;gap:.35rem;border:1px solid var(--border);border-radius:.4rem;background:var(--secondary,color-mix(in srgb,var(--muted) 35%,transparent));padding:.4rem .6rem;color:var(--foreground);font-size:.6875rem;font-weight:500;cursor:pointer}
+    .gm-notes-backfill-settings button:hover{background:var(--accent)}.gm-notes-backfill-settings button:focus-visible{outline:2px solid var(--ring);outline-offset:2px}.gm-notes-backfill-settings.is-running button svg{animation:gm-notes-spin 1.25s linear infinite}
     @keyframes gm-notes-spin{to{transform:rotate(-360deg)}}
-    @media(prefers-reduced-motion:reduce){.gm-notes-backfill.is-running svg{animation:none}}
+    @media(prefers-reduced-motion:reduce){.gm-notes-backfill-settings.is-running button svg{animation:none}}
     .gm-notes-group{overflow:hidden;border:1px solid var(--marinara-chat-chrome-panel-divider,var(--border));border-radius:.625rem;background:color-mix(in srgb,var(--muted) 8%,transparent)}
     .gm-notes-group--tracker{border-color:color-mix(in srgb,var(--border) 30%,transparent);border-radius:.125rem;background:var(--tracker-panel-card-background,color-mix(in srgb,var(--background) 22%,transparent));box-shadow:inset 0 1px 0 color-mix(in srgb,var(--foreground) 5%,transparent)}
     .gm-notes-group>header{display:flex;align-items:center;gap:.375rem;padding:.4rem .5rem;color:var(--muted-foreground);font-size:.625rem;line-height:1;text-transform:uppercase;letter-spacing:.04em}
