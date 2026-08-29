@@ -13,6 +13,20 @@ import {
   mergeGmNotesIntoPlayerStats,
   readGmNotesFromPlayerStats,
 } from "../src/shared/state.js";
+import { buildNativeJsonHeaders } from "../src/client/request.js";
+
+const privilegedHeaders = buildNativeJsonHeaders(
+  { method: "POST", body: "{}", headers: { "X-Test": "preserved" } },
+  "  harness-admin-secret  ",
+);
+assert.equal(privilegedHeaders.get("Accept"), "application/json");
+assert.equal(privilegedHeaders.get("Content-Type"), "application/json");
+assert.equal(privilegedHeaders.get("x-marinara-csrf"), "1");
+assert.equal(privilegedHeaders.get("X-Admin-Secret"), "harness-admin-secret");
+assert.equal(privilegedHeaders.get("X-Test"), "preserved");
+const ordinaryHeaders = buildNativeJsonHeaders({ method: "GET" }, "");
+assert.equal(ordinaryHeaders.has("x-marinara-csrf"), false);
+assert.equal(ordinaryHeaders.has("X-Admin-Secret"), false);
 
 const source = { messageId: "message-1", swipeIndex: 2 };
 const created = applyGmNoteUpdates(null, [

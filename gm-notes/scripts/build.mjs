@@ -30,6 +30,7 @@ for (const file of [
   path.join(sdkRoot, "contracts.js"),
   path.join(sdkRoot, "client.js"),
   path.join(root, "src", "shared", "state.js"),
+  path.join(root, "src", "client", "request.js"),
   path.join(root, "src", "client", "runtime.js"),
 ]) {
   clientParts.push(stripModuleSyntax(await fs.readFile(file, "utf8")));

@@ -25,7 +25,8 @@ structured maintenance pass stays consistent.
 ## Historical backfill
 
 After installing or re-enabling GM Notes in an existing Roleplay chat, use the
-history button in its Tracker section or HUD popover to catch up. Backfill reads
+Historical backfill control inside GM Notes' native Chat Settings agent card to
+catch up. Backfill reads
 only completed turns through the latest assistant message and processes them in
 small chronological batches. It uses the GM Notes agent's configured connection
 and model, applies each completed batch to the latest GameState, and checkpoints
@@ -95,8 +96,9 @@ tracker behavior rather than a package-specific form:
 
 Locking is persisted with the note. A locked note cannot be edited or removed
 through the UI, and agent-produced update/remove operations for it are ignored.
-The HUD remains a compact status surface; detailed management belongs in the
-docked panel.
+The HUD remains a compact status surface; detailed note management belongs in
+the docked panel, while the explicit historical backfill action stays with the
+agent's Chat Settings.
 
 The native Agent Suite displays the current GM Notes array as Tracker Data.
 Agent Suite owns its normal JSON editor, Save/Reset, dirty-state guard, AI Edit,
@@ -109,6 +111,6 @@ falling back to DOM listeners or a parallel implementation.
 
 ## Upgrading
 
-Version 1.1.0 keeps the original `gm-notes` package ID, result type, GameState
+Version 1.1.1 keeps the original `gm-notes` package ID, result type, GameState
 namespace, and schema version. Notes created by 1.0.x remain readable,
 including their stable IDs, source stamps, and lock state.
