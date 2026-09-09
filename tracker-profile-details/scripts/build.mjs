@@ -5,19 +5,23 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageRoot = path.join(projectRoot, "dist", "package");
 const sdkRoot = path.resolve(projectRoot, "..", "_mari-bridge", "sdk");
+const codecRoot = path.resolve(projectRoot, "..", "_tracker-codecs");
 const version = JSON.parse(await fs.readFile(path.join(projectRoot, "package.json"), "utf8")).version;
 
 await fs.rm(path.join(projectRoot, "dist"), { recursive: true, force: true });
 await fs.mkdir(path.join(packageRoot, "src", "server"), { recursive: true });
 await fs.mkdir(path.join(packageRoot, "bridge-sdk"), { recursive: true });
+await fs.mkdir(path.join(packageRoot, "tracker-codecs"), { recursive: true });
 for (const file of ["contracts.js", "server.js"]) {
   await fs.copyFile(path.join(sdkRoot, file), path.join(packageRoot, "bridge-sdk", file));
 }
 for (const file of ["index.js", "persona-fields.js"]) {
   const source = (await fs.readFile(path.join(projectRoot, "src", "server", file), "utf8"))
-    .replaceAll('../../../_mari-bridge/sdk/', '../../bridge-sdk/');
+    .replaceAll('../../../_mari-bridge/sdk/', '../../bridge-sdk/')
+    .replace('../../../_tracker-codecs/profile-details.js', '../../tracker-codecs/profile-details.js');
   await fs.writeFile(path.join(packageRoot, "src", "server", file), source);
 }
+await fs.copyFile(path.join(codecRoot, "profile-details.js"), path.join(packageRoot, "tracker-codecs", "profile-details.js"));
 await fs.writeFile(path.join(packageRoot, "server.mjs"), 'export { activate, selfCheck } from "./src/server/index.js";\n');
 
 const clientChunks = [];

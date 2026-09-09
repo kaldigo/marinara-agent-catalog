@@ -34,6 +34,7 @@ export function createTrackerContextRegistry() {
       id,
       agentTypes,
       order: Number.isFinite(input.order) ? Number(input.order) : 0,
+      needsCharacterHistory: input.needsCharacterHistory === true,
       formatCommitted: typeof input.formatCommitted === "function" ? input.formatCommitted : null,
       formatAgentState: typeof input.formatAgentState === "function" ? input.formatAgentState : null,
       filterCustomTrackerFields:
@@ -52,6 +53,9 @@ export function createTrackerContextRegistry() {
     register,
     hasActive(activeAgentIds) {
       return sorted(activeAgentIds).length > 0;
+    },
+    needsCharacterHistory(activeAgentIds) {
+      return sorted(activeAgentIds).some((registration) => registration.needsCharacterHistory);
     },
     appendCommittedSections(scope = {}, target = []) {
       if (!Array.isArray(target)) throw new TypeError("Mari Bridge committed tracker target must be an array");

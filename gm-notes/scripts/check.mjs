@@ -285,7 +285,7 @@ await activate({
   },
 });
 assert.equal(requirements.consumerId, "gm-notes");
-assert.equal(requirements.api.minMinor, 8);
+assert.equal(requirements.api.minMinor, 10);
 assert(requirements.require.includes("host.request"));
 assert.equal(routesRegistration.options.prefix, "/api/gm-notes");
 assert.equal(typeof routesRegistration.plugin, "function");

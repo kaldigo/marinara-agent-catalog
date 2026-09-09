@@ -35,7 +35,7 @@ const POPOVER_CLASS = [
 const cleanupGmNotesClient = await activateClientWithMariBridge(
   {
     consumerId: PACKAGE_ID,
-    api: { major: 1, minMinor: 8 },
+    api: { major: 1, minMinor: 10 },
     require: [
       "agent-suite.tracker-data",
       "chat.active",
@@ -43,6 +43,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       "consumer.sessions",
       "generation.lifecycle",
       "runtime.health",
+      "tracker.surfaces",
       "ui.agent-settings",
       "ui.roleplay-hud",
       "ui.tracker-section",
@@ -428,7 +429,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
         const notes = readGmNotesFromPlayerStats(gameState?.playerStats).notes;
         const next = {
           chatId,
-          enabled: metadata.enableAgents === true && activeAgentIds.includes(PACKAGE_ID),
+          enabled: metadata.enableAgents === true && (activeAgentIds.includes(PACKAGE_ID) || bridgeSession.tracker.shouldShowSurface(PACKAGE_ID, { chatId })),
           notes,
         };
         state.cache.set(chatId, next);
@@ -511,6 +512,10 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       },
     });
     const disposeHud = bridgeSession.ui.register({ id: "hud", slot: "roleplay.hud", view: "hud" });
+    const disposeSurfaces = bridgeSession.tracker.subscribeSurfaces(() => {
+      const chatId = bridgeSession.chat.active.getSnapshot().chatId;
+      if (chatId) void loadState(chatId, true);
+    });
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
       for (const element of state.elements) {
         if (element._backfilling) element.stopBackfill("Backfill paused because the active chat changed. Run it again to resume.");
@@ -527,6 +532,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     }, { emitCurrent: false });
 
     return () => {
+      disposeSurfaces();
       disposeGeneration();
       disposeChat();
       disposeAgentSuite();

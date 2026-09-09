@@ -104,6 +104,21 @@ assert.equal((await resultRegistry.apply({ result: { success: true, type: "notes
 assert.deepEqual(resultCalls, [{ value: 1 }]);
 assert.equal((await resultRegistry.apply({ result: { success: true, type: "notes_update", agentType: "other" } })).handled, false);
 
+const expandableParent = { success: true, type: "combined_update", agentType: "combined", data: {} };
+const derivedChild = { success: true, type: "native_update", agentType: "combined", data: {} };
+resultRegistry.register("result-owner", {
+  id: "combined",
+  resultType: "combined_update",
+  agentTypes: ["combined"],
+  expand: async () => [derivedChild],
+  apply: async () => {},
+});
+assert.deepEqual(
+  await resultRegistry.expandAll([expandableParent]),
+  [derivedChild, expandableParent],
+  "Derived native results must apply before their package parent performs its final state merge",
+);
+
 const agentPromptRegistry = createAgentPromptRegistry();
 agentPromptRegistry.register("detail-owner", {
   id: "persona-details",
@@ -485,16 +500,19 @@ const allNativeClientPatches = [
   "client.spatial-context",
   "client.tracker-sections",
   "client.tracker-detail-fields",
+  "client.tracker-surfaces",
 ];
 const trackerDetailRegistrySource = (await fs.readFile(new URL("../src/client/tracker-detail-field-registry.js", import.meta.url), "utf8"))
   .replace(/^export /gmu, "");
-const clientSource = `${trackerDetailRegistrySource}\n${(await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8"))
+const trackerSurfaceRegistrySource = (await fs.readFile(new URL("../src/client/tracker-surface-registry.js", import.meta.url), "utf8"))
+  .replace(/^export /gmu, "");
+const clientSource = `${trackerDetailRegistrySource}\n${trackerSurfaceRegistrySource}\n${(await fs.readFile(new URL("../src/client/runtime.js", import.meta.url), "utf8"))
   .replace(/^import .*?;\r?\n/gmu, "")}`
   .replace('["__MARI_BRIDGE_NATIVE_PATCHES__"]', JSON.stringify(allNativeClientPatches));
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.38");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.40");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -504,6 +522,7 @@ assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), tru
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.impersonate-settings"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.tracker-section"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("tracker.detail-fields"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("tracker.surfaces"), true);
 assert.equal(typeof globalThis[clientSymbol].renderNativeTrackerSections, "function");
 assert.equal(customElements.get("marinara-capability-mari-bridge"), undefined);
 assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
@@ -635,7 +654,7 @@ await clientSession.close();
 const featureSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "feature-test",
   api: { major: 1, minMinor: 0 },
-  require: ["agent-suite.tracker-data", "commands", "quick-replies.input-macro", "tracker.detail-fields", "ui.agent-settings", "ui.tracker-section"],
+  require: ["agent-suite.tracker-data", "commands", "quick-replies.input-macro", "tracker.detail-fields", "tracker.surfaces", "ui.agent-settings", "ui.tracker-section"],
 });
 featureSession.tracker.registerDetailFields({
   id: "ordered-details",
@@ -732,6 +751,53 @@ const nativeTrackerOrder = globalThis[clientSymbol].renderNativeTrackerSections(
 });
 assert.deepEqual([nativeTrackerOrder[0], nativeTrackerOrder[2]], ["world", "custom"]);
 assert.equal(nativeTrackerOrder[1].key, "mari-bridge:tracker-sections");
+let preparedVirtualRerun = null;
+let trackerSurfacePublishes = 0;
+const disposeTrackerSurfaceSubscription = featureSession.tracker.subscribeSurfaces(() => { trackerSurfacePublishes += 1; });
+featureSession.tracker.registerSurfaceOverrides({
+  id: "virtual-world",
+  resolve({ agentType, content }) {
+    if (content === "character-stats") return { visible: false };
+    return agentType === "world-state" ? { visible: true, rerunAgentId: "feature-test", rerunSection: "world" } : null;
+  },
+  prepareRerun(input) { preparedVirtualRerun = input; },
+});
+assert.equal(trackerSurfacePublishes, 1);
+featureSession.tracker.refreshSurfaces();
+assert.equal(trackerSurfacePublishes, 2);
+assert.equal(globalThis[clientSymbol].shouldShowTrackerSurface("world-state", { chatId: "chat-1" }), true);
+assert.deepEqual(globalThis[clientSymbol].filterCharacterTrackerStats([{ name: "HP" }]), []);
+assert.deepEqual(await globalThis[clientSymbol].prepareTrackerRerun("world-state", { chatId: "chat-1" }), {
+  agentType: "feature-test",
+  section: "world",
+});
+assert.equal(preparedVirtualRerun.rerunAgentId, "feature-test");
+disposeTrackerSurfaceSubscription();
+let rerunAgentType = null;
+function VirtualSectionHeader() {}
+const virtualReact = {
+  useSyncExternalStore() {},
+  cloneElement(element, props) { return { ...element, props: { ...element.props, ...props } }; },
+};
+const virtualNativeOrder = globalThis[clientSymbol].renderNativeTrackerSections({
+  react: virtualReact,
+  jsx: fakeJsx,
+  native: { SectionHeader: VirtualSectionHeader, SectionIconButton() {} },
+  sections: ["custom"],
+  renderSection: (section) => ({
+    type: section,
+    props: { children: { type: VirtualSectionHeader, props: { action: null } } },
+  }),
+  context: {
+    activeChatId: "chat-1",
+    enabledAgentTypes: new Set(["feature-test"]),
+    rerunTracker(agentType) { rerunAgentType = agentType; },
+  },
+});
+assert.equal(virtualNativeOrder[0].type, "world");
+virtualNativeOrder[0].props.children.props.action.props.onClick();
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(rerunAgentType, "feature-test");
 featureSession.agentSuite.registerTrackerData({
   agentId: "feature-test",
   label: "Feature Test Data",
@@ -907,11 +973,17 @@ assert.throws(() => patchAgentSuiteBridge('const value=["agent-suite","game-stat
 const trackerPanelFixture = [
   'import{r as react,j as jsx}from"./vendor-react-test.js";',
   'import{S as SectionHeader,L as SectionIconButton,f as ReadabilityVeil,E as EmptySection}from"./world-custom-field-icons-test.js";',
+  'function useTrackerModel({activeChatId:chat,presentCharacters:present,trackerPanelSectionOrder:order,trackerPanelUseExpressionSprites:sprites}){const data=read(chat),metadata=parse(data?.metadata),enabled=react.useMemo(()=>{const set=new Set;if(!metadata.enableAgents)return set;const ids=Array.isArray(metadata.activeAgentIds)?metadata.activeAgentIds:[];for(const id of ids)typeof id=="string"&&set.add(id);return set},[metadata]),isEnabled=react.useCallback(section=>{const agent=sectionMap[section];return!!agent&&enabled.has(agent)},[enabled]);return{enabledAgentTypes:enabled,expressionSpritesEnabled:sprites}}',
+  'function useNativeRerun({activeChatId:chat,enabledAgentTypes:enabled,flushPatch:flush,gameStateRefreshing:refreshing}){const busy=false,{retryAgents:retry}=useAgents();return{rerunTracker:react.useCallback(async agent=>{if(enabled.has(agent)){try{await flush()}catch{return}await retry(chat,[agent])}},[chat,enabled,flush,retry,busy]),trackerRetryBusy:busy}}',
   'function TrackerSectionList({activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,beforeCustomSections:beforeCustom,afterCustomSections:afterCustom,deleteMode:deleting,addMode:adding}){const{rerunTracker:rerun,trackerRetryBusy:busy}=useRerun();const renderSection=section=>section;return jsx.jsxs(jsx.Fragment,{children:[jsx.jsx("input",{type:"file",accept:"image/*"}),sections.map(section=>jsx.jsxs("div",{className:"contents",children:[section==="custom"?beforeCustom:null,renderSection(section)]},section)),sections.includes("custom")?null:beforeCustom,afterCustom]})}',
   'function TrackerDataSidebar(){const[editMode,setEditMode]=react.useState(null),nativePackages=[],hasFixed=sections.length>0||nativePackages.length>0;return jsx.jsxs("section",{"data-component":"TrackerDataSidebar",children:[jsx.jsx(Header,{activeEditMode:editMode,onSetEditMode:setEditMode}),gameState&&(sections.length>0||nativePackages.length>0)?jsx.jsx(Boundary,{children:jsx.jsx(TrackerSectionList,{activeChatId:chat,enabledAgentTypes:enabled,orderedTrackerSections:sections,beforeCustomSections:chat?nativePackages.map(renderPackage):null,afterCustomSections:chat?nativePackages.map(renderPackage):null,deleteMode:deleting,addMode:adding})}):null,chat?hasFixed?null:jsx.jsx(EmptySection,{children:t("ui.trackerPanel.trackerdatasidebar.noEnabledTrackerPanels")}):null]})}',
 ].join("");
 const patchedTrackerPanel = patchTrackerPanelBridge(trackerPanelFixture);
 assert.match(patchedTrackerPanel, /renderNativeTrackerSections/u);
+assert.match(patchedTrackerPanel, /useTrackerSurfaces\(react\)/u);
+assert.match(patchedTrackerPanel, /shouldShowTrackerSurface\(agent,\{chatId:chat,surface:"dock"\}\)/u);
+assert.match(patchedTrackerPanel, /augmentTrackerAgentTypes\(enabled,\{chatId:chat,surface:"dock"\}\)/u);
+assert.match(patchedTrackerPanel, /prepareTrackerRerun\(agent,\{chatId:chat\}\)/u);
 assert.match(patchedTrackerPanel, /mariBridgeEditMode:editMode/u);
 assert.match(patchedTrackerPanel, /mariBridgeEditMode:mariBridgeEditMode,mariBridgeEmptyLabel:mariBridgeEmptyLabel,deleteMode:deleting/u);
 assert.match(patchedTrackerPanel, /beforeCustomSections:chat\?nativePackages\.map\(renderPackage\):null/u);
@@ -930,7 +1002,7 @@ const trackerDetailFixture = [
   'function gs({character:e,onUpdate:a,sizeProfile:t,characterIndex:o}){const s=[{hidden:u("outfit"),value:e.outfit}].filter(d=>!d.hidden||i);return r.jsx("div",{children:s.map(d=>r.jsx(ps,{icon:d.icon,accessibleLabel:d.accessibleLabel,value:d.value,placeholder:d.placeholder,onSave:d.onSave,sizeProfile:t,fieldKey:d.key,lockKey:c(d.key),hidden:d.hidden,hideMode:i,onToggleHidden:()=>b(d.key)},d.key))})}',
   'function featured(){I=Object.entries(e.customFields??{}).map(([F,Q])=>[F,Q,At(Q)]);r.jsx(gs,{character:e,onUpdate:d,sizeProfile:f,characterIndex:g})}',
   'function Qi({persona:e,status:a,spriteExpression:t,trackerPanelSide:o,statDisplayMode:n,resolveStatIcon:i,personaStats:l,action:f,onSaveStatus:c,onUpdatePersonaStats:u,onAddPersonaStat:b,deleteMode:s,addMode:d,queuePersonaPortraitSave:p,flushPersonaPortraitSave:g,collapsed:x=!1,onToggleCollapsed:_}){{fieldLocks:T,lockMode:w,onToggleFieldLock:C}=Ce();r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:Y()})}',
-  'function Wl({activeChatId:e,activePersona:a,characterSpriteLookup:t,characterTrackerConfig:o,characterTrackerSettings:n,currentGameState:i,enabledAgentTypes:l,expressionSpritesEnabled:f,featuredCharacterCardKeys:c,flushPatch:u,gameStateRefreshing:b,orderedTrackerSections:s,patchField:d,patchPlayerStats:p,patchPlayerStatsMany:g,resolveSpriteCharacterId:x,spriteExpressions:_,trackerPanelCollapsedSections:A,trackerPanelSide:T,trackerPanelSizeProfile:w,trackerPanelThoughtBubbleDisplay:C,trackerStatDisplayMode:k,trackerPanelDockedThoughtsAlwaysVisible:v,trackerTemperatureUnit:j,toggleTrackerPanelSectionCollapsed:y,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N,resolveStatIcon:P,beforeCustomSections:B,afterCustomSections:W}){const X=va(),mariBridgeFixture=(V=Array.isArray(D?.customTrackerFields)?D.customTrackerFields:[],{onAddPersonaStat:ae,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N})}',
+  'function Wl({activeChatId:e,activePersona:a,characterSpriteLookup:t,characterTrackerConfig:o,characterTrackerSettings:n,currentGameState:i,enabledAgentTypes:l,expressionSpritesEnabled:f,featuredCharacterCardKeys:c,flushPatch:u,gameStateRefreshing:b,orderedTrackerSections:s,patchField:d,patchPlayerStats:p,patchPlayerStatsMany:g,resolveSpriteCharacterId:x,spriteExpressions:_,trackerPanelCollapsedSections:A,trackerPanelSide:T,trackerPanelSizeProfile:w,trackerPanelThoughtBubbleDisplay:C,trackerStatDisplayMode:k,trackerPanelDockedThoughtsAlwaysVisible:v,trackerTemperatureUnit:j,toggleTrackerPanelSectionCollapsed:y,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N,resolveStatIcon:P,beforeCustomSections:B,afterCustomSections:W}){const X=va(),mariBridgeFixture=(M=Array.isArray(i.personaStats)?i.personaStats:[],V=Array.isArray(D?.customTrackerFields)?D.customTrackerFields:[],{onAddPersonaStat:ae,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N})}',
 ].join("");
 const patchedTrackerDetails = patchTrackerDetailFieldsBridge(trackerDetailFixture);
 assert.match(patchedTrackerDetails, /renderCompactCharacterTrackerDetailFields/u);
@@ -940,10 +1012,14 @@ assert.match(patchedTrackerDetails, /d\.mariBridgeOnRemove&&mariBridgeDeleteMode
 assert.match(patchedTrackerDetails, /relative grid h-full min-h-0 grid-rows-\[minmax\(0,1fr\)\] overflow-hidden/u);
 assert.match(patchedTrackerDetails, /fieldKey:d\.mariBridgeOnRemove\?"outfit":d\.key/u);
 assert.match(patchedTrackerDetails, /renderPersonaTrackerDetailFields/u);
-assert.match(patchedTrackerDetails, /a\|\|w\|\|!le\(T,zr\(\)\)\?Y\(\):null/u);
-const roleplayHudFixture = 'react.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
+assert.match(patchedTrackerDetails, /shouldShowTrackerContent\("persona-status",\{surface:"dock"\}\)/u);
+assert.match(patchedTrackerDetails, /filterPersonaTrackerStats\(i\.personaStats\)/u);
+const roleplayHudFixture = 'import{r as react}from"./vendor-react-test.js";const bars=state?.personaStats??[],show=enabled.has("persona-stats");jsx.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
+assert.match(patchedRoleplayHud, /useTrackerSurfaces\(react\)/u);
 assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
+assert.match(patchedRoleplayHud, /shouldShowTrackerSurface\("persona-stats",\{surface:"hud"\}\)/u);
+assert.match(patchedRoleplayHud, /filterPersonaTrackerStats\(state\?\.personaStats\)/u);
 const queryClientFixture = 'Object.assign(globalThis,{React:react,ReactDOM:reactDom});const queryClient=new QueryClient({defaultOptions:{queries:{staleTime:3e4,retry:1,refetchOnWindowFocus:!1}}});';
 const patchedQueryClient = patchQueryClientBridge(queryClientFixture);
 assert.match(patchedQueryClient, /bindQueryClient\(mariBridgeQueryClient\)/u);
@@ -1004,7 +1080,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.38"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.40"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -1319,12 +1395,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.4",
-  bridgeVersion: "1.0.38",
+  bridgeVersion: "1.0.40",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.38");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.40");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   serverOverlayTest.withoutMariBridgeExecArgs([
@@ -1530,6 +1606,29 @@ const patchedGeneratePersist = patchServerModule("file:///engine/routes/generate
 assert.match(patchedGeneratePersist, /messageHooks\?\.notifyPersisted/u);
 assert.match(patchedGeneratePersist, /kind: input\.regenerateMessageId \? "regenerate" : input\.continueMessageId \? "continue" : "create"/u);
 assert.equal(globalThis[kernelSymbol].patches["message.persist-generate"], "applied");
+
+const skipOnRegenerateFixture = `async function resolve(input, resolvedAgents) {
+                const builtInAgentTypes = new Set(BUILT_IN_AGENTS.map((agent) => agent.id));
+                for (let index = resolvedAgents.length - 1; index >= 0; index--) {
+                    const agent = resolvedAgents[index];
+                    if (builtInAgentTypes.has(agent.type))
+                        continue;
+                    run(agent);
+                }
+}`;
+const patchedSkipOnRegenerate = patchServerModule(
+  "file:///engine/routes/generate.routes.js",
+  skipOnRegenerateFixture,
+);
+assert.match(patchedSkipOnRegenerate, /input\.regenerateMessageId && agent\.settings\?\.skipOnRegenerate === true/u);
+assert.match(patchedSkipOnRegenerate, /resolvedAgents\.splice\(index, 1\)/u);
+assert.match(patchedSkipOnRegenerate, /builtInAgentTypes\.has\(agent\.type\) && agent\.settings\?\.useGenericRunInterval !== true/u);
+assert.ok(
+  patchedSkipOnRegenerate.indexOf("if (input.regenerateMessageId")
+    < patchedSkipOnRegenerate.indexOf("if (builtInAgentTypes.has(agent.type)"),
+  "The regeneration guard must run before built-in/package agent classification",
+);
+assert.equal(globalThis[kernelSymbol].patches["agent.skip-on-regenerate"], "applied");
 
 const spatialGenerateFixture = [
   "        const spatialDirectiveStreamFilter =",

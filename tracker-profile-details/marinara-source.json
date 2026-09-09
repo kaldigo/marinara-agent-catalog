@@ -6,7 +6,7 @@
     "kind": "package-build",
     "buildCommand": ["npm", "run", "build"],
     "outputDir": "dist/package",
-    "sharedRoots": ["_mari-bridge"]
+    "sharedRoots": ["_mari-bridge", "_tracker-codecs"]
   },
   "package": {
     "id": "tracker-profile-details",

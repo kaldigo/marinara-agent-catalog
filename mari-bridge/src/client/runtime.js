@@ -1,6 +1,7 @@
 import { createTrackerDetailFieldRegistry } from "./tracker-detail-field-registry.js";
+import { createTrackerSurfaceRegistry } from "./tracker-surface-registry.js";
 
-const API_VERSION = Object.freeze({ major: 1, minor: 9 });
+const API_VERSION = Object.freeze({ major: 1, minor: 10 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
 const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
@@ -796,7 +797,7 @@ function defineTurnHandoffElement(turnHandoff) {
   });
 }
 
-function createNativeTrackerSectionRenderer(ui) {
+function createNativeTrackerSectionRenderer(ui, trackerSurfaces) {
   const componentCache = new WeakMap();
   const ROOT_CLASS = "relative z-10 overflow-hidden border-b border-[var(--border)] bg-[var(--tracker-panel-section-background,color-mix(in_srgb,var(--card)_10%,transparent))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--foreground)_5%,transparent)]";
 
@@ -897,7 +898,13 @@ function createNativeTrackerSectionRenderer(ui) {
         : `Re-run ${item.title || item.ownerId} tracker`;
       const action = canRerun
         ? jsx.jsx(native.SectionIconButton, {
-            onClick: () => { void context.rerunTracker(rerunAgentId); },
+            onClick: () => {
+              const direct = context.realEnabledAgentTypes?.has?.(rerunAgentId);
+              void (direct
+                ? context.rerunTracker(rerunAgentId)
+                : trackerSurfaces.prepareRerun(rerunAgentId, { chatId: context.activeChatId })
+                  .then((target) => target && context.rerunTracker(target.agentType)));
+            },
             disabled: context.retryBusy,
             title: rerunTitle,
             children: refreshIcon(jsx, context.retryBusy),
@@ -938,6 +945,7 @@ function createNativeTrackerSectionRenderer(ui) {
 
     function TrackerSections({ native, context }) {
       react.useSyncExternalStore(ui.subscribe, ui.getVersion, ui.getVersion);
+      react.useSyncExternalStore(trackerSurfaces.subscribe, trackerSurfaces.getVersion, trackerSurfaces.getVersion);
       const items = ui.list("tracker.section").filter((item) => (
         item.placement === "before:custom"
         && (item.agentIds.length === 0 || item.agentIds.some((agentId) => context.enabledAgentTypes?.has?.(agentId)))
@@ -960,9 +968,61 @@ function createNativeTrackerSectionRenderer(ui) {
     }
     if (!native?.SectionHeader || !native?.SectionIconButton) return null;
     const { TrackerSections } = componentsFor(react, jsx);
-    const rendered = sections.map((section) => renderSection(section));
-    const host = jsx.jsx(TrackerSections, { native, context: context ?? {} }, "mari-bridge:tracker-sections");
-    const customIndex = sections.indexOf("custom");
+    react.useSyncExternalStore(trackerSurfaces.subscribe, trackerSurfaces.getVersion, trackerSurfaces.getVersion);
+    const sectionByAgent = { "world-state": "world", "persona-stats": "persona", "character-tracker": "characters", quest: "quests" };
+    const augmentedSections = [...sections];
+    const canonicalOrder = ["world", "persona", "characters", "quests", "custom"];
+    for (const agentType of trackerSurfaces.visibleAgentTypes({ chatId: context?.activeChatId, surface: "dock" })) {
+      const section = sectionByAgent[agentType];
+      if (!section || augmentedSections.includes(section)) continue;
+      const desired = canonicalOrder.indexOf(section);
+      const index = augmentedSections.findIndex((candidate) => canonicalOrder.indexOf(candidate) > desired);
+      augmentedSections.splice(index >= 0 ? index : augmentedSections.length, 0, section);
+    }
+    const visibleAgentTypes = trackerSurfaces.visibleAgentTypes({ chatId: context?.activeChatId, surface: "dock" });
+    const enabledAgentTypes = new Set(context?.enabledAgentTypes ?? []);
+    const realEnabledAgentTypes = new Set([...enabledAgentTypes].filter((agentType) => !visibleAgentTypes.includes(agentType)));
+    for (const agentType of visibleAgentTypes) enabledAgentTypes.add(agentType);
+    const augmentedContext = { ...(context ?? {}), enabledAgentTypes, realEnabledAgentTypes };
+    const agentBySection = { world: "world-state", persona: "persona-stats", characters: "character-tracker", quests: "quest" };
+    function replaceSectionHeaderAction(element, action) {
+      if (!element || typeof element !== "object" || !element.props || !react.cloneElement) return { element, replaced: false };
+      if (element.type === native.SectionHeader) {
+        return { element: react.cloneElement(element, { action }), replaced: true };
+      }
+      const children = element.props.children;
+      if (children === undefined || children === null) return { element, replaced: false };
+      let replaced = false;
+      const visit = (child) => {
+        const result = replaceSectionHeaderAction(child, action);
+        replaced ||= result.replaced;
+        return result.element;
+      };
+      const nextChildren = Array.isArray(children) ? children.map(visit) : visit(children);
+      return replaced
+        ? { element: react.cloneElement(element, { children: nextChildren }), replaced: true }
+        : { element, replaced: false };
+    }
+    const rendered = augmentedSections.map((section) => {
+      const element = renderSection(section);
+      const agentType = agentBySection[section];
+      if (!agentType || realEnabledAgentTypes.has(agentType) || !visibleAgentTypes.includes(agentType) || !react.cloneElement || !element) {
+        return element;
+      }
+      const rerunAction = jsx.jsx(native.SectionIconButton, {
+        onClick: () => {
+          void trackerSurfaces.prepareRerun(agentType, { chatId: context?.activeChatId })
+            .then((target) => target && context?.rerunTracker?.(target.agentType));
+        },
+        disabled: context?.retryBusy,
+        title: context?.retryBusy ? "A tracker or reply is already running" : "Re-run Unified Tracker",
+        children: refreshIcon(jsx, context?.retryBusy),
+      });
+      const replaced = replaceSectionHeaderAction(element, rerunAction);
+      return replaced.replaced ? replaced.element : react.cloneElement(element, { action: rerunAction });
+    });
+    const host = jsx.jsx(TrackerSections, { native, context: augmentedContext }, "mari-bridge:tracker-sections");
+    const customIndex = augmentedSections.indexOf("custom");
     rendered.splice(customIndex >= 0 ? customIndex : rendered.length, 0, host);
     return rendered;
   };
@@ -1037,6 +1097,8 @@ function createGenerationLifecycle() {
 function createActiveChatLifecycle() {
   const subscribers = new Set();
   let chatId = null;
+  let queryClient = null;
+  let unsubscribeQueryCache = null;
   try {
     chatId = globalThis.localStorage?.getItem("marinara-active-chat-id") || null;
   } catch {
@@ -1047,10 +1109,36 @@ function createActiveChatLifecycle() {
     return Object.freeze({ chatId });
   }
 
-  function onActiveChat(event) {
-    chatId = String(event?.detail?.chatId ?? "").trim() || null;
+  function publish() {
     const current = snapshot();
     for (const subscriber of [...subscribers]) subscriber(current);
+  }
+
+  function onActiveChat(event) {
+    chatId = String(event?.detail?.chatId ?? "").trim() || null;
+    publish();
+  }
+
+  function isActiveChatDetailQuery(query) {
+    const queryKey = query?.queryKey;
+    return Array.isArray(queryKey)
+      && queryKey.length === 3
+      && queryKey[0] === "chats"
+      && queryKey[1] === "detail"
+      && String(queryKey[2] ?? "") === String(chatId ?? "");
+  }
+
+  function bindQueryClient(next) {
+    if (next === queryClient) return true;
+    const cache = next?.getQueryCache?.();
+    if (!cache || typeof cache.subscribe !== "function") return false;
+    unsubscribeQueryCache?.();
+    queryClient = next;
+    unsubscribeQueryCache = cache.subscribe((event) => {
+      if (!isActiveChatDetailQuery(event?.query)) return;
+      if (event?.type === "added" || event?.type === "updated" || event?.type === "removed") publish();
+    });
+    return true;
   }
 
   if (typeof globalThis.addEventListener === "function") {
@@ -1058,6 +1146,7 @@ function createActiveChatLifecycle() {
   }
 
   return Object.freeze({
+    bindQueryClient,
     getSnapshot: snapshot,
     subscribe(listener, options = {}) {
       if (typeof listener !== "function") throw new TypeError("Mari Bridge active-chat listener must be a function");
@@ -1277,9 +1366,10 @@ function createClientRuntime(serverHealth) {
   const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
   const trackerDetailFields = createTrackerDetailFieldRegistry();
+  const trackerSurfaces = createTrackerSurfaceRegistry();
   const agentSuiteTrackerData = createAgentSuiteTrackerDataRegistry();
   const mountNativeSlot = createNativeSlotMounter();
-  const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui);
+  const renderNativeTrackerSections = createNativeTrackerSectionRenderer(ui, trackerSurfaces);
   const renderNativeImpersonateSetting = createNativeImpersonateSettingRenderer();
   const capabilities = new Set([
     "client.bridge-first",
@@ -1303,10 +1393,11 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.impersonate-settings")) capabilities.add("ui.impersonate-settings");
   if (NATIVE_PATCHES.has("client.tracker-sections")) capabilities.add("ui.tracker-section");
   if (NATIVE_PATCHES.has("client.tracker-detail-fields")) capabilities.add("tracker.detail-fields");
+  if (NATIVE_PATCHES.has("client.tracker-surfaces")) capabilities.add("tracker.surfaces");
   if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.38",
+    implementationVersion: "1.0.40",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1435,6 +1526,27 @@ function createClientRuntime(serverHealth) {
             cleanups.push(cleanup);
             return cleanup;
           },
+          registerSurfaceOverrides(input) {
+            if (!required.includes("tracker.surfaces")) throw new Error(`${consumerId} did not require tracker.surfaces`);
+            const cleanup = trackerSurfaces.register(consumerId, input);
+            cleanups.push(cleanup);
+            return cleanup;
+          },
+          refreshSurfaces() {
+            if (!required.includes("tracker.surfaces")) throw new Error(`${consumerId} did not require tracker.surfaces`);
+            trackerSurfaces.refresh();
+          },
+          subscribeSurfaces(listener) {
+            if (!required.includes("tracker.surfaces")) throw new Error(`${consumerId} did not require tracker.surfaces`);
+            if (typeof listener !== "function") throw new TypeError("Mari Bridge tracker surface subscriber must be a function");
+            const cleanup = trackerSurfaces.subscribe(listener);
+            cleanups.push(cleanup);
+            return cleanup;
+          },
+          shouldShowSurface(agentType, input) {
+            if (!required.includes("tracker.surfaces")) throw new Error(`${consumerId} did not require tracker.surfaces`);
+            return trackerSurfaces.shouldShow(agentType, { chatId: activeChat.getSnapshot().chatId, ...(input ?? {}) });
+          },
         }),
         async close(reason = "Mari Bridge client consumer closed") {
           if (closed) return;
@@ -1475,7 +1587,7 @@ function createClientRuntime(serverHealth) {
       return roleplayBackground.bindStore(store);
     },
     bindQueryClient(client) {
-      return spatialContext.bindQueryClient(client);
+      return activeChat.bindQueryClient(client) && spatialContext.bindQueryClient(client);
     },
     resolveAgentSuiteTrackerSlice(agentId) {
       return agentSuiteTrackerData.resolve(agentId);
@@ -1517,6 +1629,36 @@ function createClientRuntime(serverHealth) {
     renderPersonaTrackerDetailFields(input) {
       return trackerDetailFields.renderPersonaFields(input);
     },
+    shouldShowTrackerSurface(agentType, input) {
+      return trackerSurfaces.shouldShow(agentType, { chatId: activeChat.getSnapshot().chatId, ...(input ?? {}) });
+    },
+    shouldShowTrackerContent(content, input) {
+      return trackerSurfaces.shouldShowContent(content, { chatId: activeChat.getSnapshot().chatId, ...(input ?? {}) });
+    },
+    useTrackerSurfaces(react) {
+      if (!react?.useSyncExternalStore) return trackerSurfaces.getVersion();
+      return react.useSyncExternalStore(
+        trackerSurfaces.subscribe,
+        trackerSurfaces.getVersion,
+        trackerSurfaces.getVersion,
+      );
+    },
+    augmentTrackerAgentTypes(agentTypes, input) {
+      const augmented = new Set(agentTypes ?? []);
+      for (const agentType of trackerSurfaces.visibleAgentTypes({ chatId: activeChat.getSnapshot().chatId, ...(input ?? {}) })) {
+        augmented.add(agentType);
+      }
+      return augmented;
+    },
+    filterCharacterTrackerStats(stats) {
+      return trackerSurfaces.shouldShowContent("character-stats", { chatId: activeChat.getSnapshot().chatId }) ? stats : [];
+    },
+    filterPersonaTrackerStats(stats) {
+      return trackerSurfaces.shouldShowContent("persona-stats", { chatId: activeChat.getSnapshot().chatId }) ? stats : [];
+    },
+    prepareTrackerRerun(agentType, input) {
+      return trackerSurfaces.prepareRerun(agentType, input);
+    },
     ui,
     mountNativeSlot,
     renderNativeImpersonateSetting,
@@ -1529,7 +1671,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.4",
-    implementationVersion: "1.0.38",
+    implementationVersion: "1.0.40",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);

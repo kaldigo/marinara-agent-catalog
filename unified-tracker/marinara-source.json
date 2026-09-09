@@ -9,15 +9,16 @@
     "sharedRoots": ["_mari-bridge", "_tracker-codecs"]
   },
   "package": {
-    "id": "gm-notes",
-    "name": "GM Notes",
-    "description": "Maintains a focused ledger of durable reminders, unresolved threads, and continuity diagnostics in committed tracker context.",
+    "id": "unified-tracker",
+    "name": "Unified Tracker",
+    "version": "1.0.0",
+    "description": "Combines enabled tracker sections into one structured parallel agent while preserving native tracker storage, locks, history, and UI surfaces.",
     "engine": {
       "min": "2.4.4",
       "maxExclusive": "2.4.5"
     },
     "kind": ["agent"],
-    "permissions": ["agent-runtime", "chat-read", "chat-write", "routes", "storage", "ui"],
+    "permissions": ["agent-runtime", "chat-read", "chat-write", "prompt-context", "storage", "ui"],
     "restartRequired": true
   }
 }

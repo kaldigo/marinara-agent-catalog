@@ -1,9 +1,9 @@
 {
-  "name": "marinara-tracker-profile-details-package",
-  "version": "1.1.0",
+  "name": "marinara-unified-tracker-package",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Promotes selected GameState tracker fields into native character and persona profile details.",
+  "description": "One structured Roleplay agent for selected native tracker domains.",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node scripts/check.mjs && npm run build && node --check dist/package/client.js && node scripts/validate-dist.mjs"
