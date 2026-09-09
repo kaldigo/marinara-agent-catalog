@@ -1,0 +1,39 @@
+[
+  {
+    "id": "unified-tracker",
+    "name": "Unified Tracker",
+    "description": "Combines selected world, character, persona-stat, quest, and GM-note tracking into one structured Roleplay request that runs alongside response generation.",
+    "phase": "parallel",
+    "enabledByDefault": false,
+    "defaultInjectAsSection": false,
+    "category": "tracker",
+    "modeAllowlist": ["roleplay"],
+    "defaultTools": [],
+    "author": "kaldigo",
+    "runInterval": 1,
+    "defaultSettings": {
+      "defaultPromptTemplateName": "Unified Tracker",
+      "defaultPromptTemplateDescription": "One atomic structured update whose enabled sections are configured per chat.",
+      "resultType": "unified_tracker_update",
+      "contextSize": 8,
+      "maxTokens": 4096,
+      "temperature": 0,
+      "skipOnRegenerate": true,
+      "useGenericRunInterval": true,
+      "contextSources": {
+        "chatHistory": true,
+        "characters": true,
+        "persona": true,
+        "activatedLorebookEntries": false,
+        "chatSummary": false,
+        "authorNotes": false,
+        "trackerData": true,
+        "recalledMemories": false
+      },
+      "customCapabilities": {
+        "edit_trackers": true
+      }
+    },
+    "defaultPromptTemplate": "Update the enabled Unified Tracker sections from the completed conversation history supplied for this run. Preserve prior values unless the completed history changes them. Treat the appended per-chat section contracts as authoritative and return only the requested JSON object."
+  }
+]

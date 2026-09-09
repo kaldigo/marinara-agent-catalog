@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gm-notes",
   "name": "GM Notes",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Maintains a focused ledger of durable reminders, unresolved threads, and continuity diagnostics.",
   "engine": {
     "min": "2.4.4",
@@ -29,8 +29,8 @@
     },
     {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "3cdddad1c964f6120e67988a9fb6018c7cefa1a2e0233e830db9d767b0a4730c",
-      "bytes": 1748
+      "sha256": "c6ce1bd3bfd83634760c008bdaed2ef037327b9ce15b471d53a8d62dbbc09810",
+      "bytes": 1749
     },
     {
       "path": "bridge-sdk/server.js",
@@ -39,8 +39,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "ffebffd319a3a2ef022f0af32c301cb111c0d086471be39a3b509dbe902b0c4e",
-      "bytes": 49921
+      "sha256": "17066f27be699ffc29a43fef6845414f0f64789fc417d737645bcb71b63bed79",
+      "bytes": 49423
     },
     {
       "path": "server.mjs",
@@ -49,13 +49,13 @@
     },
     {
       "path": "src/server/backfill.js",
-      "sha256": "32e58ff94d0fe0a184441b957409e2308927d51128a736696a5dcbd8bc046295",
-      "bytes": 15076
+      "sha256": "fd2d7d6d2f357e4d553b45c2078ded0eac1cb590982625f3ce3826df2fd4450d",
+      "bytes": 15090
     },
     {
       "path": "src/server/index.js",
-      "sha256": "de4ae89f739a8ad39ed95b58ce7e8cb382e5057c2832cdcec506800f9bb55fb2",
-      "bytes": 2710
+      "sha256": "7c4fba12ac688a4dfdffb25ac0f41587814bbdb0648a33e74ba453dc87865a64",
+      "bytes": 2725
     },
     {
       "path": "src/server/routes.js",
@@ -63,9 +63,9 @@
       "bytes": 1425
     },
     {
-      "path": "src/shared/state.js",
-      "sha256": "f64ac00e94160173d4f05d86dc132471b56beb272b1fa60351af53e50e4063a4",
-      "bytes": 6807
+      "path": "tracker-codecs/gm-notes.js",
+      "sha256": "5268a49849fc2cd96ac7632f4ab8a376a349a98531583c689d75e074a2326fce",
+      "bytes": 5986
     }
   ],
   "permissions": [

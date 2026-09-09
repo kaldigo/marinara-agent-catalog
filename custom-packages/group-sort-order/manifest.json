@@ -23,8 +23,8 @@
     },
     {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "3cdddad1c964f6120e67988a9fb6018c7cefa1a2e0233e830db9d767b0a4730c",
-      "bytes": 1748
+      "sha256": "c6ce1bd3bfd83634760c008bdaed2ef037327b9ce15b471d53a8d62dbbc09810",
+      "bytes": 1749
     },
     {
       "path": "bridge-sdk/server.js",

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MAIN_MODULE_PATTERN = /<script\s+type="module"\s+crossorigin\s+src="([^"]+)"\s*><\/script>/gu;
-const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v26";
+const OVERLAY_FORMAT_VERSION = "mari-bridge-client-overlay-v27";
 const CLIENT_SYMBOL_EXPRESSION = 'globalThis[Symbol.for("marinara.mari-bridge.client.v1")]';
 const CLIENT_RUNTIME_PATCH_TOKEN = '["__MARI_BRIDGE_NATIVE_PATCHES__"]';
 
@@ -21,6 +21,15 @@ function replaceOne(source, anchor, replacement, label) {
 export function patchTrackerDetailFieldsBridge(source) {
   if (!source.includes("ui.trackerPanel.charactertrackercard.outfit") || !source.includes("function Qi(")) return null;
   let patched = source;
+
+  patched = patched.replace(
+    /Array\.isArray\((?<stats>[A-Za-z_$][\w$]*\.stats)\)\?\k<stats>:\[\]/gu,
+    `(${CLIENT_SYMBOL_EXPRESSION}?.filterCharacterTrackerStats($<stats>)??(Array.isArray($<stats>)?$<stats>:[]))`,
+  );
+  patched = patched.replace(
+    /Array\.isArray\((?<stats>[A-Za-z_$][\w$]*\.personaStats)\)\?\k<stats>:\[\]/gu,
+    `(${CLIENT_SYMBOL_EXPRESSION}?.filterPersonaTrackerStats($<stats>)??(Array.isArray($<stats>)?$<stats>:[]))`,
+  );
 
   patched = replaceOne(
     patched,
@@ -87,7 +96,7 @@ export function patchTrackerDetailFieldsBridge(source) {
   patched = replaceOne(
     patched,
     'r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:Y()})',
-    `r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:[a||w||!le(T,zr())?Y():null,...(${CLIENT_SYMBOL_EXPRESSION}?.renderPersonaTrackerDetailFields({jsx:r,native:{InlineEdit:se},fields:mariBridgeFields,onUpdateFields:mariBridgeOnUpdateFields,deleteMode:s,fieldLocks:T,lockMode:w,onToggleFieldLock:C,onUpdateFieldLocks:mariBridgeUpdateFieldLocks})??[])]})`,
+    `r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:[${CLIENT_SYMBOL_EXPRESSION}?.shouldShowTrackerContent("persona-status",{surface:"dock"})!==!1&&(a||w||!le(T,zr()))?Y():null,...(${CLIENT_SYMBOL_EXPRESSION}?.renderPersonaTrackerDetailFields({jsx:r,native:{InlineEdit:se},fields:mariBridgeFields,onUpdateFields:mariBridgeOnUpdateFields,deleteMode:s,fieldLocks:T,lockMode:w,onToggleFieldLock:C,onUpdateFieldLocks:mariBridgeUpdateFieldLocks})??[])]})`,
     "persona detail render",
   );
 
@@ -296,6 +305,75 @@ function findMatchingDelimiter(source, start, open, close) {
 export function patchTrackerPanelBridge(source) {
   if (!source.includes('"data-component":"TrackerDataSidebar"') || !source.includes('accept:"image/*"')) return null;
   const identifier = "[A-Za-z_$][\\w$]*";
+  const modelPattern = new RegExp(
+    `(?<declaration>const |,)(?<types>${identifier})=(?<react>${identifier})\\.useMemo\\(\\(\\)=>\\{const (?<set>${identifier})=new Set;if\\(!(?<metadata>${identifier})\\.enableAgents\\)return (?<early>${identifier});const (?<ids>${identifier})=Array\\.isArray\\((?<arrayMetadata>${identifier})\\.activeAgentIds\\)\\?(?<valueMetadata>${identifier})\\.activeAgentIds:\\[\\];for\\(const (?<id>${identifier}) of (?<iteratedIds>${identifier})\\)typeof (?<typedId>${identifier})=="string"&&(?<addedSet>${identifier})\\.add\\((?<addedId>${identifier})\\);return (?<final>${identifier})\\},\\[(?<dependency>${identifier})\\]\\)`,
+    "gu",
+  );
+  const modelMatches = [...source.matchAll(modelPattern)];
+  if (modelMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one tracker panel model, found ${modelMatches.length}`);
+  }
+  const model = modelMatches[0];
+  const consistentModel = model.groups.early === model.groups.set
+    && model.groups.arrayMetadata === model.groups.metadata
+    && model.groups.valueMetadata === model.groups.metadata
+    && model.groups.iteratedIds === model.groups.ids
+    && model.groups.typedId === model.groups.id
+    && model.groups.addedSet === model.groups.set
+    && model.groups.addedId === model.groups.id
+    && model.groups.final === model.groups.set
+    && model.groups.dependency === model.groups.metadata;
+  if (!consistentModel) throw new Error("Mari Bridge tracker-section patch found an inconsistent tracker panel model");
+  const modelPrefix = source.slice(Math.max(0, model.index - 1_500), model.index);
+  const modelFunctionMatches = [...modelPrefix.matchAll(new RegExp(`function ${identifier}\\(\\{activeChatId:(?<modelChat>${identifier}),presentCharacters:`, "gu"))];
+  const modelChat = modelFunctionMatches.at(-1)?.groups?.modelChat;
+  if (!modelChat) throw new Error("Mari Bridge tracker-section patch could not identify tracker panel model chat id");
+  const predicatePattern = new RegExp(
+    `(?<predicate>${identifier})=(?<predicateReact>${identifier})\\.useCallback\\((?<section>${identifier})=>\\{const (?<agentType>${identifier})=(?<sectionMap>${identifier})\\[(?<mappedSection>${identifier})\\];return!!(?<checkedAgentType>${identifier})&&(?<enabledTypes>${identifier})\\.has\\((?<hasAgentType>${identifier})\\)\\},\\[(?<typesDependency>${identifier})\\]\\)`,
+    "gu",
+  );
+  const predicateMatches = [...source.matchAll(predicatePattern)]
+    .filter((match) => match.index > model.index && match.index < model.index + 1_000);
+  if (predicateMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one tracker section predicate, found ${predicateMatches.length}`);
+  }
+  const predicate = predicateMatches[0];
+  const consistentPredicate = predicate.groups.predicateReact === model.groups.react
+    && predicate.groups.mappedSection === predicate.groups.section
+    && predicate.groups.checkedAgentType === predicate.groups.agentType
+    && predicate.groups.enabledTypes === model.groups.types
+    && predicate.groups.hasAgentType === predicate.groups.agentType
+    && predicate.groups.typesDependency === model.groups.types;
+  if (!consistentPredicate) throw new Error("Mari Bridge tracker-section patch found an inconsistent tracker section predicate");
+  const modelReturnPattern = new RegExp(
+    `enabledAgentTypes:${escapePattern(model.groups.types)},expressionSpritesEnabled:`,
+    "gu",
+  );
+  const modelReturnMatches = [...source.matchAll(modelReturnPattern)]
+    .filter((match) => match.index > model.index && match.index < model.index + 2_500);
+  if (modelReturnMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one tracker model return, found ${modelReturnMatches.length}`);
+  }
+  const rerunPattern = new RegExp(
+    `await (?<retry>${identifier})\\((?<retryChat>${identifier}),\\[(?<retryAgent>${identifier})\\]\\)`,
+    "gu",
+  );
+  const rerunMatches = [...source.matchAll(rerunPattern)];
+  if (rerunMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one native tracker rerun hook, found ${rerunMatches.length}`);
+  }
+  const rerunHook = rerunMatches[0];
+  const rerunPrefix = source.slice(Math.max(0, rerunHook.index - 1_500), rerunHook.index);
+  const rerunFunctionMatches = [...rerunPrefix.matchAll(new RegExp(
+    `function ${identifier}\\(\\{activeChatId:(?<rerunChat>${identifier}),enabledAgentTypes:(?<rerunTypes>${identifier}),flushPatch:${identifier},gameStateRefreshing:${identifier}\\}\\)`,
+    "gu",
+  ))];
+  const rerunFunction = rerunFunctionMatches.at(-1);
+  const rerunAgentMatches = [...rerunPrefix.matchAll(new RegExp(`rerunTracker:${identifier}\\.useCallback\\(async (?<rerunAgent>${identifier})=>`, "gu"))];
+  const rerunAgent = rerunAgentMatches.at(-1)?.groups?.rerunAgent;
+  if (!rerunFunction || rerunFunction.groups.rerunChat !== rerunHook.groups.retryChat || rerunAgent !== rerunHook.groups.retryAgent) {
+    throw new Error("Mari Bridge tracker-section patch found an inconsistent native tracker rerun hook");
+  }
   const listPattern = new RegExp(
     `function (?<component>${identifier})\\(\\{(?<parameters>[^{}]*?activeChatId:(?<activeChat>${identifier})[^{}]*?enabledAgentTypes:(?<enabledAgents>${identifier})[^{}]*?orderedTrackerSections:(?<sections>${identifier})[^{}]*?deleteMode:(?<deleteMode>${identifier}),addMode:(?<addMode>${identifier})[^{}]*?)\\}\\)\\{`,
     "gu",
@@ -372,6 +450,27 @@ export function patchTrackerPanelBridge(source) {
     `deleteMode:${list.groups.deleteMode}`,
     `mariBridgeEditMode:mariBridgeEditMode,mariBridgeEmptyLabel:mariBridgeEmptyLabel,deleteMode:${list.groups.deleteMode}`,
   ));
+  patched = patched.replace(model[0], `${model[0]},mariBridgeTrackerSurfaceVersion=${CLIENT_SYMBOL_EXPRESSION}?.useTrackerSurfaces(${model.groups.react})`);
+  patched = patched.replace(
+    predicate[0],
+    predicate[0]
+      .replace(
+        `return!!${predicate.groups.agentType}&&${model.groups.types}.has(${predicate.groups.agentType})`,
+        `return!!${predicate.groups.agentType}&&(${model.groups.types}.has(${predicate.groups.agentType})||${CLIENT_SYMBOL_EXPRESSION}?.shouldShowTrackerSurface(${predicate.groups.agentType},{chatId:${modelChat},surface:"dock"})===!0)`,
+      )
+      .replace(`,[${model.groups.types}])`, `,[${model.groups.types},${modelChat},mariBridgeTrackerSurfaceVersion])`),
+  );
+  patched = patched.replace(
+    modelReturnMatches[0][0],
+    `enabledAgentTypes:${CLIENT_SYMBOL_EXPRESSION}?.augmentTrackerAgentTypes(${model.groups.types},{chatId:${modelChat},surface:"dock"})??${model.groups.types},expressionSpritesEnabled:`,
+  );
+  patched = patched.replace(
+    rerunHook[0],
+    rerunHook[0].replace(
+      `await ${rerunHook.groups.retry}(${rerunHook.groups.retryChat},[${rerunHook.groups.retryAgent}])`,
+      `const mariBridgeRerunTarget=await ${CLIENT_SYMBOL_EXPRESSION}?.prepareTrackerRerun(${rerunAgent},{chatId:${rerunFunction.groups.rerunChat}});await ${rerunHook.groups.retry}(${rerunHook.groups.retryChat},[mariBridgeRerunTarget?.agentType??${rerunHook.groups.retryAgent}])`,
+    ),
+  );
   if (legacyMapMatches.length === 1) {
     patched = patched.replace(nativeMap, bridgeMap);
   } else {
@@ -516,15 +615,29 @@ function findNamedImportAlias(source, moduleMarker, exportedName) {
 
 export function patchRoleplayHudBridge(source) {
   if (!source.includes('"rpg-hud"')) return null;
+  const react = findNamedImportAlias(source, "vendor-react-", "r");
   const pattern = /(?<jsx>[A-Za-z_$][\w$]*\.jsx(?:s)?)\("div",\{className:(?<cn>[A-Za-z_$][\w$]*)\("rpg-hud",/gu;
   const matches = [...source.matchAll(pattern)];
   if (matches.length !== 1) {
     throw new Error(`Mari Bridge Roleplay HUD slot expected one rpg-hud root, found ${matches.length}`);
   }
-  return source.replace(
+  let patched = source.replace(
     pattern,
-    `${matches[0].groups.jsx}("div",{ref:Z=>${CLIENT_SYMBOL_EXPRESSION}?.mountNativeSlot(Z,"roleplay.hud"),className:${matches[0].groups.cn}("rpg-hud",`,
+    `${matches[0].groups.jsx}("div",{ref:Z=>${CLIENT_SYMBOL_EXPRESSION}?.mountNativeSlot(Z,"roleplay.hud"),className:(${CLIENT_SYMBOL_EXPRESSION}?.useTrackerSurfaces(${react}),${matches[0].groups.cn})("rpg-hud",`,
   );
+  for (const agentType of ["world-state", "character-tracker", "persona-stats", "quest"]) {
+    const hasPattern = new RegExp(`(?<set>[A-Za-z_$][\\w$]*)\\.has\\(\"${agentType}\"\\)`, "gu");
+    patched = patched.replace(hasPattern, `($<set>.has("${agentType}")||${CLIENT_SYMBOL_EXPRESSION}?.shouldShowTrackerSurface("${agentType}",{surface:"hud"}))`);
+  }
+  patched = patched.replace(
+    /Array\.isArray\((?<stats>[A-Za-z_$][\w$]*\.stats)\)\?\k<stats>:\[\]/gu,
+    `(${CLIENT_SYMBOL_EXPRESSION}?.filterCharacterTrackerStats($<stats>)??(Array.isArray($<stats>)?$<stats>:[]))`,
+  );
+  patched = patched.replace(
+    /(?<stats>[A-Za-z_$][\w$]*\?\.personaStats)\?\?\[\]/gu,
+    `(${CLIENT_SYMBOL_EXPRESSION}?.filterPersonaTrackerStats($<stats>)??($<stats>??[]))`,
+  );
+  return patched;
 }
 
 export function patchQueryClientBridge(source) {
@@ -661,8 +774,10 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   const overlayImplementation = await readFile(fileURLToPath(import.meta.url));
   const bridgeClientRuntimeSource = await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "client", "runtime.js"), "utf8");
   const trackerDetailRegistrySource = await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "client", "tracker-detail-field-registry.js"), "utf8");
+  const trackerSurfaceRegistrySource = await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "client", "tracker-surface-registry.js"), "utf8");
   const bridgeClientRuntime = [
     trackerDetailRegistrySource.replace(/^export /gmu, ""),
+    trackerSurfaceRegistrySource.replace(/^export /gmu, ""),
     bridgeClientRuntimeSource.replace(/^import .*?;\r?\n/gmu, ""),
   ].join("\n\n");
   const fingerprint = createHash("sha256")
@@ -853,6 +968,9 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   }
   if (appliedPatches.has("client.command-drafts") && appliedPatches.has("client.commands")) {
     appliedPatches.add("client.quick-replies");
+  }
+  if (appliedPatches.has("client.tracker-sections") && appliedPatches.has("client.roleplay-hud")) {
+    appliedPatches.add("client.tracker-surfaces");
   }
   await writeFile(
     join(dirname(mainModulePath), bridgeRuntimeName),

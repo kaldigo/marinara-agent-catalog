@@ -293,6 +293,8 @@ export function createBridgeRuntime(options = {}) {
     agentResultHooks: agentResultRegistry
       ? Object.freeze({
           hasResultType: agentResultRegistry.hasResultType,
+          needsCharacterHistory: agentResultRegistry.needsCharacterHistory,
+          expandAll: agentResultRegistry.expandAll,
           apply: agentResultRegistry.apply,
         })
       : null,
@@ -302,6 +304,7 @@ export function createBridgeRuntime(options = {}) {
     trackerContextHooks: trackerContextRegistry
       ? Object.freeze({
           hasActive: trackerContextRegistry.hasActive,
+          needsCharacterHistory: trackerContextRegistry.needsCharacterHistory,
           appendCommittedSections: trackerContextRegistry.appendCommittedSections,
           appendAgentState: trackerContextRegistry.appendAgentState,
           filterCustomTrackerFields: trackerContextRegistry.filterCustomTrackerFields,

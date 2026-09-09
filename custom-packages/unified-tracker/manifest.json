@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "unified-tracker",
+  "name": "Unified Tracker",
+  "version": "1.0.0",
+  "description": "Combines selected native tracker domains into one structured Roleplay post-processing request.",
+  "engine": {
+    "min": "2.4.4",
+    "maxExclusive": "2.4.5"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "server": "server.mjs",
+    "client": "client.js",
+    "agents": "agents.json"
+  },
+  "contributions": {
+    "slots": [
+      "chat-runtime"
+    ]
+  },
+  "files": [
+    {
+      "path": "agents.json",
+      "sha256": "b54e6034cd5a2a1091935b4de2725d5197aba2f1af3c627f5239baec92a66e02",
+      "bytes": 1532
+    },
+    {
+      "path": "bridge-sdk/contracts.js",
+      "sha256": "c6ce1bd3bfd83634760c008bdaed2ef037327b9ce15b471d53a8d62dbbc09810",
+      "bytes": 1749
+    },
+    {
+      "path": "bridge-sdk/server.js",
+      "sha256": "ac9472aef2ba8c57d773b5a397375c078e1008c4c0bc0a1c3b4b4910e8dbcb3a",
+      "bytes": 1180
+    },
+    {
+      "path": "client.js",
+      "sha256": "ec46e446fb294babe78d8c15f1b46924d8ee2eaf2e6be7278f6c18aca5b9b210",
+      "bytes": 17192
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "042a9631dae3600590f6b58c81c39e02fb4b89828d1813e0b84eefa992c5aa39",
+      "bytes": 61
+    },
+    {
+      "path": "src/server/index.js",
+      "sha256": "b0c79f5fcefbbf2f89500b2c4e2fed1f1eaa16b142b8c8a29e65020e5454495e",
+      "bytes": 5315
+    },
+    {
+      "path": "src/server/prompt.js",
+      "sha256": "c51ca83ffe8fc2b14336b1bb1959474bf965daec26f6be4397c2efbe925d43ec",
+      "bytes": 6665
+    },
+    {
+      "path": "src/shared/result.js",
+      "sha256": "b1d486b2ad52403957969317786bc8b94dc7d6b7e6f5f1a02a9db83fb9d15888",
+      "bytes": 13191
+    },
+    {
+      "path": "src/shared/settings.js",
+      "sha256": "8afe9ce06c0e83be39938c8b55115d6d58e7af1da82b74cbf2d188aa4e48c079",
+      "bytes": 3152
+    },
+    {
+      "path": "tracker-codecs/gm-notes.js",
+      "sha256": "5268a49849fc2cd96ac7632f4ab8a376a349a98531583c689d75e074a2326fce",
+      "bytes": 5986
+    },
+    {
+      "path": "tracker-codecs/profile-details.js",
+      "sha256": "4194f92de67318870ec02b5f17c3f226ed65d191b160fd2496109940162f4b57",
+      "bytes": 2225
+    }
+  ],
+  "permissions": [
+    "agent-runtime",
+    "chat-read",
+    "chat-write",
+    "prompt-context",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": true
+}

@@ -28,8 +28,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "2aa6e522ee85e8b9d1c1cd55040157fc0b93abdc48c6ffe874f21a9fb6d91dcd",
-      "bytes": 13620
+      "sha256": "5b07603ab4009ef3d6bd10522a22d54c0cd5a062a260342523acd47ce71e9dd8",
+      "bytes": 13621
     },
     {
       "path": "src/client/runtime.js",

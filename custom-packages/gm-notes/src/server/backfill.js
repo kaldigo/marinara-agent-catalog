@@ -3,7 +3,7 @@ import {
   applyGmNoteUpdates,
   mergeGmNotesIntoPlayerStats,
   readGmNotesFromPlayerStats,
-} from "../shared/state.js";
+} from "../../tracker-codecs/gm-notes.js";
 
 const PACKAGE_ID = "gm-notes";
 const BACKFILL_DOCUMENT_KIND = "backfill-progress";

@@ -7,7 +7,7 @@ import {
   gmNotesAgentState,
   mergeGmNotesIntoPlayerStats,
   readGmNotesFromPlayerStats,
-} from "../shared/state.js";
+} from "../../tracker-codecs/gm-notes.js";
 import { createGmNotesRoutes } from "./routes.js";
 
 function playerStatsFromSnapshot(snapshot) {
@@ -19,7 +19,7 @@ export async function activate(context) {
     context,
     {
       consumerId: "gm-notes",
-      api: { major: 1, minMinor: 8 },
+      api: { major: 1, minMinor: 10 },
       require: ["agent.result-types", "consumer.sessions", "host.request", "runtime.health", "tracker.context"],
     },
     async (bridgeSession) => {

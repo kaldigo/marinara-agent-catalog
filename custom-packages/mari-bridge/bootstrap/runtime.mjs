@@ -52,7 +52,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.38";
+kernel.version = "1.0.40";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -732,6 +732,23 @@ export function patchServerModule(url, inputSource) {
         return source;
       }
       if (url.endsWith("/routes/generate.routes.js")) {
+        source = replaceExact(
+          source,
+          [
+            "                    if (builtInAgentTypes.has(agent.type))",
+            "                        continue;",
+          ].join("\n"),
+          [
+            "                    if (input.regenerateMessageId && agent.settings?.skipOnRegenerate === true) {",
+            "                        logger.debug(\"[agents] Skipping agent %s during regeneration\", agent.type);",
+            "                        resolvedAgents.splice(index, 1);",
+            "                        continue;",
+            "                    }",
+            "                    if (builtInAgentTypes.has(agent.type) && agent.settings?.useGenericRunInterval !== true)",
+            "                        continue;",
+          ].join("\n"),
+          "agent.skip-on-regenerate",
+        );
         source = replaceSupportedExact(source, [
           {
             anchor: [
@@ -1070,6 +1087,12 @@ export function patchServerModule(url, inputSource) {
         );
         source = replaceExact(
           source,
+          'const characterTrackerHistory = resolvedAgents.some((agent) => agent.type === "character-tracker")',
+          'const characterTrackerHistory = (resolvedAgents.some((agent) => agent.type === "character-tracker") || globalThis[Symbol.for("marinara.mari-bridge.v1")]?.trackerContextHooks?.needsCharacterHistory(resolvedAgents.map((agent) => agent.type)) || globalThis[Symbol.for("marinara.mari-bridge.v1")]?.agentResultHooks?.needsCharacterHistory(resolvedAgents.map((agent) => agent.type)))',
+          "tracker.character-history-main",
+        );
+        source = replaceExact(
+          source,
           "// Validate background agent result — reject hallucinated filenames",
           [
             "await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.agentResultHooks?.apply({",
@@ -1078,6 +1101,8 @@ export function patchServerModule(url, inputSource) {
             "              chatId: input.chatId,",
             "              messageId,",
             "              swipeIndex: targetSwipeIndex,",
+            "              agentContext,",
+            "              chatMetadata: chatMeta,",
             "              state: {",
             "                read: async () => {",
             "                  const row = (await gameStateStore.getByMessage(messageId, targetSwipeIndex)) ?? trackerBaseGameStateSnapshot;",
@@ -1092,6 +1117,51 @@ export function patchServerModule(url, inputSource) {
             "            // Validate background agent result — reject hallucinated filenames",
           ].join("\n"),
           "agent.result-apply-main",
+        );
+        source = replaceExact(
+          source,
+          "          const serializeMigratedTrackerLocks = (state) => {",
+          [
+            "          sortedResults = await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.agentResultHooks?.expandAll(sortedResults, {",
+            "            lane: \"main\", chatId: input.chatId, messageId, swipeIndex: targetSwipeIndex, agentContext, chatMetadata: chatMeta, logger,",
+            "            state: {",
+            "              read: async () => {",
+            "                const row = (await gameStateStore.getByMessage(messageId, targetSwipeIndex)) ?? trackerBaseGameStateSnapshot;",
+            "                return row ? parseGameStateRow(row) : null;",
+            "              },",
+            "              update: (fields) => gameStateStore.updateByMessage(messageId, targetSwipeIndex, input.chatId, fields, undefined, { baseSnapshot: trackerBaseGameStateSnapshot }),",
+            "            },",
+            "          }) ?? sortedResults;",
+            "          sortedResults.sort((a, b) => (RESULT_ORDER[a.type] ?? 1) - (RESULT_ORDER[b.type] ?? 1));",
+            "          const serializeMigratedTrackerLocks = (state) => {",
+          ].join("\n"),
+          "agent.result-expand-main",
+        );
+        source = replaceExact(
+          source,
+          "          const sortedResults = postResults",
+          "          let sortedResults = postResults",
+          "agent.result-expand-main-mutable",
+        );
+        source = replaceExact(
+          source,
+          [
+            "                        try {",
+            "                            // Persist the agent decision before any background image work so",
+            "                            // a new message observes the configured run interval immediately.",
+            "                            await agentsStore.saveRun(runCheckpoint);",
+            "                        }",
+            "                        catch {",
+          ].join("\n"),
+          [
+            "                        try {",
+            "                            // Persist the agent decision before any background image work so",
+            "                            // a new message observes the configured run interval immediately.",
+            "                            if (!result.mariBridgeDerived) await agentsStore.saveRun(runCheckpoint);",
+            "                        }",
+            "                        catch {",
+          ].join("\n"),
+          "agent.result-derived-cadence-main",
         );
         return source;
       }
@@ -1335,6 +1405,50 @@ export function patchServerModule(url, inputSource) {
       if (url.endsWith("/routes/generate/retry-agents-route.js")) {
         source = replaceExact(
           source,
+          'const characterTrackerHistory = resolvedAgentTypes.has("character-tracker")',
+          'const characterTrackerHistory = (resolvedAgentTypes.has("character-tracker") || globalThis[Symbol.for("marinara.mari-bridge.v1")]?.trackerContextHooks?.needsCharacterHistory([...resolvedAgentTypes]) || globalThis[Symbol.for("marinara.mari-bridge.v1")]?.agentResultHooks?.needsCharacterHistory([...resolvedAgentTypes]))',
+          "tracker.character-history-retry",
+        );
+        source = replaceExact(
+          source,
+          [
+            "            for (const result of results) {",
+            "                if (abortController.signal.aborted)",
+            "                    return;",
+            "                if (!customAgentCanEmitRetryResult(result, resolvedAgents))",
+            "                    continue;",
+          ].join("\n"),
+          [
+            "            const expandedResults = await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.agentResultHooks?.expandAll(results, {",
+            "                lane: \"retry\", chatId, messageId: retryMessageId, swipeIndex: retrySwipeIndex, agentContext, chatMetadata: chatMeta, logger,",
+            "                state: { read: async () => agentContext.gameState ?? null, update: async () => {} },",
+            "            }) ?? results;",
+            "            for (const result of results) {",
+            "                if (abortController.signal.aborted)",
+            "                    return;",
+            "                if (!customAgentCanEmitRetryResult(result, resolvedAgents))",
+            "                    continue;",
+          ].join("\n"),
+          "agent.result-expand-retry",
+        );
+        source = replaceExact(
+          source,
+          [
+            "            const permittedResults = results.filter((result) => customAgentCanEmitRetryResult(result, resolvedAgents));",
+            "            if (abortController.signal.aborted)",
+            "                return;",
+            "            await persistRetryResults(agentsStore, chatId, retryMessageId, permittedResults, new Map([...customLorebookReadBehindTargets].map(([agentId, target]) => [agentId, target.messageId])), abortController.signal);",
+          ].join("\n"),
+          [
+            "            const permittedResults = expandedResults.filter((result) => customAgentCanEmitRetryResult(result, resolvedAgents));",
+            "            if (abortController.signal.aborted)",
+            "                return;",
+            "            await persistRetryResults(agentsStore, chatId, retryMessageId, permittedResults.filter((result) => !result.mariBridgeDerived), new Map([...customLorebookReadBehindTargets].map(([agentId, target]) => [agentId, target.messageId])), abortController.signal);",
+          ].join("\n"),
+          "agent.result-derived-cadence-retry",
+        );
+        source = replaceExact(
+          source,
           "for (const result of sortedResults) {",
           [
             "for (const result of sortedResults) {",
@@ -1344,6 +1458,8 @@ export function patchServerModule(url, inputSource) {
             "      chatId,",
             "      messageId: retryMessageId,",
             "      swipeIndex: retrySwipeIndex,",
+            "      agentContext,",
+            "      chatMetadata: chatMeta,",
             "      state: {",
             "        read: async () => {",
             "          const row = await loadRetryTargetGameStateSnapshot();",

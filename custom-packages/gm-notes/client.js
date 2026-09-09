@@ -1,4 +1,4 @@
-const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 9 });
+const MARI_BRIDGE_API_VERSION = Object.freeze({ major: 1, minor: 10 });
 const MARI_BRIDGE_SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
 const MARI_BRIDGE_CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 
@@ -69,20 +69,18 @@ async function activateClientWithMariBridge(input, activateConsumer) {
 }
 
 
+const GM_NOTES_NAMESPACE = "gm-notes";
 const GM_NOTES_AGENT_ID = "gm-notes";
 const GM_NOTES_RESULT_TYPE = "gm_notes_update";
-const GM_NOTES_NAMESPACE = "gm-notes";
 const GM_NOTE_KINDS = Object.freeze(["reminder", "thread", "debug"]);
 
 const KIND_SET = new Set(GM_NOTE_KINDS);
 
-function parseMaybeJson(value) {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
+function record(value) {
+  if (typeof value === "string") {
+    try { return record(JSON.parse(value)); } catch { return null; }
   }
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
 function text(value, max = 600) {
@@ -90,11 +88,11 @@ function text(value, max = 600) {
 }
 
 function sourceStamp(value, fallback = {}) {
-  const record = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const source = record(value) ?? {};
   return Object.freeze({
-    messageId: text(record.messageId ?? fallback.messageId, 160),
-    swipeIndex: Number.isInteger(Number(record.swipeIndex ?? fallback.swipeIndex))
-      ? Math.max(0, Number(record.swipeIndex ?? fallback.swipeIndex))
+    messageId: text(source.messageId ?? fallback.messageId, 160),
+    swipeIndex: Number.isInteger(Number(source.swipeIndex ?? fallback.swipeIndex))
+      ? Math.max(0, Number(source.swipeIndex ?? fallback.swipeIndex))
       : 0,
   });
 }
@@ -113,27 +111,27 @@ function noteId(kind, noteText, source, index) {
 }
 
 function normalizeGmNote(value, fallbackSource = {}, index = 0) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const kind = KIND_SET.has(value.kind) ? value.kind : null;
-  const noteText = text(value.text);
+  const candidate = record(value);
+  if (!candidate) return null;
+  const kind = KIND_SET.has(candidate.kind) ? candidate.kind : null;
+  const noteText = text(candidate.text);
   if (!kind || !noteText) return null;
-  const createdSource = sourceStamp(value.createdSource, fallbackSource);
-  const updatedSource = sourceStamp(value.updatedSource, createdSource);
+  const createdSource = sourceStamp(candidate.createdSource, fallbackSource);
   return Object.freeze({
-    id: text(value.id, 160) || noteId(kind, noteText, createdSource, index),
+    id: text(candidate.id, 160) || noteId(kind, noteText, createdSource, index),
     kind,
     text: noteText,
-    locked: value.locked === true,
+    locked: candidate.locked === true,
     createdSource,
-    updatedSource,
+    updatedSource: sourceStamp(candidate.updatedSource, createdSource),
   });
 }
 
 function normalizeGmNotesState(value, fallbackSource = {}) {
-  const record = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const source = record(value) ?? {};
   const notes = [];
   const ids = new Set();
-  for (const [index, candidate] of (Array.isArray(record.notes) ? record.notes : []).entries()) {
+  for (const [index, candidate] of (Array.isArray(source.notes) ? source.notes : []).entries()) {
     const note = normalizeGmNote(candidate, fallbackSource, index);
     if (!note || ids.has(note.id)) continue;
     ids.add(note.id);
@@ -143,29 +141,69 @@ function normalizeGmNotesState(value, fallbackSource = {}) {
 }
 
 function readGmNotesFromPlayerStats(playerStats) {
-  const parsed = parseMaybeJson(playerStats);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return normalizeGmNotesState(null);
-  const packageState = parseMaybeJson(parsed.packageState);
-  const namespace = packageState && typeof packageState === "object" && !Array.isArray(packageState)
-    ? packageState[GM_NOTES_NAMESPACE]
-    : null;
-  return normalizeGmNotesState(parseMaybeJson(namespace));
+  const parsed = record(playerStats);
+  const packageState = record(parsed?.packageState);
+  return normalizeGmNotesState(record(packageState?.[GM_NOTES_NAMESPACE]));
 }
 
 function mergeGmNotesIntoPlayerStats(playerStats, gmNotesState) {
-  const parsed = parseMaybeJson(playerStats);
-  const base = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  const parsedPackageState = parseMaybeJson(base.packageState);
-  const packageState = parsedPackageState && typeof parsedPackageState === "object" && !Array.isArray(parsedPackageState)
-    ? parsedPackageState
-    : {};
+  const base = record(playerStats) ?? {};
+  const packageState = record(base.packageState) ?? {};
   return {
     ...base,
-    packageState: {
-      ...packageState,
-      [GM_NOTES_NAMESPACE]: normalizeGmNotesState(gmNotesState),
-    },
+    packageState: { ...packageState, [GM_NOTES_NAMESPACE]: normalizeGmNotesState(gmNotesState) },
   };
+}
+
+function applyGmNoteUpdates(currentState, rawUpdates, source = {}) {
+  const before = normalizeGmNotesState(currentState, source);
+  const notes = before.notes.map((note) => ({ ...note }));
+  const stamp = sourceStamp(source);
+  let createIndex = 0;
+  for (const update of Array.isArray(rawUpdates) ? rawUpdates : []) {
+    const candidate = record(update);
+    if (!candidate) continue;
+    const action = text(candidate.action, 24).toLowerCase();
+    const id = text(candidate.id, 160);
+    if (["remove", "delete", "resolve"].includes(action)) {
+      const index = notes.findIndex((note) => note.id === id);
+      if (index >= 0 && notes[index].locked !== true) notes.splice(index, 1);
+      continue;
+    }
+    const kind = KIND_SET.has(candidate.kind) ? candidate.kind : null;
+    const noteText = text(candidate.text);
+    if (action === "update") {
+      const index = notes.findIndex((note) => note.id === id);
+      if (index < 0 || notes[index].locked === true) continue;
+      notes[index] = {
+        ...notes[index],
+        ...(kind ? { kind } : {}),
+        ...(noteText ? { text: noteText } : {}),
+        updatedSource: stamp,
+      };
+      continue;
+    }
+    if (action !== "create" || !kind || !noteText) continue;
+    if (notes.some((note) => note.kind === kind && note.text.toLocaleLowerCase() === noteText.toLocaleLowerCase())) continue;
+    const nextId = id || noteId(kind, noteText, stamp, createIndex++);
+    if (notes.some((note) => note.id === nextId)) continue;
+    notes.push({ id: nextId, kind, text: noteText, locked: false, createdSource: stamp, updatedSource: stamp });
+  }
+  const state = normalizeGmNotesState({ notes }, stamp);
+  return Object.freeze({ changed: JSON.stringify(before) !== JSON.stringify(state), state });
+}
+
+function formatGmNotesForCommittedContext(playerStats) {
+  const state = readGmNotesFromPlayerStats(playerStats);
+  const prefix = { reminder: "[REMINDER]", thread: "[OPEN THREAD]", debug: "[VERIFY]" };
+  return GM_NOTE_KINDS.flatMap((kind) => state.notes
+    .filter((note) => note.kind === kind)
+    .map((note) => `${prefix[kind]} ${note.text}`)).join("\n");
+}
+
+function gmNotesAgentState(playerStats) {
+  const state = readGmNotesFromPlayerStats(playerStats);
+  return state.notes.length > 0 ? state : null;
 }
 
 function buildGmNotesAgentSuitePatch(gameState, parsed) {
@@ -178,71 +216,7 @@ function buildGmNotesAgentSuitePatch(gameState, parsed) {
   if (normalized.notes.length !== parsed.length) {
     return { error: "Every GM note must have a unique ID, a valid kind, and non-empty text" };
   }
-  return {
-    playerStats: mergeGmNotesIntoPlayerStats(gameState?.playerStats, normalized),
-  };
-}
-
-function applyGmNoteUpdates(currentState, rawUpdates, source = {}) {
-  const before = normalizeGmNotesState(currentState, source);
-  const notes = before.notes.map((note) => ({ ...note }));
-  const updates = Array.isArray(rawUpdates) ? rawUpdates : [];
-  const stamp = sourceStamp(source);
-  let createIndex = 0;
-
-  for (const update of updates) {
-    if (!update || typeof update !== "object" || Array.isArray(update)) continue;
-    const action = text(update.action, 24).toLowerCase();
-    const id = text(update.id, 160);
-    if (["remove", "delete", "resolve"].includes(action)) {
-      if (!id) continue;
-      const index = notes.findIndex((note) => note.id === id);
-      if (index >= 0 && notes[index].locked !== true) notes.splice(index, 1);
-      continue;
-    }
-    const kind = KIND_SET.has(update.kind) ? update.kind : null;
-    const noteText = text(update.text);
-    if (action === "update") {
-      if (!id) continue;
-      const index = notes.findIndex((note) => note.id === id);
-      if (index < 0) continue;
-      const previous = notes[index];
-      if (previous.locked === true) continue;
-      notes[index] = {
-        ...previous,
-        ...(kind ? { kind } : {}),
-        ...(noteText ? { text: noteText } : {}),
-        updatedSource: stamp,
-      };
-      continue;
-    }
-    if (action !== "create" || !kind || !noteText) continue;
-    const duplicate = notes.find((note) => note.kind === kind && note.text.toLocaleLowerCase() === noteText.toLocaleLowerCase());
-    if (duplicate) continue;
-    const nextId = id || noteId(kind, noteText, stamp, createIndex++);
-    if (notes.some((note) => note.id === nextId)) continue;
-    notes.push({ id: nextId, kind, text: noteText, locked: false, createdSource: stamp, updatedSource: stamp });
-  }
-
-  const state = normalizeGmNotesState({ schemaVersion: 1, notes }, stamp);
-  return Object.freeze({
-    changed: JSON.stringify(before) !== JSON.stringify(state),
-    state,
-  });
-}
-
-function formatGmNotesForCommittedContext(playerStats) {
-  const state = readGmNotesFromPlayerStats(playerStats);
-  if (state.notes.length === 0) return "";
-  const prefix = { reminder: "[REMINDER]", thread: "[OPEN THREAD]", debug: "[VERIFY]" };
-  return GM_NOTE_KINDS.flatMap((kind) => (
-    state.notes.filter((note) => note.kind === kind).map((note) => `${prefix[kind]} ${note.text}`)
-  )).join("\n");
-}
-
-function gmNotesAgentState(playerStats) {
-  const state = readGmNotesFromPlayerStats(playerStats);
-  return state.notes.length > 0 ? state : null;
+  return { playerStats: mergeGmNotesIntoPlayerStats(gameState?.playerStats, normalized) };
 }
 
 
@@ -322,7 +296,7 @@ const POPOVER_CLASS = [
 const cleanupGmNotesClient = await activateClientWithMariBridge(
   {
     consumerId: PACKAGE_ID,
-    api: { major: 1, minMinor: 8 },
+    api: { major: 1, minMinor: 10 },
     require: [
       "agent-suite.tracker-data",
       "chat.active",
@@ -330,6 +304,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       "consumer.sessions",
       "generation.lifecycle",
       "runtime.health",
+      "tracker.surfaces",
       "ui.agent-settings",
       "ui.roleplay-hud",
       "ui.tracker-section",
@@ -715,7 +690,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
         const notes = readGmNotesFromPlayerStats(gameState?.playerStats).notes;
         const next = {
           chatId,
-          enabled: metadata.enableAgents === true && activeAgentIds.includes(PACKAGE_ID),
+          enabled: metadata.enableAgents === true && (activeAgentIds.includes(PACKAGE_ID) || bridgeSession.tracker.shouldShowSurface(PACKAGE_ID, { chatId })),
           notes,
         };
         state.cache.set(chatId, next);
@@ -798,6 +773,10 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       },
     });
     const disposeHud = bridgeSession.ui.register({ id: "hud", slot: "roleplay.hud", view: "hud" });
+    const disposeSurfaces = bridgeSession.tracker.subscribeSurfaces(() => {
+      const chatId = bridgeSession.chat.active.getSnapshot().chatId;
+      if (chatId) void loadState(chatId, true);
+    });
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
       for (const element of state.elements) {
         if (element._backfilling) element.stopBackfill("Backfill paused because the active chat changed. Run it again to resume.");
@@ -814,6 +793,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     }, { emitCurrent: false });
 
     return () => {
+      disposeSurfaces();
       disposeGeneration();
       disposeChat();
       disposeAgentSuite();

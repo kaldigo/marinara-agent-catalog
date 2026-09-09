@@ -111,6 +111,8 @@ falling back to DOM listeners or a parallel implementation.
 
 ## Upgrading
 
-Version 1.1.1 keeps the original `gm-notes` package ID, result type, GameState
-namespace, and schema version. Notes created by 1.0.x remain readable,
-including their stable IDs, source stamps, and lock state.
+Version 1.2.0 keeps the original `gm-notes` package ID, result type, GameState
+namespace, and schema version. It moves the state codec into the shared tracker
+codec root and lets Unified Tracker activate the native GM Notes surfaces.
+Notes created by 1.0.x remain readable, including their stable IDs, source
+stamps, and lock state.

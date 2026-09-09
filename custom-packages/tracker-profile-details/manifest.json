@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "tracker-profile-details",
   "name": "Tracker Profile Details",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Shows selected GameState custom fields as ordered native character and persona profile details.",
   "engine": {
     "min": "2.4.4",
@@ -23,8 +23,8 @@
   "files": [
     {
       "path": "bridge-sdk/contracts.js",
-      "sha256": "3cdddad1c964f6120e67988a9fb6018c7cefa1a2e0233e830db9d767b0a4730c",
-      "bytes": 1748
+      "sha256": "c6ce1bd3bfd83634760c008bdaed2ef037327b9ce15b471d53a8d62dbbc09810",
+      "bytes": 1749
     },
     {
       "path": "bridge-sdk/server.js",
@@ -33,8 +33,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "5c5536047f8d130db39d4e2afa15e12a4e545820d37d797691b85b1707cff68e",
-      "bytes": 4245
+      "sha256": "28dbdfdc1666b1f23df437a70f7d005086d799fe5ea6f26cd6304c61328f50f8",
+      "bytes": 4246
     },
     {
       "path": "server.mjs",
@@ -48,8 +48,13 @@
     },
     {
       "path": "src/server/persona-fields.js",
-      "sha256": "b26f224726940c1d52ed4040d7b4e6c7fdc97c1559eed5452d12a930abcc187a",
-      "bytes": 4055
+      "sha256": "7756abbe5b40aebf8d9c455979556703ca8620d49b3d112d78f88aa9f2ce8cc5",
+      "bytes": 2082
+    },
+    {
+      "path": "tracker-codecs/profile-details.js",
+      "sha256": "4194f92de67318870ec02b5f17c3f226ed65d191b160fd2496109940162f4b57",
+      "bytes": 2225
     }
   ],
   "permissions": [

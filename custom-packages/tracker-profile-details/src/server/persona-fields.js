@@ -1,92 +1,39 @@
-export const PERSONA_DETAIL_FIELDS = Object.freeze(["Outfit", "Location", "Movement", "Activity"]);
+import { PERSONA_DETAIL_FIELDS, mergePersonaDetailFields, normalizeTrackerName } from "../../tracker-codecs/profile-details.js";
 
-function normalizeName(value) {
-  return String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("en-US").replace(/\s+/gu, " ");
-}
+const DETAIL_NAMES = new Set(PERSONA_DETAIL_FIELDS.map(normalizeTrackerName));
 
-const PERSONA_DETAIL_FIELD_NAMES = new Set(PERSONA_DETAIL_FIELDS.map(normalizeName));
-
-function parseRecord(value) {
+function record(value) {
   if (typeof value === "string") {
-    try {
-      return parseRecord(JSON.parse(value));
-    } catch {
-      return null;
-    }
+    try { return record(JSON.parse(value)); } catch { return null; }
   }
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
+export { PERSONA_DETAIL_FIELDS, mergePersonaDetailFields };
+
 export function filterPersonaDetailFieldsFromCustomTracker(_scope, fields) {
-  if (!Array.isArray(fields)) return fields;
-  return fields.filter((field) => !PERSONA_DETAIL_FIELD_NAMES.has(normalizeName(field?.name)));
+  return Array.isArray(fields) ? fields.filter((field) => !DETAIL_NAMES.has(normalizeTrackerName(field?.name))) : fields;
 }
 
 export function formatPersonaDetailContext(scope) {
-  const gameState = parseRecord(scope?.latestGameState);
-  const playerStats = parseRecord(gameState?.playerStats);
-  const fields = Array.isArray(playerStats?.customTrackerFields) ? playerStats.customTrackerFields : [];
+  const playerStats = record(record(scope?.latestGameState)?.playerStats);
   const values = new Map();
-  for (const field of fields) {
-    const name = normalizeName(field?.name);
-    if (!PERSONA_DETAIL_FIELD_NAMES.has(name) || values.has(name)) continue;
+  for (const field of Array.isArray(playerStats?.customTrackerFields) ? playerStats.customTrackerFields : []) {
+    const key = normalizeTrackerName(field?.name);
     const value = typeof field?.value === "string" ? field.value.trim() : "";
-    if (value) values.set(name, value);
+    if (DETAIL_NAMES.has(key) && value && !values.has(key)) values.set(key, value);
   }
-  const lines = PERSONA_DETAIL_FIELDS.flatMap((name) => {
-    const value = values.get(normalizeName(name));
-    return value ? [`${name}: ${value}`] : [];
-  });
-  return lines.length > 0 ? { label: "Persona Details", content: lines.join("\n") } : null;
-}
-
-function encodeSegment(value) {
-  return encodeURIComponent(String(value ?? "").trim() || "_").replace(/\./gu, "%2E");
-}
-
-function fieldLocked(fieldLocks, name) {
-  return fieldLocks?.[`player.custom.name:${encodeSegment(name)}.value`] === true;
-}
-
-export function mergePersonaDetailFields(currentFields, update, fieldLocks) {
-  const current = Array.isArray(currentFields) ? currentFields : [];
-  const incoming = update && typeof update === "object" && !Array.isArray(update) ? update : {};
-  const canonicalByName = new Map(PERSONA_DETAIL_FIELDS.map((name) => [normalizeName(name), name]));
-  const existing = new Map();
-  for (const field of current) {
-    const normalized = normalizeName(field?.name);
-    if (canonicalByName.has(normalized) && !existing.has(normalized)) existing.set(normalized, field);
-  }
-
-  const promoted = [];
-  for (const name of PERSONA_DETAIL_FIELDS) {
-    const normalized = normalizeName(name);
-    const previous = existing.get(normalized);
-    const incomingKey = Object.keys(incoming).find((key) => normalizeName(key) === normalized);
-    if (incomingKey === undefined && !previous) continue;
-    const value = fieldLocked(fieldLocks, previous?.name ?? name)
-      ? previous?.value ?? ""
-      : incomingKey === undefined
-        ? previous?.value ?? ""
-        : String(incoming[incomingKey] ?? "");
-    promoted.push({ ...(previous ?? {}), name, value });
-  }
-
-  const unrelated = current.filter((field) => !canonicalByName.has(normalizeName(field?.name)));
-  return [...promoted, ...unrelated];
+  const lines = PERSONA_DETAIL_FIELDS.flatMap((name) => values.has(normalizeTrackerName(name)) ? [`${name}: ${values.get(normalizeTrackerName(name))}`] : []);
+  return lines.length ? { label: "Persona Details", content: lines.join("\n") } : null;
 }
 
 export async function applyPersonaDetailResult(scope) {
-  const data = scope?.result?.data;
-  const update = data?.trackerFields ?? data?.fields;
-  if (!update || typeof update !== "object" || Array.isArray(update)) return null;
+  const update = scope?.result?.data?.trackerFields ?? scope?.result?.data?.fields;
+  if (!record(update)) return null;
   const currentState = await scope.state.read();
-  if (!currentState || typeof currentState !== "object") return null;
-  const currentPlayerStats = currentState.playerStats && typeof currentState.playerStats === "object" && !Array.isArray(currentState.playerStats)
-    ? currentState.playerStats
-    : {};
-  const customTrackerFields = mergePersonaDetailFields(currentPlayerStats.customTrackerFields, update, currentState.fieldLocks);
-  const nextPlayerStats = { ...currentPlayerStats, customTrackerFields };
+  if (!record(currentState)) return null;
+  const currentPlayerStats = record(currentState.playerStats) ?? {};
+  const nextPlayerStats = { ...currentPlayerStats, customTrackerFields: mergePersonaDetailFields(currentPlayerStats.customTrackerFields, update, currentState.fieldLocks) };
   await scope.state.update({ playerStats: nextPlayerStats });
   scope.emitPatch?.({ playerStats: nextPlayerStats });
   return nextPlayerStats;
