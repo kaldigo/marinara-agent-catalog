@@ -21,6 +21,7 @@ for (const required of [
   "src/server/turn-handoff-registry.js",
   "src/server/server-overlay.js",
   "src/client/runtime.js",
+  "src/client/tracker-surface-registry.js",
 ]) {
   await fs.access(path.join(root, required));
 }

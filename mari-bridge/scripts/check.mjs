@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { __test as installerTest } from "../src/server/index.js";
 import { createBridgeRuntime } from "../src/server/runtime.js";
 import { createPromptRegistry } from "../src/server/prompt-registry.js";
 import { createAgentResultRegistry } from "../src/server/result-registry.js";
@@ -512,7 +514,7 @@ const clientSource = `${trackerDetailRegistrySource}\n${trackerSurfaceRegistrySo
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.40");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.41");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -1067,6 +1069,20 @@ const preparedClientOverlay = await prepareClientOverlay({
   sourceRoot: nativeClientRoot,
   engineVersion: "2.4.4",
 });
+// Exercise the installed file set, not the complete package source tree.
+// The development harness copies all of src and can hide installer omissions.
+const cleanInstallData = path.join(clientOverlayFixtureRoot, "clean-install");
+const cleanInstall = await installerTest.installStableRuntime({ dataDir: cleanInstallData });
+const installedOverlayModule = await import(pathToFileURL(
+  path.join(cleanInstall.targetRoot, "src", "server", "client-overlay.js"),
+).href);
+const installedOverlay = await installedOverlayModule.prepareClientOverlay({
+  dataDir: cleanInstallData,
+  sourceRoot: nativeClientRoot,
+  engineVersion: "2.4.4",
+});
+assert.deepEqual(installedOverlay.failedPatches, []);
+assert.equal((await installerTest.installStableRuntime({ dataDir: cleanInstallData })).changed, false);
 const preparedOverlayIndex = await fs.readFile(path.join(preparedClientOverlay.root, "index.html"), "utf8");
 const preparedOverlayMain = await fs.readFile(path.join(preparedClientOverlay.root, "assets", "index-main.js"), "utf8");
 const preparedOverlayAssets = await fs.readdir(path.join(preparedClientOverlay.root, "assets"));
@@ -1080,7 +1096,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.40"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.41"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -1395,12 +1411,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.4",
-  bridgeVersion: "1.0.40",
+  bridgeVersion: "1.0.41",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.40");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.41");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   serverOverlayTest.withoutMariBridgeExecArgs([

@@ -19,6 +19,7 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/server/server-overlay.js",
   "src/client/runtime.js",
   "src/client/tracker-detail-field-registry.js",
+  "src/client/tracker-surface-registry.js",
   "bootstrap/runtime.mjs",
   // Commit the preload entry last, after every module it imports exists.
   "bootstrap/register.mjs",
@@ -73,3 +74,5 @@ export async function activate(context) {
 export async function selfCheck() {
   if (!lastInstall?.bootstrapPath) throw new Error("Mari Bridge stable runtime was not installed");
 }
+
+export const __test = Object.freeze({ installStableRuntime });
