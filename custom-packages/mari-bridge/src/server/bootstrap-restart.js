@@ -32,6 +32,46 @@ function withoutMariBridgeExecArgs(values) {
   });
 }
 
+// Match Engine 2.4.6's runtime-config.isDockerRuntime. Its container entrypoint
+// owns signals and container exits; the image does not ship run-server.mjs.
+function isDockerRuntime(environment) {
+  return ["1", "true", "yes", "on"].includes(String(environment.MARINARA_DOCKER ?? "").trim().toLowerCase())
+    || Boolean(String(environment.MARINARA_DOCKER_USER ?? "").trim())
+    || Boolean(String(environment.MARINARA_DOCKER_GROUP ?? "").trim());
+}
+
+async function prepareRestart(bootstrapPath) {
+  const entry = process.argv[1];
+  if (!entry) throw new Error("Mari Bridge cannot reconstruct the Marinara entrypoint");
+  const engineRoot = process.env.MARI_BRIDGE_ENGINE_ROOT || resolve(dirname(entry), "..", "..", "..");
+  const docker = isDockerRuntime(process.env);
+  const supervised = process.env.MARINARA_RESTART_SUPERVISOR === String(process.ppid);
+  const alreadyPreloaded = globalThis[Symbol.for("marinara.mari-bridge.kernel.v1")]?.active === true;
+  const nativeEntry = join(engineRoot, "packages", "server", "dist", "index.js");
+  // Complete all file checks before closing the app. A failed restart preflight
+  // must leave the running server available for recovery and package updates.
+  await readFile(bootstrapPath);
+  await readFile(nativeEntry);
+  if (!docker && supervised && alreadyPreloaded) return { exitCode: 75 };
+  const launchArgs = [nativeEntry, ...process.argv.slice(2)];
+  if (!docker) {
+    const nativeSupervisor = join(engineRoot, "scripts", "run-server.mjs");
+    await readFile(nativeSupervisor);
+    launchArgs.unshift(nativeSupervisor);
+  }
+  return {
+    args: [
+      ...withoutMariBridgeExecArgs(process.execArgv),
+      `--import=${pathToFileURL(bootstrapPath).href}`,
+      ...launchArgs,
+    ],
+    environment: sanitizedEnvironment({
+      MARI_BRIDGE_BOOTSTRAPPED: "1",
+      NODE_OPTIONS: withoutMariBridgeImports(process.env.NODE_OPTIONS),
+    }),
+  };
+}
+
 export async function schedulePackageBootstrapRestart(context, bootstrapPath, options = {}) {
   const attemptFile = join(context.dataDir, "mari-bridge", "bootstrap-attempt.json");
   await mkdir(dirname(attemptFile), { recursive: true });
@@ -57,32 +97,14 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
   }
   await writeFile(attemptFile, `${JSON.stringify({ attempts, at: now, status: "scheduled" }, null, 2)}\n`);
   const restart = async () => {
-    const inheritedExecArgs = withoutMariBridgeExecArgs(process.execArgv);
-    const entry = process.argv[1];
-    if (!entry) throw new Error("Mari Bridge cannot reconstruct the Marinara entrypoint");
-    const engineRoot = process.env.MARI_BRIDGE_ENGINE_ROOT || resolve(dirname(entry), "..", "..", "..");
-    const supervised = process.env.MARINARA_RESTART_SUPERVISOR === String(process.ppid);
-    const alreadyPreloaded = globalThis[Symbol.for("marinara.mari-bridge.kernel.v1")]?.active === true;
+    const plan = await prepareRestart(bootstrapPath);
     await context.app.close();
     // A version update uses the existing native supervisor and stable preload.
-    if (supervised && alreadyPreloaded) {
-      process.exit(75);
+    if (plan.exitCode !== undefined) {
+      process.exit(plan.exitCode);
       return;
     }
-    const nativeEntry = join(engineRoot, "packages", "server", "dist", "index.js");
-    const nativeSupervisor = join(engineRoot, "scripts", "run-server.mjs");
-    await readFile(nativeSupervisor);
-    const args = [
-      ...inheritedExecArgs,
-      `--import=${pathToFileURL(bootstrapPath).href}`,
-      nativeSupervisor,
-      nativeEntry,
-      ...process.argv.slice(2),
-    ];
-    const environment = sanitizedEnvironment({
-      MARI_BRIDGE_BOOTSTRAPPED: "1",
-      NODE_OPTIONS: withoutMariBridgeImports(process.env.NODE_OPTIONS),
-    });
+    const { args, environment } = plan;
     if (process.platform === "win32") {
       const child = spawn(process.execPath, args, {
         // Keep console signal delivery; restart ownership belongs to the native
@@ -102,6 +124,8 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
       const code = await new Promise((resolve) => child.once("close", (status) => resolve(status ?? 1)));
       process.exit(code);
     }
+    // In Docker this replaces only the server child, keeping its PID and the
+    // official entrypoint parent. Native admin restart still exits the container.
     process.execve(process.execPath, [process.execPath, ...args], environment);
   };
   context.app.addHook("onReady", async () => {
@@ -115,4 +139,4 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
   return { scheduled: true, reason: options.reason ?? "first-start" };
 }
 
-export const __test = Object.freeze({ withoutMariBridgeImports, withoutMariBridgeExecArgs });
+export const __test = Object.freeze({ withoutMariBridgeImports, withoutMariBridgeExecArgs, isDockerRuntime, prepareRestart });
