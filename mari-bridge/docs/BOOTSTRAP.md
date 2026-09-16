@@ -63,12 +63,15 @@ The implemented zero-configuration sequence is:
 2. If Marinara starts without the stable preload, the installer materializes
    `register.mjs` plus its runtime modules under `DATA_DIR/mari-bridge` and
    schedules one guarded restart after Fastify reaches `onReady`.
-3. The restart first calls `await app.close()`, which stops capability
-   runtimes, flushes file-backed storage, and releases the writer lease. POSIX
-   uses `process.execve` to enter the native supervisor. Windows starts that
-   supervisor hidden and retains the first-install launcher until it exits.
-   A forced update already running under the supervisor exits with native code 75.
-4. The stable `register.mjs` dispatcher skips the native supervisor and checks `isMainThread` before importing
+3. The restart validates its native entry, stable preload and any required local
+   supervisor before calling `await app.close()`. Missing files leave the server
+   running. Closing stops capability runtimes, flushes storage and releases the
+   writer lease. Docker uses `process.execve` directly on the native server entry,
+   preserving the official Docker entrypoint parent and server PID. The image
+   does not ship `scripts/run-server.mjs`. Local POSIX launches that supervisor;
+   Windows starts it hidden and retains the launcher until it exits. A forced
+   local update already under the supervisor exits with native code 75.
+4. The stable `register.mjs` dispatcher skips both native launchers and checks `isMainThread` before importing
    the implementation. Worker threads inherit `NODE_OPTIONS`, but they do not
    prepare patches, copy the server, or perform a handoff.
 5. The main-thread runtime verifies the exact Engine version and every patch
@@ -82,8 +85,8 @@ The implemented zero-configuration sequence is:
 7. A Node resolve hook redirects only the native main entry URL to the copied
    entry in the same server process. Native dependencies use ordinary resolution.
    The original Engine root is carried explicitly. There is no spawned server
-   overlay handoff or recursive handoff guard; the native supervisor remains the
-   server's parent and owns future restart requests.
+   overlay handoff or recursive handoff guard. Native local supervisors or the
+   official Docker entrypoint retain ownership of future restart requests.
 
 Do not call `execve` directly from package activation. At that point the
 database is open and buffered writes/writer-lease cleanup depend on
@@ -105,7 +108,8 @@ const args = [
   process.execPath,
   ...inheritedExecArgs,
   `--import=${registerPath}`,
-  nativeSupervisor,
+  // Omit the local supervisor in Docker.
+  ...(docker ? [] : [nativeSupervisor]),
   nativeEntry,
   ...scriptArgs,
 ];
@@ -115,9 +119,24 @@ Use the direct process API; never invoke a shell. Validate that `entry` and the
 stable loader path are absolute or safely resolved. Preserve inspector and
 other legitimate Node flags. Remove the inherited Mari Bridge import from
 `NODE_OPTIONS` before starting the replacement and add one explicit import to
-the argument vector. Tests assert that one server owns the port, its parent is
-the native supervisor, and the closed first-install process holds no writer
-lease. Windows retains the first-install launcher until its supervisor exits.
+the argument vector. Tests assert native process ownership and that app close
+runs before replacement. The Docker suite also checks cold starts, an upgrade
+from 1.0.42, native admin restart, all consumer readiness and chat persistence.
+Windows retains the first-install launcher until its supervisor exits.
+
+## Recovery from 1.0.42 in Docker
+
+If startup fails looking for `/app/scripts/run-server.mjs`, temporarily override
+the container command while preserving the existing data volume:
+
+```yaml
+command: ["node", "--import=/app/data/mari-bridge/bootstrap/register.mjs", "packages/server/dist/index.js"]
+```
+
+Recreate the container, update Mari Bridge to 1.0.43 or later, then remove the
+temporary override and recreate it again. The original error was caused by
+using the local launcher path in the Docker image, after the app had already
+closed. Package cleanup alone does not correct that startup path.
 
 ## Local development
 

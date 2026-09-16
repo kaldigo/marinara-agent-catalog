@@ -14,7 +14,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  bootstrap-check:
+    uses: ./.github/workflows/check-bridge-bootstrap.yml
+
   rebuild-main:
+    needs: bootstrap-check
     runs-on: ubuntu-latest
     steps:
       - name: Check out main merge tooling

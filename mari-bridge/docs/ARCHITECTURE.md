@@ -45,8 +45,9 @@ The runtime validates known server modules, copies the complete server and
 shared distributions into `DATA_DIR/mari-bridge/server`, links normal runtime
 dependencies to the native installation, and applies count-checked transforms
 only to that writable copy. An entry resolver imports that copy in the same
-server process, preserving the native supervisor parent and exit-75 restart
-protocol. A ready marker hashes native distributions, patch implementation,
+server process, preserving its native parent. Local supervised updates use exit
+75; Docker uses direct process replacement under its official entrypoint, with
+normal container restarts still owned by Engine. A ready marker hashes native distributions, patch implementation,
 and Engine/Bridge versions; same-version rebuilds invalidate it. The original
 Engine distribution remains unchanged. See `ENGINE-2.4.6-UPDATE.md` for the
 current native-slot boundary and executable verification.

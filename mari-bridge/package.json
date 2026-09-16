@@ -1,11 +1,11 @@
 {
   "name": "marinara-mari-bridge-package",
-  "version": "1.0.42",
+  "version": "1.0.43",
   "private": true,
   "type": "module",
   "description": "Installer for the injected Mari Bridge runtime used by Marinara capability packages.",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node scripts/check.mjs && npm run build && node scripts/validate-dist.mjs"
+    "check": "node scripts/check.mjs && node scripts/check-bootstrap-preflight.mjs && npm run build && node scripts/validate-dist.mjs"
   }
 }

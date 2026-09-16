@@ -5,5 +5,8 @@ import { isMainThread } from "node:worker_threads";
 // must not load it a second time inside the same process.
 // The native restart supervisor passes its --import arguments to the server.
 // It must stay a plain supervisor, without importing Engine services itself.
-const isSupervisor = process.argv[1]?.replaceAll("\\", "/").endsWith("/scripts/run-server.mjs");
+const entry = process.argv[1]?.replaceAll("\\", "/") ?? "";
+const isSupervisor = entry.endsWith("/scripts/run-server.mjs")
+  || entry.endsWith("/marinara-docker-entrypoint.mjs")
+  || entry.endsWith("/scripts/docker-entrypoint.mjs");
 if (isMainThread && !isSupervisor) await import("./runtime.mjs");

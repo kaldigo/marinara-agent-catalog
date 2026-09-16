@@ -41,7 +41,7 @@ controls use the native `chat-settings` slot on the existing agent card.
 
 ## Current implementation boundary
 
-Version `1.0.42` targets Marinara Engine **2.4.6 only**. Previous Engine releases
+Version `1.0.43` targets Marinara Engine **2.4.6 only**. Previous Engine releases
 and the retired Bridge `agent.settings` / `roleplay.hud` mounts are unsupported.
 Settings and GM Notes toolbar elements now use native package slots. The
 remaining tracker hook contributes descriptors to native field editors and
@@ -141,12 +141,14 @@ same supervised server process, with the
 original Engine root carried explicitly and runtime dependencies linked to the
 native installation.
 
-The package writes a stable preload under `DATA_DIR`. First installation starts
-the native supervisor, using `execve` on POSIX or a retained launcher on Windows.
-Subsequent updates close the app and request the supervisor's native exit-75
-restart. A persistent loop guard bounds bootstrap attempts. Windows first install,
-forced update and live native restart are tested; Docker/POSIX self-bounce verification
-remains required before publication.
+The package writes a stable preload under `DATA_DIR`. Docker installation and
+updates use `execve` directly on the native server entry, retaining the official
+container entrypoint parent. The image does not contain `scripts/run-server.mjs`.
+Local installations use that native supervisor; supervised updates use exit 75.
+Windows retains its first-install launcher until the supervisor exits. Required
+files are checked before closing the app, and a persistent loop guard bounds
+attempts. The release workflow checks Linux process replacement and the official
+Docker image before rebuilding the published catalog.
 
 ## Intended outcome
 

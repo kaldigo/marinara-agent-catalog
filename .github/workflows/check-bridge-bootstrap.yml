@@ -1,0 +1,46 @@
+name: Check Bridge Bootstrap
+
+on:
+  push:
+    branches: [fix/bridge-docker-bootstrap]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/checkout@v4
+        with:
+          repository: Pasta-Devs/Marinara-Engine
+          ref: cc783dd194bacd97379191b9d490939afbe6759e
+          path: .engine-reference
+      - uses: actions/checkout@v4
+        with:
+          ref: 9ce774d2b782ec4dfde4d90fa97544f1cc0b9476
+          path: .bridge-previous
+      - name: Check Bridge and current consumers
+        run: |
+          for package in _mari-bridge mari-bridge mari-bridge-smoke better-impersonate gm-notes group-sort-order presence pwa-helper tracker-profile-details unified-tracker world-map-background; do
+            npm --prefix "$package" run check
+          done
+      - name: Exercise Linux process replacement and native launchers
+        run: |
+          node mari-bridge/scripts/check-bootstrap.mjs --engine=.engine-reference
+          node mari-bridge/scripts/check-bootstrap.mjs --engine=.engine-reference --supervised
+          node mari-bridge/scripts/check-bootstrap.mjs --engine=.engine-reference --docker
+      - name: Test the official Engine Docker image
+        run: node mari-bridge/scripts/check-docker-bootstrap.mjs --previous=.bridge-previous/mari-bridge --output=bootstrap-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bridge-bootstrap-evidence
+          path: bootstrap-evidence
