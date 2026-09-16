@@ -45,7 +45,8 @@ async function install(data) {
     }
     await walk();
     await fs.writeFile(path.join(target, "manifest.json"), JSON.stringify(manifest));
-    registry.packages.push({ id, version: manifest.version, manifest, installedAt: new Date().toISOString(), status: "active", readiness: "pending", error: null, readinessError: null, legacy: false });
+    // Match the native installer: only server entrypoints await runtime selfCheck.
+    registry.packages.push({ id, version: manifest.version, manifest, installedAt: new Date().toISOString(), status: "active", readiness: manifest.entrypoints.server ? "pending" : "ready", error: null, readinessError: null, legacy: false });
   }
   await fs.writeFile(path.join(data, "capability-packages/installed.json"), JSON.stringify(registry));
 }
@@ -53,7 +54,7 @@ async function install(data) {
 async function start(name, data, command = [], environment = []) {
   docker("run", "--detach", "--name", name, "--init", "--restart", "unless-stopped",
     "--publish", "127.0.0.1::7860", "--mount", `type=bind,src=${data},dst=/app/data`,
-    "--env", "ADMIN_SECRET=bridge-bootstrap-fixture", "--env", "MARINARA_ENV_WATCH=0",
+    "--env", "ADMIN_SECRET=bridge-bootstrap-fixture", "--env", "MARINARA_ENV_WATCH=0", "--env", "LOG_LEVEL=info",
     "--env", "AUTO_CREATE_DEFAULT_CONNECTION=false", ...environment, image, ...command);
   active.add(name);
   const port = JSON.parse(docker("inspect", name))[0].NetworkSettings.Ports["7860/tcp"][0].HostPort;
@@ -107,7 +108,7 @@ try {
   await ready(base);
   const installed = JSON.parse(docker("exec", name, "node", "-e", "console.log(require('fs').readFileSync('/app/data/capability-packages/installed.json','utf8'))"));
   for (const id of ids) assert.equal(installed.packages.find(item => item.id === id)?.readiness, "ready", id);
-  checks.push("Unconfigured first startup activates Bridge and every current consumer");
+  checks.push("Unconfigured first startup activates Bridge and its server consumers; all installed package records become ready");
   const chat = await api(base, "/api/chats", { name: "Docker restart persistence", mode: "roleplay", characterIds: [] });
   await delay(11_000);
   const restartCount = JSON.parse(docker("inspect", name))[0].RestartCount;
