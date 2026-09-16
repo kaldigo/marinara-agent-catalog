@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "presence",
   "name": "Presence",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "description": "Tracks per-message character presence with native per-character Hide From AI state.",
   "engine": {
-    "min": "2.4.4",
-    "maxExclusive": "2.4.5"
+    "min": "2.4.6",
+    "maxExclusive": "2.4.7"
   },
   "kind": [
     "agent"
@@ -18,7 +18,8 @@
   },
   "contributions": {
     "slots": [
-      "chat-runtime"
+      "chat-runtime",
+      "chat-settings"
     ]
   },
   "files": [
@@ -39,8 +40,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "c534385fc2450ab614209463aa53a7dc5f0d67040b7e5748a4eef1765a7d4abd",
-      "bytes": 10825
+      "sha256": "770f98e2e1685cda44044b56e13338dc49810519841308b62c9d40763d45c685",
+      "bytes": 10595
     },
     {
       "path": "server.mjs",
@@ -49,8 +50,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "b18ae390beb9da3e1bf395c9271d0c7aaa927cedd535a95f10054c933a85ad34",
-      "bytes": 7502
+      "sha256": "a8fff89ef98eeaff4c94c36442d2aafa94b4b9cfe2fc1767a8afc0347405d4d7",
+      "bytes": 7286
     },
     {
       "path": "src/server/command-router.js",
@@ -69,8 +70,8 @@
     },
     {
       "path": "src/shared/chat-state.js",
-      "sha256": "f95a0a07a2b683293bc1149a6c6d3497f2174d5e191ffc9fbd9aa2396a98fca5",
-      "bytes": 1065
+      "sha256": "0a73290079d4a68e98660269af2c68b6424195ddd57fcbf1ee9c456e2e7ce571",
+      "bytes": 984
     },
     {
       "path": "src/shared/constants.js",

@@ -1,3 +1,5 @@
+import { patchTrackerDetails } from "./tracker-detail-patch.js";
+import { fingerprintOverlayInputs } from "./overlay-fingerprint.js";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -19,106 +21,7 @@ function replaceOne(source, anchor, replacement, label) {
 }
 
 export function patchTrackerDetailFieldsBridge(source) {
-  if (!source.includes("ui.trackerPanel.charactertrackercard.outfit") || !source.includes("function Qi(")) return null;
-  let patched = source;
-
-  patched = patched.replace(
-    /Array\.isArray\((?<stats>[A-Za-z_$][\w$]*\.stats)\)\?\k<stats>:\[\]/gu,
-    `(${CLIENT_SYMBOL_EXPRESSION}?.filterCharacterTrackerStats($<stats>)??(Array.isArray($<stats>)?$<stats>:[]))`,
-  );
-  patched = patched.replace(
-    /Array\.isArray\((?<stats>[A-Za-z_$][\w$]*\.personaStats)\)\?\k<stats>:\[\]/gu,
-    `(${CLIENT_SYMBOL_EXPRESSION}?.filterPersonaTrackerStats($<stats>)??(Array.isArray($<stats>)?$<stats>:[]))`,
-  );
-
-  patched = replaceOne(
-    patched,
-    "k=Object.entries(e.customFields??{}).map(([R,Z])=>[R,Z,At(Z)])",
-    `k=(${CLIENT_SYMBOL_EXPRESSION}?.filterCharacterTrackerDetailFields(e.customFields)??Object.entries(e.customFields??{})).map(([R,Z])=>[R,Z,At(Z)])`,
-    "compact character detail filter",
-  );
-  patched = replaceOne(
-    patched,
-    "U=v.length>0||k.length>0||b,H=U",
-    `U=v.length>0||k.length>0||b||${CLIENT_SYMBOL_EXPRESSION}?.hasCharacterTrackerDetailFields(e.customFields)===!0,H=U`,
-    "compact character detail density",
-  );
-  patched = replaceOne(
-    patched,
-    'onToggleHidden:()=>O("outfit")})]})',
-    `onToggleHidden:()=>O("outfit")}),...(${CLIENT_SYMBOL_EXPRESSION}?.renderCompactCharacterTrackerDetailFields({jsx:r,native:{Field:gr},character:e,characterIndex:c,onUpdate:l,onRemove:ce,deleteMode:u,readable:H})??[])]})`,
-    "compact character detail render",
-  );
-
-  patched = replaceOne(
-    patched,
-    "I=Object.entries(e.customFields??{}).map(([F,Q])=>[F,Q,At(Q)])",
-    `I=(${CLIENT_SYMBOL_EXPRESSION}?.filterCharacterTrackerDetailFields(e.customFields)??Object.entries(e.customFields??{})).map(([F,Q])=>[F,Q,At(Q)])`,
-    "featured character detail filter",
-  );
-  patched = replaceOne(
-    patched,
-    "function gs({character:e,onUpdate:a,sizeProfile:t,characterIndex:o}){",
-    "function gs({character:e,onUpdate:a,sizeProfile:t,characterIndex:o,mariBridgeDeleteMode:mariBridgeDeleteMode,mariBridgeOnRemove:mariBridgeOnRemove}){",
-    "featured character detail parameters",
-  );
-  patched = replaceOne(
-    patched,
-    'hidden:u("outfit"),value:e.outfit}].filter(d=>!d.hidden||i)',
-    `hidden:u("outfit"),value:e.outfit},...(${CLIENT_SYMBOL_EXPRESSION}?.resolveFeaturedCharacterTrackerDetailFields({jsx:r,character:e,characterIndex:o,onUpdate:a,onRemove:mariBridgeOnRemove})??[])].filter(d=>!d.hidden||i)`,
-    "featured character detail descriptors",
-  );
-  patched = replaceOne(
-    patched,
-    'children:s.map(d=>r.jsx(ps,{icon:d.icon,accessibleLabel:d.accessibleLabel,value:d.value,placeholder:d.placeholder,onSave:d.onSave,sizeProfile:t,fieldKey:d.key,lockKey:c(d.key),hidden:d.hidden,hideMode:i,onToggleHidden:()=>b(d.key)},d.key))',
-    'children:s.map(d=>d.mariBridgeOnRemove&&mariBridgeDeleteMode?r.jsxs("div",{className:"relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden",children:[r.jsx(ps,{icon:d.icon,accessibleLabel:d.accessibleLabel,value:d.value,placeholder:d.placeholder,onSave:d.onSave,sizeProfile:t,fieldKey:"outfit",lockKey:d.lockKey,hidden:!1,hideMode:!1,onToggleHidden:()=>{}}),r.jsx("button",{type:"button",onClick:d.mariBridgeOnRemove,title:`Remove ${d.accessibleLabel}`,"aria-label":`Remove ${d.accessibleLabel}`,className:"absolute right-0.5 top-1/2 z-[3] flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded text-[var(--destructive)] transition-all hover:bg-[var(--destructive)]/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--border)] active:scale-90",children:"×"})]},d.key):r.jsx(ps,{icon:d.icon,accessibleLabel:d.accessibleLabel,value:d.value,placeholder:d.placeholder,onSave:d.onSave,sizeProfile:t,fieldKey:d.mariBridgeOnRemove?"outfit":d.key,lockKey:d.mariBridgeOnRemove?d.lockKey:c(d.key),hidden:d.mariBridgeOnRemove?!1:d.hidden,hideMode:d.mariBridgeOnRemove?!1:i,onToggleHidden:d.mariBridgeOnRemove?()=>{}:()=>b(d.key)},d.key))',
-    "featured character detail rows",
-  );
-  patched = replaceOne(
-    patched,
-    "r.jsx(gs,{character:e,onUpdate:d,sizeProfile:f,characterIndex:g})",
-    "r.jsx(gs,{character:e,onUpdate:d,sizeProfile:f,characterIndex:g,mariBridgeDeleteMode:x,mariBridgeOnRemove:De})",
-    "featured character detail call",
-  );
-
-  patched = replaceOne(
-    patched,
-    "function Qi({persona:e,status:a,spriteExpression:t,trackerPanelSide:o,statDisplayMode:n,resolveStatIcon:i,personaStats:l,action:f,onSaveStatus:c,onUpdatePersonaStats:u,onAddPersonaStat:b,deleteMode:s,addMode:d,queuePersonaPortraitSave:p,flushPersonaPortraitSave:g,collapsed:x=!1,onToggleCollapsed:_}){",
-    "function Qi({persona:e,status:a,spriteExpression:t,trackerPanelSide:o,statDisplayMode:n,resolveStatIcon:i,personaStats:l,action:f,onSaveStatus:c,onUpdatePersonaStats:u,onAddPersonaStat:b,deleteMode:s,addMode:d,queuePersonaPortraitSave:p,flushPersonaPortraitSave:g,mariBridgeFields:mariBridgeFields,mariBridgeOnUpdateFields:mariBridgeOnUpdateFields,collapsed:x=!1,onToggleCollapsed:_}){",
-    "persona detail parameters",
-  );
-  patched = replaceOne(
-    patched,
-    "{fieldLocks:T,lockMode:w,onToggleFieldLock:C}=Ce()",
-    "{fieldLocks:T,lockMode:w,onToggleFieldLock:C,onUpdateFieldLocks:mariBridgeUpdateFieldLocks}=Ce()",
-    "persona detail lock context",
-  );
-  patched = replaceOne(
-    patched,
-    'r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:Y()})',
-    `r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:[${CLIENT_SYMBOL_EXPRESSION}?.shouldShowTrackerContent("persona-status",{surface:"dock"})!==!1&&(a||w||!le(T,zr()))?Y():null,...(${CLIENT_SYMBOL_EXPRESSION}?.renderPersonaTrackerDetailFields({jsx:r,native:{InlineEdit:se},fields:mariBridgeFields,onUpdateFields:mariBridgeOnUpdateFields,deleteMode:s,fieldLocks:T,lockMode:w,onToggleFieldLock:C,onUpdateFieldLocks:mariBridgeUpdateFieldLocks})??[])]})`,
-    "persona detail render",
-  );
-
-  patched = replaceOne(
-    patched,
-    "function Wl({activeChatId:e,activePersona:a,characterSpriteLookup:t,characterTrackerConfig:o,characterTrackerSettings:n,currentGameState:i,enabledAgentTypes:l,expressionSpritesEnabled:f,featuredCharacterCardKeys:c,flushPatch:u,gameStateRefreshing:b,orderedTrackerSections:s,patchField:d,patchPlayerStats:p,patchPlayerStatsMany:g,resolveSpriteCharacterId:x,spriteExpressions:_,trackerPanelCollapsedSections:A,trackerPanelSide:T,trackerPanelSizeProfile:w,trackerPanelThoughtBubbleDisplay:C,trackerStatDisplayMode:k,trackerPanelDockedThoughtsAlwaysVisible:v,trackerTemperatureUnit:j,toggleTrackerPanelSectionCollapsed:y,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N,resolveStatIcon:P,beforeCustomSections:B,afterCustomSections:W}){const X=va(),",
-    `function Wl({activeChatId:e,activePersona:a,characterSpriteLookup:t,characterTrackerConfig:o,characterTrackerSettings:n,currentGameState:i,enabledAgentTypes:l,expressionSpritesEnabled:f,featuredCharacterCardKeys:c,flushPatch:u,gameStateRefreshing:b,orderedTrackerSections:s,patchField:d,patchPlayerStats:p,patchPlayerStatsMany:g,resolveSpriteCharacterId:x,spriteExpressions:_,trackerPanelCollapsedSections:A,trackerPanelSide:T,trackerPanelSizeProfile:w,trackerPanelThoughtBubbleDisplay:C,trackerStatDisplayMode:k,trackerPanelDockedThoughtsAlwaysVisible:v,trackerTemperatureUnit:j,toggleTrackerPanelSectionCollapsed:y,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N,resolveStatIcon:P,beforeCustomSections:B,afterCustomSections:W}){${CLIENT_SYMBOL_EXPRESSION}?.useTrackerDetailFields(S);const X=va(),`,
-    "tracker detail subscription",
-  );
-  patched = replaceOne(
-    patched,
-    "V=Array.isArray(D?.customTrackerFields)?D.customTrackerFields:[]",
-    `mariBridgePersonaFields=Array.isArray(D?.customTrackerFields)?D.customTrackerFields:[],V=${CLIENT_SYMBOL_EXPRESSION}?.filterPersonaTrackerDetailFields(mariBridgePersonaFields)??mariBridgePersonaFields`,
-    "persona detail filter",
-  );
-  patched = replaceOne(
-    patched,
-    "onAddPersonaStat:ae,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N",
-    'onAddPersonaStat:ae,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N,mariBridgeFields:mariBridgePersonaFields,mariBridgeOnUpdateFields:oe=>p("customTrackerFields",oe)',
-    "persona detail props",
-  );
-  return patched;
+  return patchTrackerDetails(source, { findMatchingDelimiter, findNamedImportAlias });
 }
 
 export function createAssetReferenceVersioner(assetNames, fingerprint) {
@@ -221,33 +124,6 @@ function patchRoleplayCommandDraftWriter(source) {
   return result;
 }
 
-export function patchChatSettingsBridge(source) {
-  if (!source.includes("data-chat-agent-entry")) return null;
-  const pattern = /(?<jsx>[A-Za-z_$][\w$]*)\.jsxs\("div",\{(?<props>[^{}]{0,1400}?"data-chat-agent-entry":(?<agent>[A-Za-z_$][\w$]*)\.id[^{}]{0,1400}?),children:\[/gu;
-  const matches = [...source.matchAll(pattern)];
-  if (matches.length !== 2) {
-    throw new Error(`Mari Bridge native agent-settings patch expected two generic agent cards, found ${matches.length}`);
-  }
-  const insertions = matches.map((match) => {
-    const childrenStart = match.index + match[0].length - 1;
-    const childrenEnd = findMatchingDelimiter(source, childrenStart, "[", "]");
-    const prefix = source.slice(Math.max(0, match.index - 900), match.index);
-    const activePattern = new RegExp(
-      `const (?<active>[A-Za-z_$][\\w$]*)=[A-Za-z_$][\\w$]*\\.includes\\(${escapePattern(match.groups.agent)}\\.id\\)`,
-      "gu",
-    );
-    const activeMatches = [...prefix.matchAll(activePattern)];
-    const active = activeMatches.at(-1)?.groups?.active;
-    const expression = `${match.groups.jsx}.jsx("marinara-mari-bridge-agent-settings",{"agent-id":${match.groups.agent}.id})`;
-    return { index: childrenEnd, text: `,${active ? `${active}&&` : ""}${expression}` };
-  });
-  let patched = source;
-  for (const insertion of insertions.sort((left, right) => right.index - left.index)) {
-    patched = `${patched.slice(0, insertion.index)}${insertion.text}${patched.slice(insertion.index)}`;
-  }
-  return patched;
-}
-
 export function patchImpersonateSettingsBridge(source) {
   const marker = "ui.chatSettings.impersonatesection.useCyoaAsDirection";
   if (!source.includes(marker) || !source.includes("ui.chatSettings.impersonatesection.skipAgents")) return null;
@@ -274,7 +150,9 @@ export function patchImpersonateSettingsBridge(source) {
   const presetMatches = [...prefix.matchAll(presetPattern)];
   const presetId = presetMatches.at(-1)?.groups?.preset;
   if (!presetId) throw new Error("Mari Bridge Impersonate settings patch could not identify the native preset selection");
-  const insertion = `,${CLIENT_SYMBOL_EXPRESSION}?.renderNativeImpersonateSetting({react:globalThis.React,jsx:${match.groups.jsx},native:{SettingsSwitch:${match.groups.switch}},context:{presetId:${presetId}}})`;
+  const react = findNamedImportAlias(source, "vendor-react-", "r");
+  if (!react) throw new Error("Mari Bridge Impersonate settings patch could not identify the native React import");
+  const insertion = `,${CLIENT_SYMBOL_EXPRESSION}?.renderNativeImpersonateSetting({react:${react},jsx:${match.groups.jsx},native:{SettingsSwitch:${match.groups.switch}},context:{presetId:${presetId}}})`;
   const end = propsEnd + 2;
   return `${source.slice(0, end)}${insertion}${source.slice(end)}`;
 }
@@ -390,20 +268,15 @@ export function patchTrackerPanelBridge(source) {
     new RegExp(`\\{rerunTracker:(?<rerun>${identifier}),trackerRetryBusy:(?<busy>${identifier})\\}=${identifier}\\(`, "u"),
   )?.groups;
   if (!rerun) throw new Error("Mari Bridge tracker-section patch could not identify native rerun state");
-  const mapPattern = new RegExp(
-    `${escapePattern(list.groups.sections)}\\.map\\((?<item>${identifier})=>(?<render>${identifier})\\(\\k<item>\\)\\)`,
-    "gu",
-  );
   const wrappedMapPattern = new RegExp(
     `${escapePattern(list.groups.sections)}\\.map\\((?<item>${identifier})=>${identifier}\\.jsxs\\("div",\\{className:"contents",children:\\[\\k<item>==="custom"\\?(?<beforeCustom>${identifier}):null,(?<render>${identifier})\\(\\k<item>\\)\\]\\},\\k<item>\\)\\)`,
     "gu",
   );
-  const legacyMapMatches = [...body.matchAll(mapPattern)];
   const wrappedMapMatches = [...body.matchAll(wrappedMapPattern)];
-  if (legacyMapMatches.length + wrappedMapMatches.length !== 1) {
-    throw new Error(`Mari Bridge tracker-section patch expected one native section map, found ${legacyMapMatches.length + wrappedMapMatches.length}`);
+  if (wrappedMapMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one native section map, found ${wrappedMapMatches.length}`);
   }
-  const mapMatch = legacyMapMatches[0] ?? wrappedMapMatches[0];
+  const mapMatch = wrappedMapMatches[0];
   const react = findNamedImportAlias(source, "vendor-react-", "r");
   const jsx = findNamedImportAlias(source, "vendor-react-", "j");
   const sectionHeader = findNamedImportAlias(source, "world-custom-field-icons-", "S");
@@ -421,7 +294,6 @@ export function patchTrackerPanelBridge(source) {
   const empty = emptyMatches[0];
   const nativeMap = mapMatch[0];
   const bridgeSectionsExpression = `${CLIENT_SYMBOL_EXPRESSION}?.renderNativeTrackerSections({react:${react},jsx:${jsx},native:{SectionHeader:${sectionHeader},SectionIconButton:${sectionIconButton},TrackerReadabilityVeil:${readabilityVeil},EmptySection:${emptySection}},sections:[],renderSection:()=>null,context:{activeChatId:${list.groups.activeChat},enabledAgentTypes:${list.groups.enabledAgents},rerunTracker:${rerun.rerun},retryBusy:${rerun.busy},editMode:mariBridgeEditMode,emptyLabel:mariBridgeEmptyLabel,nativeSectionCount:${list.groups.sections}.length}})`;
-  const bridgeMap = `(${CLIENT_SYMBOL_EXPRESSION}?.renderNativeTrackerSections({react:${react},jsx:${jsx},native:{SectionHeader:${sectionHeader},SectionIconButton:${sectionIconButton},TrackerReadabilityVeil:${readabilityVeil},EmptySection:${emptySection}},sections:${list.groups.sections},renderSection:${mapMatch.groups.render},context:{activeChatId:${list.groups.activeChat},enabledAgentTypes:${list.groups.enabledAgents},rerunTracker:${rerun.rerun},retryBusy:${rerun.busy},editMode:mariBridgeEditMode,emptyLabel:mariBridgeEmptyLabel,nativeSectionCount:${list.groups.sections}.length}})??${nativeMap})`;
 
   const callPattern = new RegExp(`${escapePattern(jsx)}\\.jsx\\(${escapePattern(list.groups.component)},\\{`, "gu");
   const callMatches = [...source.matchAll(callPattern)];
@@ -471,9 +343,7 @@ export function patchTrackerPanelBridge(source) {
       `const mariBridgeRerunTarget=await ${CLIENT_SYMBOL_EXPRESSION}?.prepareTrackerRerun(${rerunAgent},{chatId:${rerunFunction.groups.rerunChat}});await ${rerunHook.groups.retry}(${rerunHook.groups.retryChat},[mariBridgeRerunTarget?.agentType??${rerunHook.groups.retryAgent}])`,
     ),
   );
-  if (legacyMapMatches.length === 1) {
-    patched = patched.replace(nativeMap, bridgeMap);
-  } else {
+  {
     const beforeCustom = mapMatch.groups.beforeCustom;
     const bridgedBeforeCustom = `[${beforeCustom},${bridgeSectionsExpression}]`;
     patched = patched.replace(
@@ -500,25 +370,13 @@ export function patchTrackerPanelBridge(source) {
 }
 
 function patchTrackerPanelRenderGuard({ source, jsx, empty, identifier }) {
-  const legacyRenderGuardPattern = new RegExp(
-    `(?<gameState>${identifier})&&${escapePattern(empty.groups.hasFixed)}\\?${escapePattern(jsx)}\\.jsx\\(`,
-    "gu",
-  );
-  const legacyRenderGuardMatches = [...source.matchAll(legacyRenderGuardPattern)];
-  if (legacyRenderGuardMatches.length === 1) {
-    return source.replace(
-      legacyRenderGuardMatches[0][0],
-      `${legacyRenderGuardMatches[0].groups.gameState}&&(${empty.groups.hasFixed}||${CLIENT_SYMBOL_EXPRESSION})?${jsx}.jsx(`,
-    );
-  }
-
   const expressionRenderGuardPattern = new RegExp(
     `(?<gameState>${identifier})&&\\((?<nativeSections>${identifier})\\.length>0\\|\\|(?<packages>${identifier})\\.length>0\\)\\?${escapePattern(jsx)}\\.jsx\\(`,
     "gu",
   );
   const expressionRenderGuardMatches = [...source.matchAll(expressionRenderGuardPattern)];
-  if (legacyRenderGuardMatches.length + expressionRenderGuardMatches.length !== 1) {
-    throw new Error(`Mari Bridge tracker-section patch expected one TrackerSectionList guard, found ${legacyRenderGuardMatches.length + expressionRenderGuardMatches.length}`);
+  if (expressionRenderGuardMatches.length !== 1) {
+    throw new Error(`Mari Bridge tracker-section patch expected one TrackerSectionList guard, found ${expressionRenderGuardMatches.length}`);
   }
   const match = expressionRenderGuardMatches[0];
   return source.replace(
@@ -623,8 +481,15 @@ export function patchRoleplayHudBridge(source) {
   }
   let patched = source.replace(
     pattern,
-    `${matches[0].groups.jsx}("div",{ref:Z=>${CLIENT_SYMBOL_EXPRESSION}?.mountNativeSlot(Z,"roleplay.hud"),className:(${CLIENT_SYMBOL_EXPRESSION}?.useTrackerSurfaces(${react}),${matches[0].groups.cn})("rpg-hud",`,
+    `${matches[0].groups.jsx}("div",{className:(${CLIENT_SYMBOL_EXPRESSION}?.useTrackerSurfaces(${react}),${matches[0].groups.cn})("rpg-hud",`,
   );
+  // Native package slots own mounting/props/cleanup. Only expose a package's
+  // existing tracker surface when another agent supplies its data (e.g. an
+  // aggregate tracker), without enabling that package's separate generation.
+  const packageGate = /(?<set>[A-Za-z_$][\w$]*)\.has\((?<item>[A-Za-z_$][\w$]*)\.id\)(?=&&!!\k<item>\.manifest\.entrypoints\.client&&\k<item>\.manifest\.contributions\?\.slots\?\.includes\("roleplay-tracker"\))/gu;
+  const packageGates = [...patched.matchAll(packageGate)];
+  if (packageGates.length !== 1) throw new Error(`Mari Bridge native package HUD visibility expected one gate, found ${packageGates.length}`);
+  patched = patched.replace(packageGate, `($<set>.has($<item>.id)||${CLIENT_SYMBOL_EXPRESSION}?.shouldShowTrackerSurface($<item>.id,{surface:"hud"}))`);
   for (const agentType of ["world-state", "character-tracker", "persona-stats", "quest"]) {
     const hasPattern = new RegExp(`(?<set>[A-Za-z_$][\\w$]*)\\.has\\(\"${agentType}\"\\)`, "gu");
     patched = patched.replace(hasPattern, `($<set>.has("${agentType}")||${CLIENT_SYMBOL_EXPRESSION}?.shouldShowTrackerSurface("${agentType}",{surface:"hud"}))`);
@@ -709,7 +574,16 @@ export function patchRoleplayBackgroundBridge(source) {
   const metadata = after.match(/[A-Za-z_$][\w$]*&&(?<metadata>[A-Za-z_$][\w$]*)\.enableAgents&&/u)?.groups?.metadata;
   if (!metadata) throw new Error("Mari Bridge Roleplay background patch could not identify chat metadata");
   const { jsx, component, url, blur } = match.groups;
-  return source.replace(
+  const react = findNamedImportAlias(source, "vendor-react-", "r");
+  const selector = new RegExp(`(?<variable>${escapePattern(blur)})=(?<store>[A-Za-z_$][\\w$]*)\\((?<state>[A-Za-z_$][\\w$]*)=>\\k<state>\\.chatBackgroundBlur\\)`, "gu");
+  if (!react || [...source.matchAll(selector)].length !== 1) throw new Error("Mari Bridge background patch could not identify the native blur subscription");
+  // A package blur change can retain the same native image URL. Subscribe at
+  // the native renderer so it updates without overwriting global preferences.
+  const subscribed = source.replace(selector, (...args) => {
+    const {variable,store,state} = args.at(-1);
+    return `${variable}=(${CLIENT_SYMBOL_EXPRESSION}?.useBackgroundVersion(${react}),${store}(${state}=>${state}.chatBackgroundBlur))`;
+  });
+  return subscribed.replace(
     pattern,
     `${jsx}.jsx(${component},{...(${CLIENT_SYMBOL_EXPRESSION}?.resolveBackgroundProps(${metadata},${url},${blur})??{url:${url},blurPx:${blur}})})`,
   );
@@ -772,6 +646,8 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   const indexPath = join(sourceRoot, "index.html");
   const index = await readFile(indexPath, "utf8");
   const overlayImplementation = await readFile(fileURLToPath(import.meta.url));
+  const trackerPatchImplementation = await readFile(new URL("./tracker-detail-patch.js", import.meta.url));
+  const nativeFingerprint = await fingerprintOverlayInputs([sourceRoot]);
   const bridgeClientRuntimeSource = await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "client", "runtime.js"), "utf8");
   const trackerDetailRegistrySource = await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "client", "tracker-detail-field-registry.js"), "utf8");
   const trackerSurfaceRegistrySource = await readFile(join(dirname(fileURLToPath(import.meta.url)), "..", "client", "tracker-surface-registry.js"), "utf8");
@@ -784,6 +660,8 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     .update(OVERLAY_FORMAT_VERSION)
     .update("\0")
     .update(overlayImplementation)
+    .update(trackerPatchImplementation)
+    .update(nativeFingerprint)
     .update("\0")
     .update(bridgeClientRuntime)
     .update("\0")
@@ -847,7 +725,6 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     .filter((entry) => entry.isFile() && entry.name.endsWith(".js"))
     .map((entry) => entry.name);
   let chatInputPatchCount = 0;
-  let chatSettingsPatchCount = 0;
   let impersonateSettingsPatchCount = 0;
   let agentSuitePatchCount = 0;
   let slashCommandListPatchCount = 0;
@@ -876,12 +753,6 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     if (chatInputPatched !== null) {
       assetSource = chatInputPatched;
       chatInputPatchCount += 1;
-      changed = true;
-    }
-    const chatSettingsPatched = attemptAssetPatch("client.native-agent-settings", patchChatSettingsBridge, assetSource);
-    if (chatSettingsPatched !== null) {
-      assetSource = chatSettingsPatched;
-      chatSettingsPatchCount += 1;
       changed = true;
     }
     const impersonateSettingsPatched = attemptAssetPatch("client.impersonate-settings", patchImpersonateSettingsBridge, assetSource);
@@ -949,7 +820,6 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   const patchExpectations = [
     ["client.command-drafts", chatInputPatchCount, 2, "chat input assets"],
     ["client.command-drafts", roleplayDraftPlaceholderPatchCount, 1, "Roleplay draft placeholder asset"],
-    ["client.native-agent-settings", chatSettingsPatchCount, 1, "chat settings asset"],
     ["client.impersonate-settings", impersonateSettingsPatchCount, 1, "Impersonate settings asset"],
     ["client.agent-suite-tracker-data", agentSuitePatchCount, 1, "Agent Suite asset"],
     ["client.commands", slashCommandListPatchCount, 1, "slash command list asset"],

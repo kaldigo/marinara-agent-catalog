@@ -72,7 +72,6 @@
 
   // src/client/recall.js
   const RECALL_PREFIX = "mari-better-impersonate:recall:";
-  const LEGACY_GUIDANCE_PREFIX = "mari-si-guidance:";
 
   function emptyRecall() {
     return { lastGuidance: "", lastGeneratedDraft: "" };
@@ -90,10 +89,7 @@
           lastGeneratedDraft: typeof parsed?.lastGeneratedDraft === "string" ? parsed.lastGeneratedDraft : "",
         };
       }
-      return {
-        lastGuidance: storage.getItem(`${LEGACY_GUIDANCE_PREFIX}${id}`) || "",
-        lastGeneratedDraft: "",
-      };
+      return emptyRecall();
     } catch {
       return emptyRecall();
     }
@@ -108,7 +104,6 @@
         lastGuidance: recall.lastGuidance,
         lastGeneratedDraft: recall.lastGeneratedDraft,
       }));
-      storage.removeItem?.(`${LEGACY_GUIDANCE_PREFIX}${id}`);
     } catch {
       // Recall is optional and must never block draft generation.
     }
@@ -130,7 +125,7 @@
     return next;
   }
 
-  const __test = Object.freeze({ RECALL_PREFIX, LEGACY_GUIDANCE_PREFIX });
+  const __test = Object.freeze({ RECALL_PREFIX });
 
   // src/client/request.js
   function buildImpersonateDraftRequest(mode, guidance) {

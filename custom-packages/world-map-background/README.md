@@ -22,6 +22,6 @@ background renderer. World Maps owns the active location and reference-image
 choice. This package only translates that choice into Marinara's native
 background metadata, delegates the live value to Marinara's own background
 store, and contributes the one missing blur field to its existing native agent
-card. Mari Bridge supplies lifecycle, `spatial.context`, `chat.background`, and
-`agent.settings` seams; it does not supply a replacement background or settings
-system.
+card through Marinara's native `chat-settings` slot. Mari Bridge supplies only
+lifecycle, `spatial.context`, and `chat.background` hooks. The current package
+targets Engine 2.4.6 only.

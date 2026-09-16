@@ -73,13 +73,13 @@ preserve every valid note.
 
 ## Native UI extensions
 
-Mari Bridge supplies only the two placements Marinara does not expose to normal
-agents:
+GM Notes uses the following native surfaces on Engine 2.4.6:
 
 - a GM Notes section in the docked Tracker panel, based on the native Custom
   Tracker and Quest Board interaction patterns;
-- a compact Roleplay HUD item, based on the native tracker and quest HUD
-  patterns.
+- a compact Roleplay toolbar item mounted through Marinara's native
+  `roleplay-tracker` slot and `toolbar` view. Bridge only adds the visibility
+  predicate when Unified Tracker provides GM Notes without the standalone agent.
 
 For the docked panel, Mari Bridge owns the direct native section element,
 `SectionHeader`, persisted collapse control, active-agent gating, edit-mode
@@ -105,7 +105,7 @@ Agent Suite owns its normal JSON editor, Save/Reset, dirty-state guard, AI Edit,
 and refresh behavior; GM Notes supplies only its state reader, validation, and a
 merge-safe GameState patch that preserves other package namespaces.
 
-Mari Bridge is required for the result/context hooks and these native UI slots.
+Mari Bridge is required for the result/context hooks and docked tracker section.
 If the required capabilities are unavailable, GM Notes fails closed instead of
 falling back to DOM listeners or a parallel implementation.
 

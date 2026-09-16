@@ -16,6 +16,8 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/server/chat-registry.js",
   "src/server/spatial-directive-compat.js",
   "src/server/client-overlay.js",
+  "src/server/tracker-detail-patch.js",
+  "src/server/overlay-fingerprint.js",
   "src/server/server-overlay.js",
   "src/client/runtime.js",
   "src/client/tracker-detail-field-registry.js",

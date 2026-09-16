@@ -1,12 +1,20 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "capabilityApi": {
+    "major": 1,
+    "minor": 14
+  },
+  "builtAgainst": {
+    "engineVersion": "2.4.6",
+    "engineCommit": "cc783dd194bacd97379191b9d490939afbe6759e"
+  },
   "id": "gm-notes",
   "name": "GM Notes",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Maintains a focused ledger of durable reminders, unresolved threads, and continuity diagnostics.",
   "engine": {
-    "min": "2.4.4",
-    "maxExclusive": "2.4.5"
+    "min": "2.4.6",
+    "maxExclusive": "2.4.7"
   },
   "kind": [
     "agent"
@@ -18,7 +26,9 @@
   },
   "contributions": {
     "slots": [
-      "chat-runtime"
+      "chat-runtime",
+      "chat-settings",
+      "roleplay-tracker"
     ]
   },
   "files": [
@@ -39,8 +49,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "17066f27be699ffc29a43fef6845414f0f64789fc417d737645bcb71b63bed79",
-      "bytes": 49423
+      "sha256": "e81fb907403214c271a49eaa00866b41e48a31c6713f036d164b3b0a551884c1",
+      "bytes": 49552
     },
     {
       "path": "server.mjs",
@@ -49,8 +59,8 @@
     },
     {
       "path": "src/server/backfill.js",
-      "sha256": "fd2d7d6d2f357e4d553b45c2078ded0eac1cb590982625f3ce3826df2fd4450d",
-      "bytes": 15090
+      "sha256": "fe160b0b889053041d01c2233c0089482ad13968d040ea89d020aa16ea6e62b9",
+      "bytes": 15421
     },
     {
       "path": "src/server/index.js",

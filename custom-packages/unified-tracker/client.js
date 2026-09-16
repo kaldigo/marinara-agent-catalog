@@ -155,17 +155,19 @@ const cleanup = await activateClientWithMariBridge(
   {
     consumerId: "unified-tracker",
     api: { major: 1, minMinor: 10 },
-    require: ["chat.active", "client.bridge-first", "consumer.sessions", "runtime.health", "tracker.surfaces", "ui.agent-settings"],
+    require: ["chat.active", "client.bridge-first", "consumer.sessions", "runtime.health", "tracker.surfaces"],
   },
   async (bridgeSession) => {
-    const state = { byChat: new Map(), chats: new Map(), elements: new Set() };
+    const state = { byChat: new Map(), chats: new Map(), elements: new Set(), saves: new Map(), refreshVersions: new Map() };
 
     async function refresh(chatId) {
       if (!chatId) return;
+      const revision = (state.refreshVersions.get(chatId) ?? 0) + 1;
+      state.refreshVersions.set(chatId, revision);
       const chat = await api(`/chats/${encodeURIComponent(chatId)}`).catch(() => null);
-      if (!chat) return;
+      if (!chat || state.refreshVersions.get(chatId) !== revision) return;
       state.chats.set(chatId, chat);
-      state.byChat.set(chatId, normalizeUnifiedSettings(asRecord(chat.metadata)[NAMESPACE]));
+      if (!state.saves.has(chatId)) state.byChat.set(chatId, normalizeUnifiedSettings(asRecord(chat.metadata)[NAMESPACE]));
       bridgeSession.tracker.refreshSurfaces();
       for (const element of state.elements) if (element.chatId === chatId) void element.render();
     }
@@ -186,23 +188,26 @@ const cleanup = await activateClientWithMariBridge(
         state.elements.add(this);
         this.addEventListener("marinara-capability-props", this);
         this.addEventListener("change", this);
-        this.addEventListener("input", this);
         void refresh(this.chatId).then(() => this.render());
       }
       disconnectedCallback() {
         state.elements.delete(this);
         this.removeEventListener("marinara-capability-props", this);
         this.removeEventListener("change", this);
-        this.removeEventListener("input", this);
       }
       get chatId() {
         return String(this.capabilityProps?.chatId ?? bridgeSession.chat.active.getSnapshot().chatId ?? "");
       }
       handleEvent(event) {
-        if (event.type === "marinara-capability-props") return void refresh(this.chatId).then(() => this.render());
+        if (event.type === "marinara-capability-props") {
+          // Publishing tracker surfaces rerenders the native host. Fetch only
+          // when its chat changes, otherwise props -> refresh -> props loops.
+          if (this._propsChatId === this.chatId) return;
+          this._propsChatId = this.chatId;
+          return void refresh(this.chatId).then(() => this.render());
+        }
         const target = event.target;
         if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
-        if (event.type === "input" && target instanceof HTMLTextAreaElement) return;
         void this.save(target);
       }
       async save(target) {
@@ -216,15 +221,25 @@ const cleanup = await activateClientWithMariBridge(
           next = normalizeUnifiedSettings({ ...current, sections });
         } else if (target.dataset.fragment) {
           next = normalizeUnifiedSettings({ ...current, fragments: { ...current.fragments, [target.dataset.fragment]: target.value } });
-        } else if (target.dataset.questPreset) {
+        } else if (target.hasAttribute("data-quest-preset")) {
           next = normalizeUnifiedSettings({ ...current, questPreset: target.value });
-        } else if (target.dataset.mainPrompt) {
+        } else if (target.hasAttribute("data-main-prompt")) {
           next = normalizeUnifiedSettings({ ...current, addToMainPrompt: target.checked });
         }
         state.byChat.set(chatId, next);
         bridgeSession.tracker.refreshSurfaces();
-        await patchMetadata(chatId, { [NAMESPACE]: next });
-        await refresh(chatId);
+        // Save in interaction order. Older responses must not replace newer
+        // local edits or write an older complete settings object last.
+        const previous = state.saves.get(chatId) ?? Promise.resolve();
+        const task = previous.catch(() => {}).then(() => patchMetadata(chatId, { [NAMESPACE]: next }));
+        state.saves.set(chatId, task);
+        try { await task; }
+        finally {
+          if (state.saves.get(chatId) === task) {
+            state.saves.delete(chatId);
+            await refresh(chatId);
+          }
+        }
       }
       render() {
         if (this.getAttribute("view") !== "settings" || !this.chatId) {
@@ -257,7 +272,6 @@ const cleanup = await activateClientWithMariBridge(
     }
 
     if (!customElements.get(TAG)) customElements.define(TAG, UnifiedTrackerSettings);
-    const disposeSettings = bridgeSession.ui.register({ id: "settings", slot: "agent.settings", agentIds: [NAMESPACE], view: "settings" });
     const disposeSurfaces = bridgeSession.tracker.registerSurfaceOverrides({
       id: "enabled-sections",
       resolve({ chatId, agentType, content, surface }) {
@@ -297,7 +311,6 @@ const cleanup = await activateClientWithMariBridge(
       window.removeEventListener("marinara-capability-server-event", onCapabilityEvent);
       disposeChat();
       disposeSurfaces();
-      disposeSettings();
     };
   },
 );

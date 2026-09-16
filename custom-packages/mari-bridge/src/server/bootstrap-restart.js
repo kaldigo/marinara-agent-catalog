@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 function sanitizedEnvironment(extra) {
@@ -22,6 +22,14 @@ function withoutMariBridgeImports(value) {
     retained.push(token);
   }
   return retained.join(" ");
+}
+
+function withoutMariBridgeExecArgs(values) {
+  return values.filter((value, index) => {
+    if (value === "--import" && values[index + 1]?.includes("mari-bridge")) return false;
+    if (values[index - 1] === "--import" && value.includes("mari-bridge")) return false;
+    return !(value.startsWith("--import=") && value.includes("mari-bridge"));
+  });
 }
 
 export async function schedulePackageBootstrapRestart(context, bootstrapPath, options = {}) {
@@ -49,20 +57,37 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
   }
   await writeFile(attemptFile, `${JSON.stringify({ attempts, at: now, status: "scheduled" }, null, 2)}\n`);
   const restart = async () => {
-    const inheritedExecArgs = process.execArgv.filter(
-      (argument) => !(argument.startsWith("--import=") && argument.includes("mari-bridge")),
-    );
+    const inheritedExecArgs = withoutMariBridgeExecArgs(process.execArgv);
     const entry = process.argv[1];
     if (!entry) throw new Error("Mari Bridge cannot reconstruct the Marinara entrypoint");
+    const engineRoot = process.env.MARI_BRIDGE_ENGINE_ROOT || resolve(dirname(entry), "..", "..", "..");
+    const supervised = process.env.MARINARA_RESTART_SUPERVISOR === String(process.ppid);
+    const alreadyPreloaded = globalThis[Symbol.for("marinara.mari-bridge.kernel.v1")]?.active === true;
     await context.app.close();
-    const args = [...inheritedExecArgs, `--import=${pathToFileURL(bootstrapPath).href}`, entry, ...process.argv.slice(2)];
+    // A version update uses the existing native supervisor and stable preload.
+    if (supervised && alreadyPreloaded) {
+      process.exit(75);
+      return;
+    }
+    const nativeEntry = join(engineRoot, "packages", "server", "dist", "index.js");
+    const nativeSupervisor = join(engineRoot, "scripts", "run-server.mjs");
+    await readFile(nativeSupervisor);
+    const args = [
+      ...inheritedExecArgs,
+      `--import=${pathToFileURL(bootstrapPath).href}`,
+      nativeSupervisor,
+      nativeEntry,
+      ...process.argv.slice(2),
+    ];
     const environment = sanitizedEnvironment({
       MARI_BRIDGE_BOOTSTRAPPED: "1",
       NODE_OPTIONS: withoutMariBridgeImports(process.env.NODE_OPTIONS),
     });
     if (process.platform === "win32") {
       const child = spawn(process.execPath, args, {
-        detached: true,
+        // Keep console signal delivery; restart ownership belongs to the native
+        // supervisor we are launching, never a detached orphan server.
+        detached: false,
         env: environment,
         stdio: "inherit",
         windowsHide: true,
@@ -71,8 +96,11 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
         child.once("spawn", resolve);
         child.once("error", reject);
       });
-      child.unref();
-      process.exit(0);
+      // Keep the first-install launcher alive until its native supervisor exits.
+      // Exiting immediately can close the Windows process/console job before
+      // the replacement has even executed its preload.
+      const code = await new Promise((resolve) => child.once("close", (status) => resolve(status ?? 1)));
+      process.exit(code);
     }
     process.execve(process.execPath, [process.execPath, ...args], environment);
   };
@@ -87,4 +115,4 @@ export async function schedulePackageBootstrapRestart(context, bootstrapPath, op
   return { scheduled: true, reason: options.reason ?? "first-start" };
 }
 
-export const __test = Object.freeze({ withoutMariBridgeImports });
+export const __test = Object.freeze({ withoutMariBridgeImports, withoutMariBridgeExecArgs });

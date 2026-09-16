@@ -71,7 +71,7 @@ async function activateClientWithMariBridge(input, activateConsumer) {
 // src/client/constants.js
 const PACKAGE_ID = "pwa-helper";
 const PACKAGE_NAME = "PWA Helper";
-const PACKAGE_VERSION = "1.0.8";
+const PACKAGE_VERSION = "1.0.9";
 const ELEMENT_TAG = "marinara-capability-pwa-helper";
 const RUNTIME_KEY = "__marinaraPwaHelperRuntime";
 const PUBLIC_API_KEY = "marinaraPwaHelper";
@@ -178,7 +178,8 @@ function createWakeLockController({ setWakeLockStatus, warn }) {
     setWakeLockStatus("released", "");
   }
 
-  function onSentinelReleased() {
+  function onSentinelReleased(releasedSentinel) {
+    if (sentinel !== releasedSentinel) return;
     sentinel = null;
     publishStatus();
     if (shouldHoldWakeLock()) {
@@ -205,9 +206,14 @@ function createWakeLockController({ setWakeLockStatus, warn }) {
 
     publishStatus();
     requestPromise = navigator.wakeLock.request("screen")
-      .then((nextSentinel) => {
+      .then(async (nextSentinel) => {
+        // The request can finish after Stop, unloading, or hiding the page.
+        if (!shouldHoldWakeLock()) {
+          await nextSentinel.release();
+          return null;
+        }
         sentinel = nextSentinel;
-        sentinel.addEventListener("release", onSentinelReleased, { once: true });
+        sentinel.addEventListener("release", () => onSentinelReleased(nextSentinel), { once: true });
         publishStatus();
         return sentinel;
       })
@@ -409,6 +415,7 @@ function createGenerationMonitor({ bridgeGeneration, wakeLock, setGenerationStat
 
   function reconcileCurrentSnapshot() {
     reconcileFromSnapshot(bridgeGeneration.getSnapshot());
+    void wakeLock.reconcile();
   }
 
   function addListener(target, type, listener, options) {
@@ -429,10 +436,7 @@ function createGenerationMonitor({ bridgeGeneration, wakeLock, setGenerationStat
       return;
     }
 
-    addListener(document, "visibilitychange", () => {
-      void wakeLock.reconcile();
-      reconcileCurrentSnapshot();
-    });
+    addListener(document, "visibilitychange", reconcileCurrentSnapshot);
     addListener(window, "pageshow", reconcileCurrentSnapshot);
     addListener(window, "focus", reconcileCurrentSnapshot);
 

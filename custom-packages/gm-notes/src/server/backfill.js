@@ -245,6 +245,11 @@ async function latestGameState(hostRequest, chatId) {
     method: "GET",
     path: `/api/chats/${encodeURIComponent(chatId)}/game-state`,
   });
+  // Imported/history-only chats may not have run a tracker yet. Treat their
+  // native null snapshot as empty context; the normal manual GameState PATCH
+  // creates a snapshot if this batch actually produces notes. Re-read before
+  // applying, so concurrent native state is still preserved.
+  if (gameState == null) return {};
   if (!gameState || typeof gameState !== "object") {
     throw new Error("GM Notes backfill requires a committed Roleplay GameState.");
   }

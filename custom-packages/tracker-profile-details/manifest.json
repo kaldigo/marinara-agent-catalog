@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "tracker-profile-details",
   "name": "Tracker Profile Details",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Shows selected GameState custom fields as ordered native character and persona profile details.",
   "engine": {
-    "min": "2.4.4",
-    "maxExclusive": "2.4.5"
+    "min": "2.4.6",
+    "maxExclusive": "2.4.7"
   },
   "kind": [
     "agent"

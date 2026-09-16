@@ -7,7 +7,7 @@ const cleanupPresenceClient = await activateClientWithMariBridge(
   {
     consumerId: PACKAGE_ID,
     api: { major: 1, minMinor: 0 },
-    require: ["chat.active", "client.bridge-first", "commands", "consumer.sessions", "runtime.health", "ui.agent-settings"],
+    require: ["chat.active", "client.bridge-first", "commands", "consumer.sessions", "runtime.health"],
   },
   async (bridgeSession) => {
     class PresenceElement extends HTMLElement {
@@ -88,12 +88,6 @@ const cleanupPresenceClient = await activateClientWithMariBridge(
 
     if (!customElements.get(TAG_NAME)) customElements.define(TAG_NAME, PresenceElement);
 
-    const disposeSettings = bridgeSession.ui.register({
-      id: "settings",
-      slot: "agent.settings",
-      agentIds: [PACKAGE_ID],
-      view: "settings",
-    });
     const disposeCommands = [
       bridgeSession.commands.register({
         id: "presence",
@@ -118,7 +112,6 @@ const cleanupPresenceClient = await activateClientWithMariBridge(
 
     return () => {
       disposeCommands.splice(0).reverse().forEach((dispose) => dispose());
-      disposeSettings();
     };
   },
 );

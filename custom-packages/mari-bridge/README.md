@@ -36,19 +36,23 @@ The decision order is:
 Bridge UI slots mount inside native React surfaces. They do not authorize a
 consumer to create a parallel settings system or application shell. Added UI
 must follow the matching native component's interactions as well as its visual
-tokens. Standard agent settings stay in Marinara's standard editor; an
-`agent.settings` contribution may add only a missing package-specific control.
+tokens. Standard agent settings stay in Marinara's standard editor. Package
+controls use the native `chat-settings` slot on the existing agent card.
 
 ## Current implementation boundary
 
-Version `1.0.41` includes the tracker surface registry in the stable installed
-runtime, fixing client overlay startup after a normal package installation.
-It supports Marinara Engine 2.4.4 and keeps the injected client
+Version `1.0.42` targets Marinara Engine **2.4.6 only**. Previous Engine releases
+and the retired Bridge `agent.settings` / `roleplay.hud` mounts are unsupported.
+Settings and GM Notes toolbar elements now use native package slots. The
+remaining tracker hook contributes descriptors to native field editors and
+cards; it discovers current component locals from semantic props, not minifier
+names. See [the implementation report](docs/ENGINE-2.4.6-UPDATE.md) for tests and
+the responsibilities that still need Bridge hooks. This release keeps the injected client
 kernel available when an optional native UI hook drifts. It also adds
 package-owned structured agent result types, committed and agent-facing
 tracker-context sections, package-owned filtering of native Custom Tracker
 context fields, native Agent Suite tracker-data registrations, and
-native tracker-section contributions and Roleplay HUD mount points. Agent Suite tracker-data registrations receive a
+native tracker-section contributions and package visibility hooks. Agent Suite tracker-data registrations receive a
 post-save callback after Marinara's native GameState refresh, allowing their
 package-owned surfaces to invalidate cached display data immediately. Dry-run
 generation now accepts native generation guidance, supports provider-level
@@ -58,7 +62,7 @@ native Impersonate settings section also receives a native `SettingsSwitch`
 for presets that already contain their own impersonation instructions. When a
 specific preset and that switch are active, dry-run impersonation omits only
 the normal Impersonate prompt template; guidance and continuation prefills keep
-their native roles. Engine 2.4.4 main-generation tracker context also receives
+their native roles. Engine 2.4.6 main-generation tracker context still needs
 a temporary compatibility shim that excludes hidden character fields, matching
 the native Agent context compactor; remove it after the upstream committed
 tracker formatter adopts that behavior. Tracker
@@ -72,7 +76,7 @@ server distribution before launch, patch both preset assembly and no-preset prov
 preparation, and emit native active-chat and generation-controller events. The
 server overlay also filters only the malformed legacy character custom-field
 entry `{ "": null }` from tracker history, preservation, and lock merges. This
-is an Engine 2.4.4 compatibility shim and should be removed once upstream
+remains necessary on Engine 2.4.6 and should be removed once upstream
 normalizes character custom-field keys at ingestion.
 The installed package is only the versioned installer and restart handoff; consumer
 ordering no longer depends on its activation. The injected runtime also owns per-chat streamed dry runs through
@@ -99,8 +103,9 @@ the native lorebook scan when an
 Outlet macro is nested inside a character/persona field, then carries the
 native Outlet map into the deferred per-character resolution pass.
 
-Roleplay HUD hosts use a layout-transparent wrapper, so contributed widgets are
-native flex items and inherit the HUD's exact alignment and `gap-0.5` spacing.
+Roleplay toolbar contributions use Marinara's native `roleplay-tracker` slot
+and `toolbar` view, including native layout, props and cleanup. Bridge adds only
+the missing visibility predicate for GM Notes when Unified Tracker owns it.
 The `chat.background` client capability binds Marinara's existing Roleplay
 background store at its native selector and lets an active-chat consumer apply
 an already-persisted URL and blur immediately. Consumers do not render a second
@@ -108,7 +113,9 @@ background or own a competing cache. An early active-chat write is retained and
 replayed as soon as the native store binds, so package activation order cannot
 drop the initial background. The `spatial.context` capability observes the
 shared native TanStack Query cache and publishes successful spatial-context
-updates from World Maps without intercepting requests or probing its UI.
+updates from World Maps. A scoped fetch observer also publishes successful
+spatial writes performed outside that query cache; it does not change requests
+or responses. Consumers never probe the World Maps UI.
 The server overlay also normalizes model-emitted XML-like spatial commands such
 as `<spatial_move: destination_id="location-id"/>` immediately before native
 World Maps parsing. The compatibility stream filter hides that form while it is
@@ -127,14 +134,18 @@ version and preflights every target module and anchor. A version mismatch,
 missing module, or changed anchor creates no patched server and leaves native
 Marinara untouched. For a supported Engine, the complete built server tree is
 copied into `DATA_DIR/mari-bridge/server` and patched on disk. Its metadata
-records the Engine and Mari Bridge versions; a Bridge version change rebuilds
-the copy. The live process then starts from that copied `index.js`, with the
+records the Engine and Mari Bridge versions and hashes native distributions
+plus patch implementation. Rebuilding Engine without changing its version also
+invalidates both overlays. An entry resolver loads the copied `index.js` in the
+same supervised server process, with the
 original Engine root carried explicitly and runtime dependencies linked to the
 native installation.
 
-The package writes a stable preload under `DATA_DIR` and contains the POSIX
-first-start `execve` bounce with a persistent loop guard. The direct local
-launcher and restart path are tested; live Docker/POSIX self-bounce verification
+The package writes a stable preload under `DATA_DIR`. First installation starts
+the native supervisor, using `execve` on POSIX or a retained launcher on Windows.
+Subsequent updates close the app and request the supervisor's native exit-75
+restart. A persistent loop guard bounds bootstrap attempts. Windows first install,
+forced update and live native restart are tested; Docker/POSIX self-bounce verification
 remains required before publication.
 
 ## Intended outcome
@@ -149,8 +160,8 @@ The bridge provides six broad capability groups:
 
 1. Prompt assembly control: named-section suppression, explicit-depth
    injection, and message transforms at defined processing stages.
-2. Native client extension points: inline agent-card additions, composer
-   slots, tracker surfaces, and Roleplay HUD contributions without consumer DOM
+2. Native client extension points: composer slots, tracker surfaces, and
+   package visibility predicates without consumer DOM
    observation. These extend native surfaces; they do not replace them.
 3. Lifecycle infrastructure: compatibility checks, package registration,
    prompt inspection, patch diagnostics, and safe failure when Marinara changes.
@@ -200,6 +211,9 @@ jobs and never fall back to the old bridge.
 
 ## Documents
 
+- `docs/ENGINE-2.4.6-UPDATE.md` — implemented changes, final evidence and limits.
+- `docs/ENGINE-2.4.6-AUDIT.md` — historical pre-update comparison, reproduced
+  compatibility failures, native API overlap, and the required update plan.
 - `docs/ARCHITECTURE.md` — design, lifecycle, persistence, and patch strategy.
 - `docs/DECISIONS.md` — decisions already made and alternatives deliberately
   rejected or deferred.

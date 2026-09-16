@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "group-sort-order",
   "name": "Group Sort Order",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Tracks the next roleplay participant across turns using native prompt, generation, and composer hooks.",
   "engine": {
-    "min": "2.4.4",
-    "maxExclusive": "2.4.5"
+    "min": "2.4.6",
+    "maxExclusive": "2.4.7"
   },
   "kind": [
     "agent"

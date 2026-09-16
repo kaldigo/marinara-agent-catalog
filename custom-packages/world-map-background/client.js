@@ -73,7 +73,7 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
   {
     consumerId: "world-map-background",
     api: { major: 1, minMinor: 4 },
-    require: ["chat.active", "chat.background", "client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health", "spatial.context", "ui.agent-settings"],
+    require: ["chat.active", "chat.background", "client.bridge-first", "consumer.sessions", "generation.lifecycle", "runtime.health", "spatial.context"],
   },
   async (bridgeSession) => {
     const PACKAGE_ID = "world-map-background";
@@ -130,12 +130,6 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
 
     if (!customElements.get(TAG_NAME)) customElements.define(TAG_NAME, WorldMapBackgroundElement);
 
-    const disposeSettings = bridgeSession.ui.register({
-      id: "settings",
-      slot: "agent.settings",
-      agentIds: [PACKAGE_ID],
-      view: "settings",
-    });
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
       state.activeChatId = chatId || "";
       if (state.activeChatId) void synchronize(state.activeChatId);
@@ -268,7 +262,6 @@ const cleanupWorldMapBackgroundClient = await activateClientWithMariBridge(
       disposeSpatial();
       disposeGeneration();
       disposeChat();
-      disposeSettings();
     };
   },
 );

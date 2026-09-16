@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "unified-tracker",
   "name": "Unified Tracker",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Combines selected native tracker domains into one structured Roleplay post-processing request.",
   "engine": {
-    "min": "2.4.4",
-    "maxExclusive": "2.4.5"
+    "min": "2.4.6",
+    "maxExclusive": "2.4.7"
   },
   "kind": [
     "agent"
@@ -18,7 +18,8 @@
   },
   "contributions": {
     "slots": [
-      "chat-runtime"
+      "chat-runtime",
+      "chat-settings"
     ]
   },
   "files": [
@@ -39,8 +40,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "ec46e446fb294babe78d8c15f1b46924d8ee2eaf2e6be7278f6c18aca5b9b210",
-      "bytes": 17192
+      "sha256": "08a8895b55718b4d298860e23a4524d174a4f5e0b99e6704b30300e8e0eb7fd0",
+      "bytes": 17845
     },
     {
       "path": "server.mjs",
