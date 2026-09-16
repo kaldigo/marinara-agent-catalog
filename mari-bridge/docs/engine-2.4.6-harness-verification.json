@@ -1,0 +1,343 @@
+{
+  "recordedAt": "2026-09-16T10:45:10.079Z",
+  "workspaceRoot": "E:\\Projects\\Marinara Engine Plugins",
+  "engine": {
+    "version": "2.4.6",
+    "commit": "cc783dd194bacd97379191b9d490939afbe6759e",
+    "runtime": "Windows Node 25.8.0",
+    "build": ".codex-tmp/bridge-audit-engine-246"
+  },
+  "bridgeVersion": "1.0.42",
+  "packageChecks": [
+    {
+      "id": "_mari-bridge",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-_mari-bridge.log",
+      "completedAt": "2026-09-16T10:02:50.072Z"
+    },
+    {
+      "id": "mari-bridge",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-mari-bridge.log",
+      "completedAt": "2026-09-16T10:26:52.894Z"
+    },
+    {
+      "id": "mari-bridge-smoke",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-mari-bridge-smoke.log",
+      "completedAt": "2026-09-16T10:02:53.246Z"
+    },
+    {
+      "id": "better-impersonate",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-better-impersonate.log",
+      "completedAt": "2026-09-16T10:30:06.429Z"
+    },
+    {
+      "id": "gm-notes",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-gm-notes.log",
+      "completedAt": "2026-09-16T10:05:40.446Z"
+    },
+    {
+      "id": "group-sort-order",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-group-sort-order.log",
+      "completedAt": "2026-09-16T10:02:56.252Z"
+    },
+    {
+      "id": "presence",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-presence.log",
+      "completedAt": "2026-09-16T10:30:07.400Z"
+    },
+    {
+      "id": "pwa-helper",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-pwa-helper.log",
+      "completedAt": "2026-09-16T10:21:28.566Z"
+    },
+    {
+      "id": "tracker-profile-details",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-tracker-profile-details.log",
+      "completedAt": "2026-09-16T10:02:59.232Z"
+    },
+    {
+      "id": "unified-tracker",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-unified-tracker.log",
+      "completedAt": "2026-09-16T10:35:04.997Z"
+    },
+    {
+      "id": "world-map-background",
+      "status": "passed",
+      "artifact": ".codex-tmp/final-check-world-map-background.log",
+      "completedAt": "2026-09-16T10:03:01.293Z"
+    }
+  ],
+  "checks": [
+    {
+      "id": "verify-instance-final",
+      "status": "passed",
+      "artifact": ".codex-tmp/verify-instance-final.log",
+      "completedAt": "2026-09-16T10:39:17.974Z",
+      "result": {
+        "summary": "Verified Mari Bridge 1.0.42 on Engine 2.4.6: 26 files, server/client/prompt/consumer anchors exact, live health ready."
+      }
+    },
+    {
+      "id": "verify-profile-results-final",
+      "status": "passed",
+      "artifact": ".codex-tmp/verify-profile-results-final.log",
+      "completedAt": "2026-09-16T10:33:39.486Z",
+      "result": {
+        "chatId": "4E0lJha-7blAlWn_uxLjn",
+        "messageId": "RxFK5ZobatGLIj6JjL-GR",
+        "checks": [
+          "Native standalone persona and character tracker execution",
+          "Four persona detail fields, native stats, field locks and unrelated namespaces",
+          "Blank/null character field rejected before native result validation",
+          "Promoted context appears once and retains ordinary custom fields",
+          "Next-generation dry-run preserves committed storage",
+          "Native hidden character field stays stored but leaves the actual model prompt",
+          "Non-stream dry-run reasoning capture and impersonation exclusion"
+        ]
+      }
+    },
+    {
+      "id": "verify-gm-notes-final",
+      "status": "passed",
+      "artifact": ".codex-tmp/verify-gm-notes-final.log",
+      "completedAt": "2026-09-16T10:33:39.610Z",
+      "result": {
+        "summary": "Verified GM Notes live on chat G87bi0JxByr0a-3wS1k2I: configurable model/prompt settings, native GameState persistence, namespace preservation, committed context, custom retry result, and 3 UI fixture notes."
+      }
+    },
+    {
+      "id": "verify-gm-notes-backfill-final",
+      "status": "passed",
+      "artifact": ".codex-tmp/verify-gm-notes-backfill-final.log",
+      "completedAt": "2026-09-16T10:33:41.711Z",
+      "result": {
+        "summary": "Verified GM Notes 1.2.1 backfill on chat B_av4myN6rk3XpDvgVz16: cancellation, completed-turn boundary, protected notes, namespace preservation, durable resume checkpoint, and idempotent completion."
+      }
+    },
+    {
+      "id": "verify-unified-tracker-parallel-final",
+      "status": "passed",
+      "artifact": ".codex-tmp/verify-unified-tracker-parallel-final.log",
+      "completedAt": "2026-09-16T10:33:47.289Z",
+      "result": {
+        "chatId": "LggcHKJoiWtQSj92KdwJs",
+        "initialTimingMs": {
+          "firstByte": 44,
+          "firstToken": 49,
+          "complete": 1558
+        },
+        "regenerationsWithoutTrackerFetch": 2,
+        "cadence": {
+          "runInterval": 4,
+          "turn2": "skipped",
+          "turn3": "skipped",
+          "turn4": "ran"
+        },
+        "allSectionsApplied": true,
+        "sourceDepthCheckpointInjected": true,
+        "finalSuccessfulRun": {
+          "messageId": "mSOpkq1ks6Kmj0ZLozWGp",
+          "createdAt": "2026-09-16T10:33:47.278Z"
+        }
+      }
+    },
+    {
+      "id": "verify-group-presence-final",
+      "status": "passed",
+      "artifact": ".codex-tmp/verify-group-presence-final.log",
+      "completedAt": "2026-09-16T10:33:47.543Z",
+      "result": {
+        "chatId": "-BStsUm5zNS5pHjKi11CZ",
+        "checks": [
+          "Group handoff stream filtering and persistence",
+          "Native Continue participant selection",
+          "Regeneration swipe-specific handoff",
+          "Fallback selector, persona handoff without assistant/model call, new-user consumption",
+          "Presence message stamping and unrelated extra preservation",
+          "Real native dry-run audience filtering and always-present restoration",
+          "New versus returning roster history, inactive post-only stamping",
+          "Scoped hide/unhide and presence resync"
+        ]
+      }
+    },
+    {
+      "id": "pwa-runtime-246",
+      "status": "passed",
+      "artifact": ".codex-tmp/pwa-runtime-246.log",
+      "completedAt": "2026-09-16T10:22:47.147Z",
+      "result": {
+        "checks": [
+          "One generated iOS touch icon loads through the native page",
+          "Shared leases deduplicate requests; hidden/visible and external release restore only active leases",
+          "API rejection recovers on focus; releasing a pending lease cannot leak the wake lock"
+        ]
+      }
+    },
+    {
+      "id": "group-ui-246",
+      "status": "passed",
+      "artifact": ".codex-tmp/group-ui-246.log",
+      "completedAt": "2026-09-16T10:45:09.970Z",
+      "result": {
+        "chatId": "uE9IvH_wne69Jm9HQR0V7",
+        "checks": [
+          "Native composer mount is unique; persona toggle saves, refresh invokes the selector and displayed participant matches persisted state after reload",
+          "Group turn controls fit the mobile composer"
+        ]
+      }
+    },
+    {
+      "id": "check-engine-246",
+      "status": "passed",
+      "artifact": ".codex-tmp/check-engine-246.log",
+      "completedAt": "2026-09-16T10:03:19.343Z",
+      "result": {
+        "summary": "Engine 2.4.6: current storage API, both exact snapshot callbacks, 42 executable stream-chain cases passed."
+      }
+    },
+    {
+      "id": "check-bootstrap-246",
+      "status": "passed",
+      "artifact": ".codex-tmp/check-bootstrap-246.log",
+      "completedAt": "2026-09-16T10:03:21.048Z",
+      "result": {
+        "summary": "Engine 2.4.6: direct first-install preload, native supervisor, forced-update exit/restart, app close and same-process overlay passed."
+      }
+    },
+    {
+      "id": "check-bootstrap-246-supervised",
+      "status": "passed",
+      "artifact": ".codex-tmp/check-bootstrap-246-supervised.log",
+      "completedAt": "2026-09-16T09:47:18.387Z",
+      "result": {
+        "summary": "Engine 2.4.6: native-supervised first-install preload, native supervisor, forced-update exit/restart, app close and same-process overlay passed."
+      }
+    },
+    {
+      "id": "flows-browser",
+      "status": "passed",
+      "artifact": ".codex-tmp/flows-246-evidence/report.json",
+      "completedAt": "2026-09-16T10:26:20.052Z",
+      "result": {
+        "chatId": "2fJmrgCraxBIIlULGT2TC",
+        "checks": [
+          "Per-chat guidance recall survives generated-draft reuse, continuation and reload; reasoning stays out of composer; provider failure restores guidance and releases lease",
+          "Better Impersonate draft, continuation, native persisted composer, native Stop, no late response overwrite or message write",
+          "PWA Helper acquires its generation lease and releases it on native Stop",
+          "GM Notes backfill remains active through native settings updates and cancels without advancing its checkpoint",
+          "History-only GM Notes backfill resumes, completes and creates its first snapshot through native persistence",
+          "World Map Background renders the actual native image and blur, restores the prior background without an image, reapplies on map edits, and follows a committed native location transition",
+          "Native Presence, GM Notes and World Map Background settings cards, unique toolbar, settings persistence after reload"
+        ],
+        "errors": [],
+        "requestCount": 629,
+        "topRequests": [
+          [
+            "/api/chats/2fJmrgCraxBIIlULGT2TC",
+            175
+          ],
+          [
+            "/api/chats/2fJmrgCraxBIIlULGT2TC/game-state",
+            114
+          ],
+          [
+            "/api/mari-bridge/turn-handoff/2fJmrgCraxBIIlULGT2TC",
+            32
+          ],
+          [
+            "/api/chats",
+            13
+          ],
+          [
+            "/api/generate/status/2fJmrgCraxBIIlULGT2TC",
+            12
+          ],
+          [
+            "/api/chats/2fJmrgCraxBIIlULGT2TC/metadata",
+            11
+          ],
+          [
+            "/api/chats/2fJmrgCraxBIIlULGT2TC/spatial-context",
+            11
+          ],
+          [
+            "/api/gallery/2fJmrgCraxBIIlULGT2TC",
+            11
+          ]
+        ]
+      }
+    },
+    {
+      "id": "ui-browser",
+      "status": "passed",
+      "artifact": ".codex-tmp/ui-246-evidence/report.json",
+      "completedAt": "2026-09-16T10:27:37.907Z",
+      "result": {
+        "chatId": "IAdU81-L0tIx8bRUcEeSD",
+        "checks": [
+          "Native Unified Tracker settings; native GM Notes toolbar with only Unified Tracker enabled; no obsolete Bridge mounts",
+          "GM Notes add/edit/save, persisted lock, reload, blocked removal while locked, unlock and removal",
+          "Single visible native toolbar control on desktop/mobile; clamped mobile popover",
+          "Native compact character/persona edits, both locks persisted across reload and enforced by a real Unified Tracker retry",
+          "Native featured-card edit, promoted character/persona removal and obsolete lock cleanup",
+          "Native add mode, field rename, automatic promotion and persisted value"
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "draft-controls-browser",
+      "status": "passed",
+      "artifact": ".codex-tmp/draft-controls-246-evidence/report.json",
+      "completedAt": "2026-09-16T10:34:37.914Z",
+      "result": {
+        "chatId": "24Q8IG_GR_LCg3Lso9fQQ",
+        "checks": [
+          "Native custom Quick Reply expands composer input before command dispatch; selected preset owns instructions; no message is posted",
+          "Native Preset handles impersonation switch changes the actual generated prompt",
+          "A running draft survives native chat unmount, does not overwrite another chat, and restores its result on return"
+        ],
+        "errors": []
+      }
+    },
+    {
+      "id": "agent-controls-browser",
+      "status": "passed",
+      "artifact": ".codex-tmp/agent-controls-246-evidence/report.json",
+      "completedAt": "2026-09-16T10:38:19.398Z",
+      "result": {
+        "chatId": "CvycLnPizoGPwGDMpEzPy",
+        "checks": [
+          "Unified section dependencies, quest preset, prompt fragment and source-depth preference edit/save/reload",
+          "Delayed older chat response cannot overwrite a newer Unified settings edit",
+          "Native Agent Suite GM Notes read, invalid JSON rejection, Reset, Save and unrelated namespace preservation",
+          "Native AI Edit uses the selected model connection, produces an unsaved draft, and persists only after Save"
+        ],
+        "errors": []
+      }
+    }
+  ],
+  "limits": [
+    "Main Windows integration executed; staging source audit only",
+    "Docker and POSIX restart not executed",
+    "Model provider is a deterministic local stub",
+    "Wake Lock hardware behavior is emulated; physical devices not certified"
+  ],
+  "cleanup": {
+    "status": "completed",
+    "completedAt": "2026-09-16T10:47:10.629Z",
+    "serverStopped": true,
+    "modelStubStopped": true,
+    "browserTestsCompleted": true,
+    "harnessLeaseReleased": true
+  }
+}

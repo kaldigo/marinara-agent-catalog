@@ -26,13 +26,13 @@ assert.equal(extractContinuationSuffix("Hello", "Hello world"), " world");
 assert.equal(extractContinuationSuffix("Hello", "Hel"), "");
 assert.equal(extractContinuationSuffix("Hello", " again"), " again");
 
-const values = new Map([[`${recallTest.LEGACY_GUIDANCE_PREFIX}chat-1`, "legacy guidance"]]);
+const values = new Map([["mari-si-guidance:chat-1", "obsolete extension guidance"]]);
 const storage = {
   getItem(key) { return values.get(key) ?? null; },
   setItem(key, value) { values.set(key, String(value)); },
   removeItem(key) { values.delete(key); },
 };
-assert.equal(readRecall(storage, "chat-1").lastGuidance, "legacy guidance");
+assert.equal(readRecall(storage, "chat-1").lastGuidance, "", "obsolete extension storage is not a supported fallback");
 rememberGeneratedDraft(storage, "chat-1", "Generated persona draft");
 rememberImpersonateRequest(storage, "chat-1", "new guidance");
 assert.deepEqual(readRecall(storage, "chat-1"), {

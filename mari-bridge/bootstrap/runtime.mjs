@@ -15,11 +15,11 @@ import {
   normalizeAssistantSpatialDirectives,
 } from "../src/server/spatial-directive-compat.js";
 import { prepareClientOverlay } from "../src/server/client-overlay.js";
-import { handoffToServerOverlay, prepareServerOverlay, serverOverlayProcessState } from "../src/server/server-overlay.js";
+import { redirectServerEntryToOverlay, prepareServerOverlay } from "../src/server/server-overlay.js";
 
 const KERNEL_SYMBOL = Symbol.for("marinara.mari-bridge.kernel.v1");
 const SERVER_SYMBOL = Symbol.for("marinara.mari-bridge.v1");
-export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.4"]);
+export const SUPPORTED_ENGINE_VERSIONS = Object.freeze(["2.4.6"]);
 const disabled = process.env.MARI_BRIDGE_DISABLE === "1";
 
 export function detectMarinaraEngine(
@@ -52,7 +52,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.41";
+kernel.version = "1.0.42";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -102,6 +102,7 @@ function createInjectedServerRuntime(clientOverlay, requirePrivilegedAccess) {
     "turn.handoff-persona-return",
     "turn.handoff-stream-filter",
     "turn.handoff-stream-push",
+    "turn.handoff-stream-pending-chance",
     "turn.handoff-stream-flush",
     "turn.handoff-response-state",
     "turn.handoff-response-process",
@@ -244,7 +245,7 @@ function replaceSupportedExact(source, variants, patchId) {
   return source.replace(selected.anchor, selected.replacement);
 }
 
-const COMMITTED_TRACKER_ACTIVE_GUARD = /if\s*\(\s*!hasWorldState\s*&&\s*!hasCharTracker\s*&&\s*!hasPersonaStats\s*&&\s*!hasQuest\s*&&\s*!hasCustomTracker(?:\s*&&\s*!hasInventoryTracker\s*&&\s*!hasBeholder)?\s*\)/gu;
+const COMMITTED_TRACKER_ACTIVE_GUARD = /if\s*\(\s*!hasWorldState\s*&&\s*!hasCharTracker\s*&&\s*!hasPersonaStats\s*&&\s*!hasQuest\s*&&\s*!hasCustomTracker\s*&&\s*!hasInventoryTracker\s*&&\s*!hasBeholder\s*\)/gu;
 
 export function patchCommittedTrackerActiveGuard(source) {
   const matches = [...source.matchAll(COMMITTED_TRACKER_ACTIVE_GUARD)];
@@ -253,9 +254,7 @@ export function patchCommittedTrackerActiveGuard(source) {
     recordPatchFailure(patchId, `${patchId} expected one supported guard, found ${matches.length}`);
     return source;
   }
-  const nativeGuard = matches[0][0].includes("hasInventoryTracker")
-    ? "!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker && !hasInventoryTracker && !hasBeholder"
-    : "!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker";
+  const nativeGuard = "!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker && !hasInventoryTracker && !hasBeholder";
   kernel.patches[patchId] = "applied";
   return source.replace(
     COMMITTED_TRACKER_ACTIVE_GUARD,
@@ -497,7 +496,7 @@ export function patchServerModule(url, inputSource) {
             "    return filtered;",
             "}",
             "function mergeCharacterCustomFieldsWithLocks(nextFields, currentFields, locks, character, characterIndex) {",
-            "    // Mari Bridge Engine 2.4.4 compatibility shim: the native lock merge can",
+            "    // Mari Bridge Engine 2.4.6 compatibility shim: the native lock merge can",
             "    // resurrect a legacy { \"\": null } custom field. Remove this once upstream",
             "    // normalizes character custom-field keys before merging tracker state.",
             "    nextFields = mariBridgeFilterLegacyBlankNullCharacterCustomFields(nextFields);",
@@ -614,7 +613,7 @@ export function patchServerModule(url, inputSource) {
           source,
           "    if (hasCharTracker) {",
           [
-            "    // Mari Bridge Engine 2.4.4 compatibility shim: main committed tracker",
+            "    // Mari Bridge Engine 2.4.6 compatibility shim: main committed tracker",
             "    // context does not honor hidden character fields even though agent context does.",
             "    // Remove this shim once upstream applies the same compaction to both paths.",
             "    const mariBridgeHiddenTrackerFields = normalizeTrackerHiddenFields(parseMaybeJson(snap.hiddenTrackerFields));",
@@ -696,7 +695,7 @@ export function patchServerModule(url, inputSource) {
           source,
           "            history.push(value);",
           [
-            "            // Mari Bridge Engine 2.4.4 compatibility shim: malformed legacy",
+            "            // Mari Bridge Engine 2.4.6 compatibility shim: malformed legacy",
             "            // tracker history can repeatedly prompt the agent with { \"\": null }.",
             "            // Remove this once upstream normalizes character custom-field keys.",
             "            history.push(mariBridgeFilterLegacyBlankNullTrackerCharacter(value));",
@@ -735,7 +734,7 @@ export function patchServerModule(url, inputSource) {
         source = replaceExact(
           source,
           [
-            "                    if (builtInAgentTypes.has(agent.type))",
+            "                    if (builtInAgentTypes.has(agent.type) || agent.type === \"illustrator\")",
             "                        continue;",
           ].join("\n"),
           [
@@ -744,25 +743,12 @@ export function patchServerModule(url, inputSource) {
             "                        resolvedAgents.splice(index, 1);",
             "                        continue;",
             "                    }",
-            "                    if (builtInAgentTypes.has(agent.type) && agent.settings?.useGenericRunInterval !== true)",
+            "                    if (agent.type === \"illustrator\" || (builtInAgentTypes.has(agent.type) && agent.settings?.useGenericRunInterval !== true))",
             "                        continue;",
           ].join("\n"),
           "agent.skip-on-regenerate",
         );
         source = replaceSupportedExact(source, [
-          {
-            anchor: [
-              "                    timeZone: promptTimeZone,",
-              "                });",
-              "                const conversationMacroFieldsByCharacterId = new Map();",
-            ].join("\n"),
-            replacement: [
-              "                    timeZone: promptTimeZone,",
-              "                    groupMode: allCharacterIds.length > 1 ? promptGroupChatMode : \"solo\",",
-              "                });",
-              "                const conversationMacroFieldsByCharacterId = new Map();",
-            ].join("\n"),
-          },
           {
             anchor: [
               "                    timeZone: promptTimeZone,",
@@ -863,21 +849,6 @@ export function patchServerModule(url, inputSource) {
         source = replaceSupportedExact(source, [
           {
             anchor: [
-              "          useIndividualLoop &&",
-              "          groupResponseOrder === \"smart\" &&",
-              "          !input.forCharacterId &&",
-              "          (!smartResponseQueue || smartResponseQueue.length === 0)",
-            ].join("\n"),
-            replacement: [
-              "          !bridgedTurnHandoffToPersona &&",
-              "          useIndividualLoop &&",
-              "          groupResponseOrder === \"smart\" &&",
-              "          !input.forCharacterId &&",
-              "          (!smartResponseQueue || smartResponseQueue.length === 0)",
-            ].join("\n"),
-          },
-          {
-            anchor: [
               "if (useIndividualLoop &&",
               "                    groupResponseOrder === \"smart\" &&",
               "                    !input.forCharacterId &&",
@@ -923,13 +894,29 @@ export function patchServerModule(url, inputSource) {
         );
         source = replaceExact(
           source,
-          "          const visibleText = spatialDirectiveStreamFilter?.push(text) ?? text;",
+          "          const visibleText = spatialDirectiveStreamFilter?.push(chanceFiltered) ?? chanceFiltered;",
           [
-            "          const handoffVisibleText = turnHandoffStreamFilter?.push(text) ?? text;",
+            "          const handoffVisibleText = turnHandoffStreamFilter?.push(chanceFiltered) ?? chanceFiltered;",
             "          const bridgedSpatialText = bridgedSpatialDirectiveStreamFilter?.push(handoffVisibleText) ?? handoffVisibleText;",
             "          const visibleText = spatialDirectiveStreamFilter?.push(bridgedSpatialText) ?? bridgedSpatialText;",
           ].join("\n"),
           "turn.handoff-stream-push",
+        );
+        // The native chance filter can release a buffered suffix at EOF. Feed
+        // it through the same downstream filters before draining those filters.
+        source = replaceExact(
+          source,
+          [
+            "                        const pendingChanceVisible = pendingChanceText",
+            "                            ? (spatialDirectiveStreamFilter?.push(pendingChanceText) ?? pendingChanceText)",
+            "                            : \"\";",
+          ].join("\n"),
+          [
+            "                        const pendingHandoffInput = pendingChanceText ? turnHandoffStreamFilter?.push(pendingChanceText) ?? pendingChanceText : \"\";",
+            "                        const pendingCompatInput = pendingHandoffInput ? bridgedSpatialDirectiveStreamFilter?.push(pendingHandoffInput) ?? pendingHandoffInput : \"\";",
+            "                        const pendingChanceVisible = pendingCompatInput ? spatialDirectiveStreamFilter?.push(pendingCompatInput) ?? pendingCompatInput : \"\";",
+          ].join("\n"),
+          "turn.handoff-stream-pending-chance",
         );
         source = replaceExact(
           source,
@@ -981,25 +968,6 @@ export function patchServerModule(url, inputSource) {
         source = replaceSupportedExact(source, [
           {
             anchor: [
-              "          if (",
-              "            savedMsg?.id &&",
-              "            savedSwipeIndex !== null &&",
-              "            !shouldSuppressAssistantSpatialMutation(input) &&",
-            ].join("\n"),
-            replacement: [
-              "          if (savedMsg?.id && savedSwipeIndex !== null && bridgedTurnHandoffResult?.participant) {",
-              "            await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.turnHandoffHooks?.commit({",
-              "              chatId: input.chatId, chatMetadata: chatMeta, chatMode, messageId: savedMsg.id, swipeIndex: savedSwipeIndex, messageSpeakerId: targetCharId,",
-              "            }, bridgedTurnHandoffResult);",
-              "          }",
-              "          if (",
-              "            savedMsg?.id &&",
-              "            savedSwipeIndex !== null &&",
-              "            !shouldSuppressAssistantSpatialMutation(input) &&",
-            ].join("\n"),
-          },
-          {
-            anchor: [
               "                    if (savedMsg?.id &&",
               "                        savedSwipeIndex !== null &&",
               "                        !shouldSuppressAssistantSpatialMutation(input) &&",
@@ -1017,31 +985,6 @@ export function patchServerModule(url, inputSource) {
           },
         ], "turn.handoff-commit");
         source = replaceSupportedExact(source, [
-          {
-            anchor: [
-              "          if (",
-              "            savedMsg?.id &&",
-              "            savedSwipeIndex !== null &&",
-              "            !shouldSuppressAssistantSpatialMutation(input) &&",
-            ].join("\n"),
-            replacement: [
-              "          if (savedMsg?.id && savedSwipeIndex !== null) {",
-              "            try {",
-              "              await globalThis[Symbol.for(\"marinara.mari-bridge.v1\")]?.messageHooks?.notifyPersisted({",
-              "                chatId: input.chatId, messageId: savedMsg.id, swipeIndex: savedSwipeIndex,",
-              "                kind: input.regenerateMessageId ? \"regenerate\" : input.continueMessageId ? \"continue\" : \"create\",",
-              "                message: savedMsg,",
-              "              });",
-              "            } catch (error) {",
-              "              logger.warn(error, \"[Mari Bridge] Message persisted contribution failed\");",
-              "            }",
-              "          }",
-              "          if (",
-              "            savedMsg?.id &&",
-              "            savedSwipeIndex !== null &&",
-              "            !shouldSuppressAssistantSpatialMutation(input) &&",
-            ].join("\n"),
-          },
           {
             anchor: [
               "                    if (savedMsg?.id &&",
@@ -1105,7 +1048,7 @@ export function patchServerModule(url, inputSource) {
             "              chatMetadata: chatMeta,",
             "              state: {",
             "                read: async () => {",
-            "                  const row = (await gameStateStore.getByMessage(messageId, targetSwipeIndex)) ?? trackerBaseGameStateSnapshot;",
+            "                  const row = (await gameStateStore.getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)) ?? trackerBaseGameStateSnapshot;",
             "                  return row ? parseGameStateRow(row) : null;",
             "                },",
             "                update: (fields) => gameStateStore.updateByMessage(messageId, targetSwipeIndex, input.chatId, fields, undefined, { baseSnapshot: trackerBaseGameStateSnapshot }),",
@@ -1126,7 +1069,7 @@ export function patchServerModule(url, inputSource) {
             "            lane: \"main\", chatId: input.chatId, messageId, swipeIndex: targetSwipeIndex, agentContext, chatMetadata: chatMeta, logger,",
             "            state: {",
             "              read: async () => {",
-            "                const row = (await gameStateStore.getByMessage(messageId, targetSwipeIndex)) ?? trackerBaseGameStateSnapshot;",
+            "                const row = (await gameStateStore.getByChatAndMessage(input.chatId, messageId, targetSwipeIndex)) ?? trackerBaseGameStateSnapshot;",
             "                return row ? parseGameStateRow(row) : null;",
             "              },",
             "              update: (fields) => gameStateStore.updateByMessage(messageId, targetSwipeIndex, input.chatId, fields, undefined, { baseSnapshot: trackerBaseGameStateSnapshot }),",
@@ -1297,6 +1240,8 @@ export function patchServerModule(url, inputSource) {
           source,
           [
             "        try {",
+            "            if (advancedContext)",
+            "                await advancedMemoryService.validatePrepared(chatId, advancedMemorySourceMessages, advancedContext.receipt);",
             "            const result = await provider.chatComplete(providerMessages, {",
           ].join("\n"),
           [
@@ -1305,6 +1250,8 @@ export function patchServerModule(url, inputSource) {
             "            reasoning += chunk;",
             "        };",
             "        try {",
+            "            if (advancedContext)",
+            "                await advancedMemoryService.validatePrepared(chatId, advancedMemorySourceMessages, advancedContext.receipt);",
             "            const result = await provider.chatComplete(providerMessages, {",
           ].join("\n"),
           "dry-run.nonstream-reasoning-state",
@@ -1343,19 +1290,6 @@ export function patchServerModule(url, inputSource) {
           "dry-run.nonstream-structured-result",
         );
         source = replaceSupportedExact(source, [
-          {
-            anchor: [
-              "            idleDuration: promptIdleDuration,",
-              "        });",
-              "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
-            ].join("\n"),
-            replacement: [
-              "            idleDuration: promptIdleDuration,",
-              "            groupMode: allCharacterIds.length > 1 ? dryRunGroupChatMode : \"solo\",",
-              "        });",
-              "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
-            ].join("\n"),
-          },
           {
             anchor: [
               "            idleDuration: promptIdleDuration,",
@@ -1582,9 +1516,7 @@ if (disabled) {
       engineVersion: serverOverlay.engineVersion,
     });
     kernel.patches["server.disk-overlay"] = "applied";
-    if (!serverOverlayProcessState(serverOverlay).active) {
-      await handoffToServerOverlay({ overlay: serverOverlay, bootstrapUrl: new URL("./register.mjs", import.meta.url) });
-    }
+    kernel.entryRedirect = redirectServerEntryToOverlay(serverOverlay);
     kernel.active = true;
     kernel.patches["engine.version"] = "applied";
     const { requirePrivilegedAccess } = await import(pathToFileURL(resolve(

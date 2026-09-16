@@ -15,11 +15,11 @@ Presence uses Marinara's native `message.extra.hiddenFromAICharacterIds` field a
 
 ## Always Present
 
-The native Presence agent card includes a Mari Bridge avatar picker for characters that should always be present. This is intended for narrator and system-style cards. Selecting one removes only that character from existing per-character hidden lists and includes them in future messages even while inactive. Deselecting affects future messages only; use a scoped hide command for retroactive changes.
+The native Presence agent card includes a package avatar picker mounted through the native chat-settings slot. This is intended for narrator and system-style cards. Selecting one removes only that character from existing per-character hidden lists and includes them in future messages even while inactive. Deselecting affects future messages only; use a scoped hide command for retroactive changes.
 
 Omnipresent settings are updated atomically under Marinara's native chat lock and remain configured if a character temporarily leaves the roster.
 
-The package does not replace Marinara's agent editor or settings layout. Mari Bridge contributes only this package-specific picker inside the existing native card.
+The package does not replace Marinara's agent editor or settings layout. Marinara mounts the picker inside the existing native card.
 
 ## Slash Commands
 

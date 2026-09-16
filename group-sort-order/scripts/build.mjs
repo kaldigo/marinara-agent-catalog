@@ -38,7 +38,7 @@ function manifest() {
     name: "Group Sort Order",
     version,
     description: "Tracks the next roleplay participant across turns using native prompt, generation, and composer hooks.",
-    engine: { min: "2.4.4", maxExclusive: "2.4.5" },
+    engine: { min: "2.4.6", maxExclusive: "2.4.7" },
     kind: ["agent"],
     entrypoints: {
       server: "server.mjs",

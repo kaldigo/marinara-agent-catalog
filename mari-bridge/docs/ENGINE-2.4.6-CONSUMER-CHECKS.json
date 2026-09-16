@@ -1,0 +1,68 @@
+[
+  {
+    "package": "mari-bridge",
+    "command": "npm --prefix packages/mari-bridge run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-mari-bridge-check.log"
+  },
+  {
+    "package": "better-impersonate",
+    "command": "npm --prefix packages/better-impersonate run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-better-impersonate-check.log"
+  },
+  {
+    "package": "gm-notes",
+    "command": "npm --prefix packages/gm-notes run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-gm-notes-check.log"
+  },
+  {
+    "package": "group-sort-order",
+    "command": "npm --prefix packages/group-sort-order run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-group-sort-order-check.log"
+  },
+  {
+    "package": "presence",
+    "command": "npm --prefix packages/presence run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-presence-check.log"
+  },
+  {
+    "package": "pwa-helper",
+    "command": "npm --prefix packages/pwa-helper run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-pwa-helper-check.log"
+  },
+  {
+    "package": "tracker-profile-details",
+    "command": "npm --prefix packages/tracker-profile-details run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-tracker-profile-details-check.log"
+  },
+  {
+    "package": "unified-tracker",
+    "command": "npm --prefix packages/unified-tracker run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-unified-tracker-check.log"
+  },
+  {
+    "package": "world-map-background",
+    "command": "npm --prefix packages/world-map-background run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-world-map-background-check.log"
+  },
+  {
+    "package": "mari-bridge-smoke",
+    "command": "npm --prefix packages/mari-bridge-smoke run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-mari-bridge-smoke-check.log"
+  },
+  {
+    "package": "_mari-bridge",
+    "command": "npm --prefix packages/_mari-bridge run check",
+    "exitCode": 0,
+    "log": ".codex-tmp/bridge-audit-sdk-check.log"
+  }
+]

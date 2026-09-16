@@ -8,5 +8,5 @@ Promotes selected GameState fields into the native docked tracker profile layout
 - The Persona Stats agent contract is extended so it can update the four persona fields.
 - When Persona Stats is active, the four promoted persona fields are emitted as Persona Details context and excluded from the native Custom Tracker context section.
 
-Version 1.1.0 depends on Mari Bridge API 1.9 (introduced in Bridge 1.0.38) and
-Marinara Engine 2.4.4. It shares its field merge codec with Unified Tracker.
+Version 1.1.1 depends on Mari Bridge API 1.9 (introduced in Bridge 1.0.38) and
+Marinara Engine 2.4.6. It shares its field merge codec with Unified Tracker.

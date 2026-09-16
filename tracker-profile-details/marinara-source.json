@@ -13,8 +13,8 @@
     "name": "Tracker Profile Details",
     "description": "Shows selected GameState custom fields as ordered native character and persona profile details.",
     "engine": {
-      "min": "2.4.4",
-      "maxExclusive": "2.4.5"
+      "min": "2.4.6",
+      "maxExclusive": "2.4.7"
     },
     "kind": ["agent"],
     "permissions": ["agent-runtime", "ui"],

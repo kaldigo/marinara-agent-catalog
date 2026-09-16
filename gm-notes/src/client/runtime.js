@@ -44,8 +44,6 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       "generation.lifecycle",
       "runtime.health",
       "tracker.surfaces",
-      "ui.agent-settings",
-      "ui.roleplay-hud",
       "ui.tracker-section",
     ],
   },
@@ -53,6 +51,10 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
     const state = { cache: new Map(), elements: new Set(), loads: new Map(), saves: new Map() };
 
     class GmNotesElement extends HTMLElement {
+      get surfaceView() {
+        const view = this.getAttribute("view");
+        return view === "toolbar" ? "hud" : view;
+      }
       connectedCallback() {
         this._cycleIndex = 0;
         this._adding = false;
@@ -71,7 +73,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
         this.addEventListener("keydown", this);
         this.addEventListener("focusout", this);
         ensureStyles();
-        if (this.getAttribute("view") === "hud" && !this._reduceMotion) {
+        if (this.surfaceView === "hud" && !this._reduceMotion) {
           this._cycleTimer = window.setInterval(() => {
             const notes = state.cache.get(this.chatId)?.notes ?? [];
             if (notes.length <= 1 || this.hasAttribute("data-open")) return;
@@ -96,11 +98,15 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
 
       handleEvent(event) {
         if (event.type === "marinara-capability-props") {
+          // Native React props refresh during generation and state updates.
+          // Preserve edits/backfill unless the host actually changes chats.
+          if (this._propsChatId === this.chatId) return;
+          this._propsChatId = this.chatId;
           this.stopBackfill("");
           this._adding = false;
           this._lockMode = false;
           this._removeMode = false;
-          if (this.getAttribute("view") === "settings") {
+          if (this.surfaceView === "settings") {
             this.render();
             void this.refreshBackfillStatus();
             return;
@@ -242,7 +248,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       }
 
       async refresh(force = false) {
-        const view = this.getAttribute("view");
+        const view = this.surfaceView;
         if (!this.chatId || !["tracker-section-body", "hud", "settings"].includes(view)) {
           this.hidden = true;
           this.replaceChildren();
@@ -326,14 +332,14 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       }
 
       render() {
-        if (this.getAttribute("view") === "settings") {
+        if (this.surfaceView === "settings") {
           this.hidden = !this.chatId;
           this.closePopover();
           this.innerHTML = this.hidden ? "" : renderBackfillSettings(this);
           return;
         }
         const data = state.cache.get(this.chatId);
-        const nativeTracker = this.getAttribute("view") === "tracker-section-body"
+        const nativeTracker = this.surfaceView === "tracker-section-body"
           && this.capabilityProps?.nativeEnabled === true;
         this.hidden = nativeTracker ? !data : data?.enabled !== true;
         if (this.hidden) {
@@ -342,7 +348,7 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
           return;
         }
         if (this._cycleIndex >= data.notes.length) this._cycleIndex = 0;
-        if (this.getAttribute("view") === "hud") {
+        if (this.surfaceView === "hud") {
           this.innerHTML = renderHud(this, data);
           if (this.hasAttribute("data-open")) this.renderPopover(data);
         } else {
@@ -493,12 +499,6 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       agentIds: [PACKAGE_ID],
       rerunAgentId: PACKAGE_ID,
     });
-    const disposeSettings = bridgeSession.ui.register({
-      id: "backfill-settings",
-      slot: "agent.settings",
-      agentIds: [PACKAGE_ID],
-      view: "settings",
-    });
     const disposeAgentSuite = bridgeSession.agentSuite.registerTrackerData({
       agentId: PACKAGE_ID,
       label: "GM Notes",
@@ -511,15 +511,17 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
         if (chatId) return loadState(chatId, true);
       },
     });
-    const disposeHud = bridgeSession.ui.register({ id: "hud", slot: "roleplay.hud", view: "hud" });
     const disposeSurfaces = bridgeSession.tracker.subscribeSurfaces(() => {
       const chatId = bridgeSession.chat.active.getSnapshot().chatId;
       if (chatId) void loadState(chatId, true);
     });
+    let lastActiveChatId = bridgeSession.chat.active.getSnapshot().chatId;
     const disposeChat = bridgeSession.chat.active.subscribe(({ chatId }) => {
+      const changedChat = lastActiveChatId !== chatId;
+      lastActiveChatId = chatId;
       for (const element of state.elements) {
-        if (element._backfilling) element.stopBackfill("Backfill paused because the active chat changed. Run it again to resume.");
-        if (element.getAttribute("view") === "settings") void element.refresh();
+        if (changedChat && element._backfilling) element.stopBackfill("Backfill paused because the active chat changed. Run it again to resume.");
+        if (element.surfaceView === "settings") void element.refresh();
       }
       if (chatId) void loadState(chatId, true);
     });
@@ -536,8 +538,6 @@ const cleanupGmNotesClient = await activateClientWithMariBridge(
       disposeGeneration();
       disposeChat();
       disposeAgentSuite();
-      disposeHud();
-      disposeSettings();
       disposeTracker();
     };
   },
@@ -707,7 +707,7 @@ function ensureStyles() {
   style.id = "gm-notes-style";
   style.textContent = `
     marinara-capability-gm-notes[view="tracker-section-body"]{display:block;min-width:0}
-    marinara-capability-gm-notes[view="hud"]{display:inline-flex;position:relative}
+    marinara-capability-gm-notes[view="toolbar"]{display:inline-flex;position:relative}
     marinara-capability-gm-notes[hidden]{display:none!important}
     .gm-notes-hud-preview{display:block;width:100%;padding:0 .125rem;text-align:center;font-weight:600;line-height:1.2;overflow-wrap:anywhere;animation:inventory-cycle .4s ease-out}
     @media(prefers-reduced-motion:reduce){.gm-notes-hud-preview{animation:none}}

@@ -23,7 +23,6 @@ import {
   patchActiveChatEvents,
   patchAgentSuiteBridge,
   patchChatInputBridge,
-  patchChatSettingsBridge,
   patchGenerationControllerEvents,
   patchImpersonateSettingsBridge,
   patchQueryClientBridge,
@@ -40,10 +39,7 @@ import {
 import { schedulePackageBootstrapRestart, __test as bootstrapRestartTest } from "../src/server/bootstrap-restart.js";
 import { installBootstrapFile, requiresBootstrapHandoff } from "../src/server/bootstrap-install.js";
 import {
-  isServerOverlayEntry,
   prepareServerOverlay,
-  serverOverlayProcessState,
-  __test as serverOverlayTest,
 } from "../src/server/server-overlay.js";
 import { MariBridgeUnavailableError } from "../src/shared/contracts.js";
 
@@ -440,7 +436,7 @@ globalThis.fetch = async (input) => {
     ? { currentLocationId: "location-fetch", definition: { revision: 5, locations: [] } }
     : {
         status: "ok",
-        version: "2.4.4",
+        version: "2.4.6",
         capabilityPackages: {
           packages: [{ id: "mari-bridge", version: "0.2.0", readiness: "ready", ready: true }],
         },
@@ -495,7 +491,6 @@ const allNativeClientPatches = [
   "client.commands",
   "client.generation-lifecycle",
   "client.impersonate-settings",
-  "client.native-agent-settings",
   "client.quick-replies",
   "client.roleplay-background",
   "client.roleplay-hud",
@@ -514,13 +509,13 @@ const clientSource = `${trackerDetailRegistrySource}\n${trackerSurfaceRegistrySo
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.41");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.42");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("generation.lifecycle"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("spatial.context"), true);
-assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), true);
+assert.equal(globalThis[clientSymbol].capabilities.has("ui.agent-settings"), false);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.impersonate-settings"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("ui.tracker-section"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("tracker.detail-fields"), true);
@@ -528,15 +523,6 @@ assert.equal(globalThis[clientSymbol].capabilities.has("tracker.surfaces"), true
 assert.equal(typeof globalThis[clientSymbol].renderNativeTrackerSections, "function");
 assert.equal(customElements.get("marinara-capability-mari-bridge"), undefined);
 assert.equal(document.documentElement.dataset.mariBridgeClient, "ready");
-const hudRoot = new HTMLElement();
-const mobileHudGroup = new HTMLElement(["md:hidden"]);
-const desktopHudGroup = new HTMLElement(["md:flex"]);
-hudRoot.children.push(mobileHudGroup, desktopHudGroup);
-globalThis[clientSymbol].mountNativeSlot(hudRoot, "roleplay.hud");
-assert.equal(mobileHudGroup.children.length, 1);
-assert.equal(desktopHudGroup.children.length, 1);
-assert.equal(mobileHudGroup.children[0].style.display, "contents");
-assert.equal(desktopHudGroup.children[0].style.display, "contents");
 const nativeBackgroundState = {
   chatBackground: null,
   setChatBackground(url) { this.chatBackground = url; },
@@ -585,6 +571,14 @@ assert.deepEqual(globalThis[clientSymbol].resolveBackgroundProps({}, "/location.
   url: "/location.png",
   blurPx: 7,
 });
+let backgroundChanges = 0;
+const stopBackground = globalThis[clientSymbol].useBackgroundVersion({useSyncExternalStore(subscribe) { return subscribe(() => backgroundChanges++); }});
+backgroundSession.chat.background.set({ chatId: "chat-1", url: "/location.png", blurPx: 12 });
+assert.equal(backgroundChanges, 1, "same-image blur changes notify the native renderer");
+assert.equal(globalThis[clientSymbol].resolveBackgroundProps({}, "/location.png", 0).blurPx, 12);
+backgroundSession.chat.background.set({ chatId: "chat-1", url: "/location.png", blurPx: 12 });
+assert.equal(backgroundChanges, 1, "unchanged replay does not cause a render loop");
+stopBackground();
 nativeBackgroundState.chatBackground = "/stale-remount.png";
 assert.equal(globalThis[clientSymbol].bindRoleplayBackgroundStore(nativeBackgroundStore), true);
 await new Promise((resolve) => queueMicrotask(resolve));
@@ -604,6 +598,20 @@ const queryClient = {
   },
 };
 assert.equal(globalThis[clientSymbol].bindQueryClient(queryClient), true);
+const activeLifecycleSession = globalThis[clientSymbol].registerConsumer({consumerId:"active-lifecycle-test",api:{major:1,minMinor:0},require:["chat.active"]});
+let activeChanges = 0;
+activeLifecycleSession.chat.active.subscribe(() => activeChanges++, {emitCurrent:false});
+const activeDetailQuery = {queryKey:["chats","detail","chat-1"],state:{data:{id:"chat-1",metadata:{enabled:true}}}};
+for (const type of ["fetch","invalidate","error"]) for (const listener of queryListeners) listener({type:"updated",action:{type},query:activeDetailQuery});
+assert.equal(activeChanges,0,"native cache bookkeeping must not trigger consumer refreshes");
+for (const listener of queryListeners) listener({type:"updated",action:{type:"success"},query:activeDetailQuery});
+assert.equal(activeChanges,1);
+for (const listener of queryListeners) listener({type:"updated",action:{type:"success"},query:activeDetailQuery});
+assert.equal(activeChanges,1,"unchanged native data must not refresh consumers again");
+activeDetailQuery.state.data = {...activeDetailQuery.state.data,metadata:{enabled:false}};
+for (const listener of queryListeners) listener({type:"updated",action:{type:"success"},query:activeDetailQuery});
+assert.equal(activeChanges,2,"changed metadata still reaches active chat consumers");
+await activeLifecycleSession.close();
 const spatialSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "spatial-test",
   api: { major: 1, minMinor: 4 },
@@ -656,7 +664,7 @@ await clientSession.close();
 const featureSession = globalThis[clientSymbol].registerConsumer({
   consumerId: "feature-test",
   api: { major: 1, minMinor: 0 },
-  require: ["agent-suite.tracker-data", "commands", "quick-replies.input-macro", "tracker.detail-fields", "tracker.surfaces", "ui.agent-settings", "ui.tracker-section"],
+  require: ["agent-suite.tracker-data", "commands", "quick-replies.input-macro", "tracker.detail-fields", "tracker.surfaces", "ui.tracker-section"],
 });
 featureSession.tracker.registerDetailFields({
   id: "ordered-details",
@@ -692,8 +700,8 @@ assert.deepEqual(globalThis[clientSymbol].listCommands({ mode: "roleplay" }), [{
 }]);
 assert.equal(globalThis[clientSymbol].resolveQuickReply("/probe {{input}} + {{input}}", "draft"), "/probe draft + draft");
 assert.equal(globalThis[clientSymbol].resolveQuickReply("unchanged", "draft"), "unchanged");
-featureSession.ui.register({ id: "settings", slot: "agent.settings", agentIds: ["feature-test"], view: "settings" });
-assert.equal(globalThis[clientSymbol].ui.list("agent.settings", { agentId: "feature-test" })[0].ownerId, "feature-test");
+assert.throws(() => featureSession.ui.register({ id: "settings", slot: "agent.settings" }));
+assert.throws(() => featureSession.ui.register({ id: "hud", slot: "roleplay.hud" }));
 let trackerUiPublishes = 0;
 const unsubscribeTrackerUi = globalThis[clientSymbol].ui.subscribe(() => { trackerUiPublishes += 1; });
 featureSession.ui.register({
@@ -812,11 +820,12 @@ assert.equal(featureTrackerSlice.label, "Feature Test Data");
 assert.deepEqual(featureTrackerSlice.getValue({ featureTest: [1] }), [1]);
 assert.deepEqual(featureTrackerSlice.buildPatch({}, [2]), { featureTest: [2] });
 await featureSession.close();
-assert.equal(trackerUiPublishes, 3);
+assert.equal(trackerUiPublishes, 2);
 assert.equal(globalThis[clientSymbol].resolveAgentSuiteTrackerSlice("feature-test"), undefined);
 unsubscribeTrackerUi();
 let expectedPresetOwnsInstructions = true;
 globalThis.fetch = async (url, options) => {
+  if (String(url).startsWith("/api/mari-bridge/turn-handoff/")) return new Response(JSON.stringify({ hidden: true }));
   assert.equal(url, "/api/generate/dryRun");
   const requestBody = JSON.parse(String(options?.body ?? "{}"));
   if (requestBody.impersonate === true) {
@@ -862,8 +871,14 @@ const activeDraft = draftSession.drafts.generate({
     onUpdate: (content) => draftUpdates.push(content),
   });
 assert.equal(globalThis[clientSymbol].isDraftActive("chat-1"), true);
+assert.equal(clientSession.generation.getSnapshot().draftActive, true);
+assert.equal(clientSession.generation.getSnapshot().active.some(run => run.kind === "draft" && run.chatId === "chat-1"), true);
+dispatchClientEvent("marinara:generation-controller", { chatId: "other-chat", active: true });
 assert.equal(await activeDraft, "Hello world");
 assert.equal(globalThis[clientSymbol].isDraftActive("chat-1"), false);
+assert.equal(clientSession.generation.getSnapshot().draftActive, false);
+assert.equal(clientSession.generation.getSnapshot().mainActive, true, "draft completion must not settle another native generation");
+dispatchClientEvent("marinara:generation-controller", { chatId: "other-chat", active: false });
 assert.equal(draftUpdates.at(-1), "Hello world");
 assert.deepEqual(
   await draftSession.drafts.generate({
@@ -896,6 +911,19 @@ assert.deepEqual(
 );
 assert.equal(reasoningUpdates.at(-1), "Because");
 assert.equal(draftSession.drafts.getSnapshot("chat-1").activeCount, 0);
+const successfulFetch = globalThis.fetch;
+globalThis.fetch = (url, options) => String(url).startsWith("/api/mari-bridge/turn-handoff/") ? Promise.resolve(new Response(JSON.stringify({ hidden: true }))) : new Promise((_resolve, reject) => {
+  options.signal.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), { once: true });
+});
+const stoppedDraft = draftSession.drafts.generate({ chatId: "chat-1", body: {} });
+assert.equal(clientSession.generation.getSnapshot().draftActive, true);
+assert.equal(globalThis[clientSymbol].stopDraft("chat-1"), true);
+await assert.rejects(stoppedDraft, { name: "AbortError" });
+assert.equal(clientSession.generation.getSnapshot().activeCount, 0, "native Stop releases draft lifecycle consumers");
+globalThis.fetch = async (url) => { if (String(url).startsWith("/api/mari-bridge/turn-handoff/")) return new Response(JSON.stringify({ hidden: true })); throw new Error("Provider failed"); };
+await assert.rejects(draftSession.drafts.generate({ chatId: "chat-1", body: {} }), /Provider failed/u);
+assert.equal(clientSession.generation.getSnapshot().activeCount, 0, "provider failure releases draft lifecycle consumers");
+globalThis.fetch = successfulFetch;
 await draftSession.close();
 delete globalThis[clientSymbol];
 
@@ -947,13 +975,6 @@ assert.equal(
   versionAssetReferences("vendor.js vendor.js.map", ["vendor.js", "vendor.js.map"], "onepass"),
   "vendor.js?mariBridge=onepass vendor.js.map?mariBridge=onepass",
 );
-const chatSettingsFixture = [
-  'react.jsxs("div",{"data-chat-agent-entry":agent.id,className:"one",children:[first]});',
-  'react.jsxs("div",{"data-chat-agent-entry":other.id,className:"two",children:[second]});',
-].join("");
-const patchedChatSettings = patchChatSettingsBridge(chatSettingsFixture);
-assert.equal((patchedChatSettings.match(/marinara-mari-bridge-agent-settings/gu) ?? []).length, 2);
-assert.match(patchedChatSettings, /"agent-id":agent\.id/u);
 const impersonateSettingsFixture = [
   'import{r as react,j as jsx}from"./vendor-react-test.js";',
   'function Impersonate(){const first=1,preset=store(state=>state.impersonatePresetId);return jsx.jsxs("div",{children:[jsx.jsx(SettingsSwitch,{label:t("ui.chatSettings.impersonatesection.skipAgents"),checked:false}),jsx.jsx(SettingsSwitch,{label:t("ui.chatSettings.impersonatesection.useCyoaAsDirection"),checked:false})]})}',
@@ -962,6 +983,8 @@ const patchedImpersonateSettings = patchImpersonateSettingsBridge(impersonateSet
 assert.match(patchedImpersonateSettings, /renderNativeImpersonateSetting/u);
 assert.match(patchedImpersonateSettings, /SettingsSwitch:SettingsSwitch/u);
 assert.match(patchedImpersonateSettings, /presetId:preset/u);
+assert.match(patchedImpersonateSettings, /react:react/u);
+assert.doesNotMatch(patchedImpersonateSettings, /globalThis\.React/u);
 const agentSuiteFixture = [
   'import{r as react}from"./vendor-react-test.js";',
   'const slices={};',
@@ -998,14 +1021,7 @@ assert.equal(
   patchTrackerPanelBridge('const selector = \'[data-component="TrackerDataSidebarDesktop.right"]\';'),
   null,
 );
-const trackerDetailFixture = [
-  'const trackerDetailMarker="ui.trackerPanel.charactertrackercard.outfit";',
-  'function compact(){k=Object.entries(e.customFields??{}).map(([R,Z])=>[R,Z,At(Z)]);U=v.length>0||k.length>0||b,H=U;onToggleHidden:()=>O("outfit")})]})}',
-  'function gs({character:e,onUpdate:a,sizeProfile:t,characterIndex:o}){const s=[{hidden:u("outfit"),value:e.outfit}].filter(d=>!d.hidden||i);return r.jsx("div",{children:s.map(d=>r.jsx(ps,{icon:d.icon,accessibleLabel:d.accessibleLabel,value:d.value,placeholder:d.placeholder,onSave:d.onSave,sizeProfile:t,fieldKey:d.key,lockKey:c(d.key),hidden:d.hidden,hideMode:i,onToggleHidden:()=>b(d.key)},d.key))})}',
-  'function featured(){I=Object.entries(e.customFields??{}).map(([F,Q])=>[F,Q,At(Q)]);r.jsx(gs,{character:e,onUpdate:d,sizeProfile:f,characterIndex:g})}',
-  'function Qi({persona:e,status:a,spriteExpression:t,trackerPanelSide:o,statDisplayMode:n,resolveStatIcon:i,personaStats:l,action:f,onSaveStatus:c,onUpdatePersonaStats:u,onAddPersonaStat:b,deleteMode:s,addMode:d,queuePersonaPortraitSave:p,flushPersonaPortraitSave:g,collapsed:x=!1,onToggleCollapsed:_}){{fieldLocks:T,lockMode:w,onToggleFieldLock:C}=Ce();r.jsx("div",{className:m(Gi,Pt,qe[M],Qt[M]),children:Y()})}',
-  'function Wl({activeChatId:e,activePersona:a,characterSpriteLookup:t,characterTrackerConfig:o,characterTrackerSettings:n,currentGameState:i,enabledAgentTypes:l,expressionSpritesEnabled:f,featuredCharacterCardKeys:c,flushPatch:u,gameStateRefreshing:b,orderedTrackerSections:s,patchField:d,patchPlayerStats:p,patchPlayerStatsMany:g,resolveSpriteCharacterId:x,spriteExpressions:_,trackerPanelCollapsedSections:A,trackerPanelSide:T,trackerPanelSizeProfile:w,trackerPanelThoughtBubbleDisplay:C,trackerStatDisplayMode:k,trackerPanelDockedThoughtsAlwaysVisible:v,trackerTemperatureUnit:j,toggleTrackerPanelSectionCollapsed:y,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N,resolveStatIcon:P,beforeCustomSections:B,afterCustomSections:W}){const X=va(),mariBridgeFixture=(M=Array.isArray(i.personaStats)?i.personaStats:[],V=Array.isArray(D?.customTrackerFields)?D.customTrackerFields:[],{onAddPersonaStat:ae,deleteMode:E,addMode:L,queuePersonaPortraitSave:O,flushPersonaPortraitSave:N})}',
-].join("");
+const trackerDetailFixture = await fs.readFile(new URL("./fixtures/tracker-detail-native.js", import.meta.url), "utf8");
 const patchedTrackerDetails = patchTrackerDetailFieldsBridge(trackerDetailFixture);
 assert.match(patchedTrackerDetails, /renderCompactCharacterTrackerDetailFields/u);
 assert.match(patchedTrackerDetails, /hasCharacterTrackerDetailFields\(e\.customFields\)/u);
@@ -1016,10 +1032,11 @@ assert.match(patchedTrackerDetails, /fieldKey:d\.mariBridgeOnRemove\?"outfit":d\
 assert.match(patchedTrackerDetails, /renderPersonaTrackerDetailFields/u);
 assert.match(patchedTrackerDetails, /shouldShowTrackerContent\("persona-status",\{surface:"dock"\}\)/u);
 assert.match(patchedTrackerDetails, /filterPersonaTrackerStats\(i\.personaStats\)/u);
-const roleplayHudFixture = 'import{r as react}from"./vendor-react-test.js";const bars=state?.personaStats??[],show=enabled.has("persona-stats");jsx.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
+const roleplayHudFixture = 'import{r as react}from"./vendor-react-test.js";const packages=installed.filter(item=>item.status==="active"&&enabled.has(item.id)&&!!item.manifest.entrypoints.client&&item.manifest.contributions?.slots?.includes("roleplay-tracker"));const bars=state?.personaStats??[],show=enabled.has("persona-stats");jsx.jsxs("div",{className:cn("rpg-hud","flex items-center"),children:[]})';
 const patchedRoleplayHud = patchRoleplayHudBridge(roleplayHudFixture);
 assert.match(patchedRoleplayHud, /useTrackerSurfaces\(react\)/u);
-assert.match(patchedRoleplayHud, /mountNativeSlot\(Z,"roleplay\.hud"\)/u);
+assert.doesNotMatch(patchedRoleplayHud, /mountNativeSlot/u);
+assert.match(patchedRoleplayHud, /shouldShowTrackerSurface\(item.id,\{surface:"hud"\}\)/u);
 assert.match(patchedRoleplayHud, /shouldShowTrackerSurface\("persona-stats",\{surface:"hud"\}\)/u);
 assert.match(patchedRoleplayHud, /filterPersonaTrackerStats\(state\?\.personaStats\)/u);
 const queryClientFixture = 'Object.assign(globalThis,{React:react,ReactDOM:reactDom});const queryClient=new QueryClient({defaultOptions:{queries:{staleTime:3e4,retry:1,refetchOnWindowFocus:!1}}});';
@@ -1027,13 +1044,14 @@ const patchedQueryClient = patchQueryClientBridge(queryClientFixture);
 assert.match(patchedQueryClient, /bindQueryClient\(mariBridgeQueryClient\)/u);
 assert.equal(patchQueryClientBridge('const queryClient = true;'), null);
 const roleplayBackgroundStoreFixture = 'const component="chat-area",chat=store(state=>state.activeChatId),illustrated=store(state=>chat?state.backgroundIllustrationChatIds.has(chat):!1),bg=uiStore(state=>state.chatBackground),weather=uiStore(state=>state.weatherEffects);';
-const roleplayBackgroundFixture = 'react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
+const roleplayBackgroundFixture = 'import{r as React}from"./vendor-react-test.js";const blur=store(s=>s.chatBackgroundBlur);react.jsx(Fade,{url:bg,blurPx:blur});const later=enabled&&metadata.enableAgents&&active;const marker="rpg-chat-area mari-chat-area";';
 const roleplayDraftPlaceholderFixture = 'const component="chat-area";const chat=store(state=>state.activeChatId),streamingChat=store(state=>state.streamingChatId),streaming=store(state=>state.isStreaming)&&streamingChat===chat,illustrated=store(state=>chat?state.backgroundIllustrationChatIds.has(chat):!1),textStreaming=streaming&&!illustrated,pageActive=true;';
 const patchedRoleplayBackgroundStore = patchRoleplayBackgroundStoreBridge(roleplayBackgroundStoreFixture);
 const patchedRoleplayBackground = patchRoleplayBackgroundBridge(roleplayBackgroundFixture);
 const patchedRoleplayDraftPlaceholder = patchRoleplayDraftPlaceholderBridge(roleplayDraftPlaceholderFixture);
 assert.match(patchedRoleplayBackgroundStore, /bindRoleplayBackgroundStore\(uiStore\)/u);
 assert.match(patchedRoleplayBackground, /resolveBackgroundProps\(metadata,bg,blur\)/u);
+assert.match(patchedRoleplayBackground, /useBackgroundVersion\(React\)/u);
 assert.match(patchedRoleplayDraftPlaceholder, /isDraftActive\(chat\)/u);
 assert.equal(patchRoleplayBackgroundStoreBridge('const label="chat-area";'), null);
 assert.equal(patchRoleplayDraftPlaceholderBridge('const label="chat-area";'), null);
@@ -1054,7 +1072,6 @@ await fs.writeFile(path.join(nativeAssetsRoot, "index-main.js"), `${compiledClie
 await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-one.js"), chatInputFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "chat-input-two.js"), chatInputFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "slash-commands.js"), slashCommandListFixture);
-await fs.writeFile(path.join(nativeAssetsRoot, "chat-settings.js"), chatSettingsFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "impersonate-settings.js"), impersonateSettingsFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "agent-suite.js"), agentSuiteFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanelFixture);
@@ -1067,7 +1084,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-draft-placeholder.js"),
 const preparedClientOverlay = await prepareClientOverlay({
   dataDir: path.join(clientOverlayFixtureRoot, "data"),
   sourceRoot: nativeClientRoot,
-  engineVersion: "2.4.4",
+  engineVersion: "2.4.6",
 });
 // Exercise the installed file set, not the complete package source tree.
 // The development harness copies all of src and can hide installer omissions.
@@ -1079,7 +1096,7 @@ const installedOverlayModule = await import(pathToFileURL(
 const installedOverlay = await installedOverlayModule.prepareClientOverlay({
   dataDir: cleanInstallData,
   sourceRoot: nativeClientRoot,
-  engineVersion: "2.4.4",
+  engineVersion: "2.4.6",
 });
 assert.deepEqual(installedOverlay.failedPatches, []);
 assert.equal((await installerTest.installStableRuntime({ dataDir: cleanInstallData })).changed, false);
@@ -1096,11 +1113,22 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.41"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.42"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
 assert.match(preparedOverlayMain, /window\.dispatchEvent\(new CustomEvent\("marinara:active-chat"/u);
+
+const reusedClientOverlay = await prepareClientOverlay({
+  dataDir: path.join(clientOverlayFixtureRoot, "data"), sourceRoot: nativeClientRoot, engineVersion: "2.4.6",
+});
+assert.equal(reusedClientOverlay.root, preparedClientOverlay.root);
+await fs.writeFile(path.join(nativeAssetsRoot, "same-version-new-chunk.js"), 'export const rebuilt=true;');
+const rebuiltClientOverlay = await prepareClientOverlay({
+  dataDir: path.join(clientOverlayFixtureRoot, "data"), sourceRoot: nativeClientRoot, engineVersion: "2.4.6",
+});
+assert.notEqual(rebuiltClientOverlay.root, preparedClientOverlay.root, "a same-version native client rebuild invalidates its overlay");
+assert.equal(await fs.readFile(path.join(rebuiltClientOverlay.root, "assets", "same-version-new-chunk.js"), "utf8"), 'export const rebuilt=true;');
 
 const degradedNativeRoot = path.join(clientOverlayFixtureRoot, "native-degraded");
 await fs.cp(nativeClientRoot, degradedNativeRoot, { recursive: true });
@@ -1111,7 +1139,7 @@ await fs.writeFile(
 const degradedClientOverlay = await prepareClientOverlay({
   dataDir: path.join(clientOverlayFixtureRoot, "data-degraded"),
   sourceRoot: degradedNativeRoot,
-  engineVersion: "2.4.4",
+  engineVersion: "2.4.6",
 });
 assert.equal(degradedClientOverlay.patches.includes("client.roleplay-background"), false);
 assert.equal(degradedClientOverlay.patches.includes("client.bridge-first"), false);
@@ -1175,6 +1203,8 @@ for (const relativePath of [
   "src/server/chat-registry.js",
   "src/server/spatial-directive-compat.js",
   "src/server/client-overlay.js",
+  "src/server/tracker-detail-patch.js",
+  "src/server/overlay-fingerprint.js",
   "src/client/runtime.js",
   "src/client/tracker-detail-field-registry.js",
 ]) {
@@ -1203,9 +1233,10 @@ assert.equal(bootstrapAttempt.attempts, 0);
 assert.equal(bootstrapAttempt.status, "preload-active");
 const bootstrapRestartSource = await fs.readFile(new URL("../src/server/bootstrap-restart.js", import.meta.url), "utf8");
 assert.match(bootstrapRestartSource, /process\.platform !== "win32" && typeof process\.execve !== "function"/u);
-assert.match(bootstrapRestartSource, /detached: true/u);
-assert.match(bootstrapRestartSource, /child\.unref\(\)/u);
-assert.match(bootstrapRestartSource, /process\.exit\(0\)/u);
+assert.match(bootstrapRestartSource, /detached: false/u);
+assert.doesNotMatch(bootstrapRestartSource, /child\.unref\(\)/u);
+assert.match(bootstrapRestartSource, /child\.once\("close"/u);
+assert.match(bootstrapRestartSource, /process\.exit\(code\)/u);
 assert.match(bootstrapRestartSource, /process\.execve\(process\.execPath/u);
 delete globalThis[kernelSymbol];
 await fs.rm(bootstrapFixtureRoot, { recursive: true, force: true });
@@ -1243,7 +1274,7 @@ const bootstrapPatchSource = await fs.readFile(new URL("../bootstrap/runtime.mjs
 const serverOverlaySource = await fs.readFile(new URL("../src/server/server-overlay.js", import.meta.url), "utf8");
 const installerSource = await fs.readFile(new URL("../src/server/index.js", import.meta.url), "utf8");
 assert.match(bootstrapDispatcherSource, /isMainThread/u);
-assert.match(bootstrapDispatcherSource, /if \(isMainThread\) await import\("\.\/runtime\.mjs"\)/u);
+assert.match(bootstrapDispatcherSource, /if \(isMainThread && !isSupervisor\) await import\("\.\/runtime\.mjs"\)/u);
 assert.doesNotMatch(bootstrapDispatcherSource, /prepareClientOverlay|prepareServerOverlay|handoffToServerOverlay/u);
 const workerGuardResult = spawnSync(process.execPath, [
   `--import=${new URL("../bootstrap/register.mjs", import.meta.url).href}`,
@@ -1260,7 +1291,7 @@ assert.equal(workerGuardResult.stdout.trim(), "false");
 assert.match(bootstrapPatchSource, /createInjectedServerRuntime/u);
 assert.match(bootstrapPatchSource, /prepareClientOverlay/u);
 assert.match(bootstrapPatchSource, /prepareServerOverlay/u);
-assert.match(bootstrapPatchSource, /handoffToServerOverlay/u);
+assert.match(bootstrapPatchSource, /redirectServerEntryToOverlay/u);
 assert.doesNotMatch(bootstrapPatchSource, /registerHooks|nextLoad\(url/u);
 assert.match(serverOverlaySource, /join\(resolve\(dataDir\), "mari-bridge"\)/u);
 assert.match(serverOverlaySource, /MARI_BRIDGE_ENGINE_ROOT/u);
@@ -1328,7 +1359,7 @@ await fs.mkdir(path.join(sharedOverlayDist, "utils"), { recursive: true });
 await fs.mkdir(path.join(serverOverlayFixtureRoot, "packages", "server", "node_modules", "fastify"), { recursive: true });
 await fs.writeFile(path.join(serverOverlayFixtureRoot, "package.json"), JSON.stringify({
   name: "marinara-engine",
-  version: "2.4.4",
+  version: "2.4.6",
 }));
 await fs.writeFile(path.join(serverOverlayFixtureRoot, "packages", "shared", "package.json"), JSON.stringify({
   name: "@marinara-engine/shared",
@@ -1348,13 +1379,18 @@ const overlayTargets = [
   ["services/patched.js", ["packages", "server", "dist", "services", "patched.js"]],
   ["utils/macro-engine.js", ["packages", "shared", "dist", "utils", "macro-engine.js"]],
 ];
+let overlayPatchCalls = 0;
+const overlayPatchModule = (_url, source) => {
+  overlayPatchCalls += 1;
+  return `${source.trimEnd()}\nexport const bridged = true;\n`;
+};
 const preparedServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
-  engineVersion: "2.4.4",
+  engineVersion: "2.4.6",
   bridgeVersion: "1.0.31",
   patchTargets: overlayTargets,
-  patchModule: (_url, source) => `${source.trimEnd()}\nexport const bridged = true;\n`,
+  patchModule: overlayPatchModule,
 });
 assert.equal(preparedServerOverlay.root, path.join(serverOverlayDataDir, "mari-bridge", "server"));
 assert.equal(preparedServerOverlay.engineRoot, path.resolve(serverOverlayFixtureRoot));
@@ -1362,26 +1398,15 @@ assert.equal(
   JSON.parse(await fs.readFile(path.join(preparedServerOverlay.root, ".mari-bridge-ready.json"), "utf8")).engineRoot,
   path.resolve(serverOverlayFixtureRoot),
 );
-assert.equal(isServerOverlayEntry(preparedServerOverlay.entry, preparedServerOverlay), true);
+assert.equal(preparedServerOverlay.entry, path.join(preparedServerOverlay.root, "index.js"));
 assert.equal(
   await fs.realpath(path.join(preparedServerOverlay.root, "node_modules", "fastify")),
   await fs.realpath(path.join(serverOverlayFixtureRoot, "packages", "server", "node_modules", "fastify")),
 );
 assert.deepEqual(
   detectMarinaraEngine("missing-entry.js", path.join(serverOverlayFixtureRoot, "missing"), serverOverlayFixtureRoot),
-  Object.freeze({ root: path.resolve(serverOverlayFixtureRoot), version: "2.4.4" }),
+  Object.freeze({ root: path.resolve(serverOverlayFixtureRoot), version: "2.4.6" }),
 );
-assert.deepEqual(serverOverlayProcessState(preparedServerOverlay, {}), { active: false, depth: 0 });
-assert.deepEqual(serverOverlayProcessState(preparedServerOverlay, {
-  MARI_BRIDGE_SERVER_OVERLAY_VERSION: "1.0.31",
-  MARI_BRIDGE_SERVER_OVERLAY_ENTRY: preparedServerOverlay.entry,
-  MARI_BRIDGE_SERVER_HANDOFF_DEPTH: "1",
-}), { active: true, depth: 1 });
-assert.deepEqual(serverOverlayProcessState(preparedServerOverlay, {
-  MARI_BRIDGE_SERVER_OVERLAY_VERSION: "1.0.29",
-  MARI_BRIDGE_SERVER_OVERLAY_ENTRY: preparedServerOverlay.entry,
-  MARI_BRIDGE_SERVER_HANDOFF_DEPTH: "1",
-}), { active: false, depth: 1 });
 assert.match(await fs.readFile(path.join(preparedServerOverlay.root, "services", "patched.js"), "utf8"), /bridged = true/u);
 assert.match(await fs.readFile(path.join(preparedServerOverlay.root, "untouched.js"), "utf8"), /untouched = true/u);
 assert.match(
@@ -1400,26 +1425,36 @@ assert.deepEqual(
   await prepareServerOverlay({
     engineRoot: serverOverlayFixtureRoot,
     dataDir: serverOverlayDataDir,
-    engineVersion: "2.4.4",
+    engineVersion: "2.4.6",
     bridgeVersion: "1.0.31",
     patchTargets: overlayTargets,
-    patchModule: () => { throw new Error("cached server overlay should not rebuild"); },
+    patchModule: overlayPatchModule,
   }),
   preparedServerOverlay,
 );
+assert.equal(overlayPatchCalls, 2, "unchanged sources reuse the verified server overlay");
+await fs.writeFile(path.join(serverOverlayDist, "untouched.js"), "export const untouched = 'rebuilt-native';\n");
+const sameVersionOverlay = await prepareServerOverlay({
+  engineRoot: serverOverlayFixtureRoot, dataDir: serverOverlayDataDir,
+  engineVersion: "2.4.6", bridgeVersion: "1.0.31",
+  patchTargets: overlayTargets, patchModule: overlayPatchModule,
+});
+assert.equal(overlayPatchCalls, 4, "a same-version native rebuild invalidates the cache");
+assert.notEqual(sameVersionOverlay.fingerprint, preparedServerOverlay.fingerprint);
+assert.match(await fs.readFile(path.join(sameVersionOverlay.root, "untouched.js"), "utf8"), /rebuilt-native/u);
 const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
-  engineVersion: "2.4.4",
-  bridgeVersion: "1.0.41",
+  engineVersion: "2.4.6",
+  bridgeVersion: "1.0.42",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.41");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.42");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
-  serverOverlayTest.withoutMariBridgeExecArgs([
+  bootstrapRestartTest.withoutMariBridgeExecArgs([
     "--trace-warnings",
     "--import=file:///data/mari-bridge/bootstrap/register.mjs",
     "--enable-source-maps",
@@ -1609,14 +1644,12 @@ assert.deepEqual(
 assert.equal(globalThis[kernelSymbol].patches["compat.character-custom-field.blank-null-lock-merge"], "applied");
 
 const generatePersistFixture = `async function persist(input, savedMsg, savedSwipeIndex) {
-          if (
-            savedMsg?.id &&
-            savedSwipeIndex !== null &&
-            !shouldSuppressAssistantSpatialMutation(input) &&
-            hierarchicalMapsEnabledForChat
-          ) {
-            await materializeAssistantSpatialState();
-          }
+                    if (savedMsg?.id &&
+                        savedSwipeIndex !== null &&
+                        !shouldSuppressAssistantSpatialMutation(input) &&
+                        hierarchicalMapsEnabledForChat) {
+                        await materializeAssistantSpatialState();
+                    }
 }`;
 const patchedGeneratePersist = patchServerModule("file:///engine/routes/generate.routes.js", generatePersistFixture);
 assert.match(patchedGeneratePersist, /messageHooks\?\.notifyPersisted/u);
@@ -1627,7 +1660,7 @@ const skipOnRegenerateFixture = `async function resolve(input, resolvedAgents) {
                 const builtInAgentTypes = new Set(BUILT_IN_AGENTS.map((agent) => agent.id));
                 for (let index = resolvedAgents.length - 1; index >= 0; index--) {
                     const agent = resolvedAgents[index];
-                    if (builtInAgentTypes.has(agent.type))
+                    if (builtInAgentTypes.has(agent.type) || agent.type === "illustrator")
                         continue;
                     run(agent);
                 }
@@ -1641,7 +1674,7 @@ assert.match(patchedSkipOnRegenerate, /resolvedAgents\.splice\(index, 1\)/u);
 assert.match(patchedSkipOnRegenerate, /builtInAgentTypes\.has\(agent\.type\) && agent\.settings\?\.useGenericRunInterval !== true/u);
 assert.ok(
   patchedSkipOnRegenerate.indexOf("if (input.regenerateMessageId")
-    < patchedSkipOnRegenerate.indexOf("if (builtInAgentTypes.has(agent.type)"),
+    < patchedSkipOnRegenerate.indexOf('if (agent.type === "illustrator"'),
   "The regeneration guard must run before built-in/package agent classification",
 );
 assert.equal(globalThis[kernelSymbol].patches["agent.skip-on-regenerate"], "applied");
@@ -1649,7 +1682,7 @@ assert.equal(globalThis[kernelSymbol].patches["agent.skip-on-regenerate"], "appl
 const spatialGenerateFixture = [
   "        const spatialDirectiveStreamFilter =",
   "          hierarchicalMapsEnabledForChat ? createAssistantSpatialDirectiveStreamFilter() : null;",
-  "          const visibleText = spatialDirectiveStreamFilter?.push(text) ?? text;",
+  "          const visibleText = spatialDirectiveStreamFilter?.push(chanceFiltered) ?? chanceFiltered;",
   "            const pendingSpatialText = spatialDirectiveStreamFilter?.flush() ?? \"\";",
   "            const parsedSpatial = extractAssistantSpatialDirective(fullResponse);",
   "                    const parsedRewriteSpatial = extractAssistantSpatialDirective(editedText);",
@@ -1843,8 +1876,7 @@ const dryRunRouteFixture = [
   "                runId,",
   "            });",
   "            idleDuration: promptIdleDuration,",
-  "        });",
-  "        const historyMacroProfilesById = (await resolveCharacterMacroData(app.db, allCharacterIds)).profilesById;",
+  "            macroSources: [",
   "                idleDuration: promptIdleDuration,",
   "                impersonate,",
   "                enableAgents: false,",
@@ -1936,7 +1968,7 @@ assert.equal(globalThis[kernelSymbol].patches["compat.hidden-tracker-context.map
 const legacyCommittedGuard =
   "if (!hasWorldState && !hasCharTracker && !hasPersonaStats && !hasQuest && !hasCustomTracker) return null;";
 const patchedLegacyCommittedGuard = patchCommittedTrackerActiveGuard(legacyCommittedGuard);
-assert.match(patchedLegacyCommittedGuard, /trackerContextHooks\?\.hasActive\(args\.activeAgentIds\)/u);
+assert.equal(patchedLegacyCommittedGuard, legacyCommittedGuard, "obsolete Engine guards are unsupported");
 const currentCommittedGuard = `if (
     !hasWorldState &&
     !hasCharTracker &&
@@ -1982,7 +2014,7 @@ const wrongVersionKernel = await runBootstrapFixture("2.4.3");
 assert.equal(wrongVersionKernel.active, false);
 assert.equal(wrongVersionKernel.engineCompatibility.compatible, false);
 assert.equal(wrongVersionKernel.patches["engine.version"], "failed");
-const failedPreflightKernel = await runBootstrapFixture("2.4.4");
+const failedPreflightKernel = await runBootstrapFixture("2.4.6");
 assert.equal(failedPreflightKernel.active, false);
 assert.equal(failedPreflightKernel.engineCompatibility.compatible, true);
 assert.equal(failedPreflightKernel.patches["engine.preflight"], "failed");

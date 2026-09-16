@@ -37,7 +37,7 @@ function manifest() {
     name: "Presence",
     version,
     description: "Tracks per-message character presence with native per-character Hide From AI state.",
-    engine: { min: "2.4.4", maxExclusive: "2.4.5" },
+    engine: { min: "2.4.6", maxExclusive: "2.4.7" },
     kind: ["agent"],
     entrypoints: {
       server: "server.mjs",
@@ -45,7 +45,7 @@ function manifest() {
       agents: "agents.json",
     },
     contributions: {
-      slots: ["chat-runtime"],
+      slots: ["chat-runtime", "chat-settings"],
     },
     files: [
       { path: "server.mjs", sha256: "0".repeat(64), bytes: 0 },

@@ -1,0 +1,245 @@
+{
+  "method": "TypeScript single-file emission and Bridge server transforms only; no Engine execution, type-check, client bundle build, or live verification.",
+  "engine": {
+    "version": "2.4.6",
+    "ref": "HEAD",
+    "commit": "990b960e62449b2ddf36f08686ea1da681034c75"
+  },
+  "bridge": {
+    "version": "1.0.41",
+    "supportedEngineVersions": [
+      "2.4.4"
+    ]
+  },
+  "compilerVersion": "5.9.3",
+  "summary": {
+    "targetModules": 15,
+    "passingModules": 13,
+    "appliedPatchIds": 77,
+    "failedPatchIds": 3,
+    "moduleErrors": 0,
+    "modulesWithSyntaxErrors": 0
+  },
+  "modules": [
+    {
+      "label": "capability-module-runtime.service.js",
+      "sourcePath": "packages/server/src/services/capability-packages/capability-module-runtime.service.ts",
+      "sourceSha256": "05fdc8030fefaac5c6e923ddc64c466ac6c03f65fcda473f4448fd96eba85143",
+      "patches": {
+        "bridge-first.activation": "applied",
+        "packages.client-only-updates": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "services/prompt/assembler.js",
+      "sourcePath": "packages/server/src/services/prompt/assembler.ts",
+      "sourceSha256": "e595c0cffe726b988c40bbca1892179ae05351039753d8cadca1bb81e5afc471",
+      "patches": {
+        "prompt.assembler.input": "applied",
+        "prompt.assembler.output": "applied",
+        "prompt.active-agents.assembler": "applied",
+        "prompt.group-macros.assembler-context": "applied",
+        "prompt.outlet-nested-fields.scan-source": "applied",
+        "prompt.outlet-nested-fields.scan-call": "applied",
+        "prompt.assembler": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "services/storage/chats.storage.js",
+      "sourcePath": "packages/server/src/services/storage/chats.storage.ts",
+      "sourceSha256": "75ad93d604f456e449478fc85f83eee329b77212758be6f49c26b273a98c12d5",
+      "patches": {
+        "message.prepare-create": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "routes/chats.routes.js",
+      "sourcePath": "packages/server/src/routes/chats.routes.ts",
+      "sourceSha256": "11117375738db4f662d2d0e8a4febaed1f8519377c88d143b7d7f7acc9d065b8",
+      "patches": {
+        "chat.changed-root": "applied",
+        "chat.changed-metadata": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "routes/prompts.routes.js",
+      "sourcePath": "packages/server/src/routes/prompts.routes.ts",
+      "sourceSha256": "0afa5224fd67150a81336ae1a4a486d7976338c836b9c43cb9ce8fe31d1c564b",
+      "patches": {
+        "prompt.group-macros.preview": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "services/prompt/macro-context.js",
+      "sourcePath": "packages/server/src/services/prompt/macro-context.ts",
+      "sourceSha256": "6e545024f2db26e6e39aa8aaf4245bb00cda294682bc4a1b91e2dda0f0abceb4",
+      "patches": {
+        "prompt.active-agents.context": "applied",
+        "prompt.group-macros.context": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "utils/macro-engine.js",
+      "sourcePath": "packages/shared/src/utils/macro-engine.ts",
+      "sourceSha256": "8230a8d38386f8229d1c398cc63f2b8eb71782c4cdc072cb481d60060464d64e",
+      "patches": {
+        "prompt.bridge-macros.character-scope": "applied",
+        "prompt.active-agents.macro": "applied",
+        "prompt.group-macros.resolve": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "utils/tracker-field-locks.js",
+      "sourcePath": "packages/shared/src/utils/tracker-field-locks.ts",
+      "sourceSha256": "4608bc445581e5b1d5fe308d62f883a2f82b7026c50d4d5a7f75766e623607df",
+      "patches": {
+        "compat.character-custom-field.blank-null-lock-merge": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "services/agents/agent-executor.js",
+      "sourcePath": "packages/server/src/services/agents/agent-executor.ts",
+      "sourceSha256": "0ca3372720f10f4b4a824d463c180902673cfb763c8e46f524438276e1421a2f",
+      "patches": {
+        "agent.prompt-extend": "applied",
+        "agent.prompt-extend-batch": "applied",
+        "agent.prompt-extend-single": "applied",
+        "agent.result-types": "applied",
+        "tracker.context-agent": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "services/generation/committed-tracker-context.js",
+      "sourcePath": "packages/server/src/services/generation/committed-tracker-context.ts",
+      "sourceSha256": "4c58e732e839bd8940ef0d75a52500c918751b8da89d8106f682b29bedff7643",
+      "patches": {
+        "tracker.context-committed-active": "applied",
+        "compat.hidden-tracker-context.import": "applied",
+        "compat.hidden-tracker-context.formatter": "applied",
+        "compat.hidden-tracker-context.fields": "applied",
+        "compat.hidden-tracker-context.state": "applied",
+        "compat.hidden-tracker-context.map": "applied",
+        "tracker.context-custom-fields": "applied",
+        "tracker.context-committed": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "routes/generate/generate-route-utils.js",
+      "sourcePath": "packages/server/src/routes/generate/generate-route-utils.ts",
+      "sourceSha256": "7d514463f59f7a7d0066030071267998d363203bbb3d6c1a2d32b27f748190ba",
+      "patches": {
+        "compat.character-custom-field.blank-null-helper": "applied",
+        "compat.character-custom-field.blank-null-history": "applied",
+        "compat.character-custom-field.blank-null-preserve": "applied",
+        "compat.character-custom-field.blank-null-game-state": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "routes/generate.routes.js",
+      "sourcePath": "packages/server/src/routes/generate.routes.ts",
+      "sourceSha256": "f3a6045c40bfb31934c7a1803b80749e1324bfdd707a181df8c747c52babc331",
+      "patches": {
+        "agent.skip-on-regenerate": "failed",
+        "prompt.group-macros.main-context": "applied",
+        "prompt.group-macros.main-assembler": "applied",
+        "prompt.outlet-nested-fields.main-final": "applied",
+        "group.selector-policy": "applied",
+        "turn.handoff-queue-state": "applied",
+        "group.selector-call": "applied",
+        "turn.handoff-persona-fallback": "applied",
+        "turn.handoff-persona-no-failure": "applied",
+        "turn.handoff-persona-return": "applied",
+        "turn.handoff-stream-filter": "applied",
+        "turn.handoff-stream-push": "failed",
+        "turn.handoff-stream-flush": "applied",
+        "spatial.directive-compat-response": "applied",
+        "spatial.directive-compat-rewrite": "applied",
+        "turn.handoff-response-state": "applied",
+        "turn.handoff-response-process": "applied",
+        "turn.handoff-commit": "applied",
+        "message.persist-generate": "applied",
+        "prompt.generate-fallback": "applied",
+        "tracker.character-history-main": "applied",
+        "agent.result-apply-main": "applied",
+        "agent.result-expand-main": "applied",
+        "agent.result-expand-main-mutable": "applied",
+        "agent.result-derived-cadence-main": "applied"
+      },
+      "failures": [
+        "agent.skip-on-regenerate expected one anchor, found 0",
+        "turn.handoff-stream-push expected one anchor, found 0"
+      ],
+      "syntaxErrors": []
+    },
+    {
+      "label": "routes/generate/dry-run-route.js",
+      "sourcePath": "packages/server/src/routes/generate/dry-run-route.ts",
+      "sourceSha256": "b51dc778f57137af27f26d4d860e8ff8c0a6277cb46bf775f3b35f99e02769e6",
+      "patches": {
+        "prompt.active-agents.dry-run": "applied",
+        "dry-run.structured-options": "applied",
+        "dry-run.impersonate-preset-owned-instructions": "applied",
+        "dry-run.impersonate-continuation": "applied",
+        "dry-run.streaming-reasoning-state": "applied",
+        "dry-run.streaming-reasoning-callback": "applied",
+        "dry-run.streaming-reasoning-provider": "applied",
+        "dry-run.streaming-structured-result": "applied",
+        "dry-run.nonstream-reasoning-state": "failed",
+        "dry-run.nonstream-reasoning-provider": "applied",
+        "dry-run.nonstream-structured-result": "applied",
+        "prompt.group-macros.dry-run-context": "applied",
+        "prompt.group-macros.dry-run-assembler": "applied",
+        "prompt.outlet-nested-fields.dry-run-final": "applied"
+      },
+      "failures": [
+        "dry-run.nonstream-reasoning-state expected one anchor, found 0"
+      ],
+      "syntaxErrors": []
+    },
+    {
+      "label": "routes/generate/retry-agents-route.js",
+      "sourcePath": "packages/server/src/routes/generate/retry-agents-route.ts",
+      "sourceSha256": "8d26673fdaba7b1f43ebb278f35286226ac1ae976b3564a507047b4b7d1ab7c9",
+      "patches": {
+        "tracker.character-history-retry": "applied",
+        "agent.result-expand-retry": "applied",
+        "agent.result-derived-cadence-retry": "applied",
+        "agent.result-apply-retry": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    },
+    {
+      "label": "app.js",
+      "sourcePath": "packages/server/src/app.ts",
+      "sourceSha256": "9fc4d9636dfe81382085aa14e7a18765d320555799bd8f2291ba591d8f7b9c5e",
+      "patches": {
+        "client.overlay-root": "applied"
+      },
+      "failures": [],
+      "syntaxErrors": []
+    }
+  ]
+}

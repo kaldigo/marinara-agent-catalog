@@ -1,43 +1,12 @@
-import { spawn } from "node:child_process";
+import { registerHooks } from "node:module";
 import { cp, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { fingerprintOverlayInputs } from "./overlay-fingerprint.js";
 
-const SERVER_OVERLAY_FORMAT_VERSION = "2";
+const SERVER_OVERLAY_FORMAT_VERSION = "3";
 const SERVER_OVERLAY_DIRECTORY = "server";
-const SERVER_OVERLAY_VERSION_ENV = "MARI_BRIDGE_SERVER_OVERLAY_VERSION";
-const SERVER_OVERLAY_ENTRY_ENV = "MARI_BRIDGE_SERVER_OVERLAY_ENTRY";
-const SERVER_OVERLAY_HANDOFF_DEPTH_ENV = "MARI_BRIDGE_SERVER_HANDOFF_DEPTH";
 const ENGINE_ROOT_ENV = "MARI_BRIDGE_ENGINE_ROOT";
-
-function withoutMariBridgeImports(value) {
-  const tokens = String(value ?? "").trim().split(/\s+/u).filter(Boolean);
-  const retained = [];
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token === "--import" && tokens[index + 1]?.toLowerCase().includes("mari-bridge")) {
-      index += 1;
-      continue;
-    }
-    if (token.startsWith("--import=") && token.toLowerCase().includes("mari-bridge")) continue;
-    retained.push(token);
-  }
-  return retained.join(" ");
-}
-
-function withoutMariBridgeExecArgs(values) {
-  const retained = [];
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (value === "--import" && values[index + 1]?.toLowerCase().includes("mari-bridge")) {
-      index += 1;
-      continue;
-    }
-    if (value.startsWith("--import=") && value.toLowerCase().includes("mari-bridge")) continue;
-    retained.push(value);
-  }
-  return retained;
-}
 
 function overlayPathForTarget(engineRoot, overlayRoot, segments) {
   const nativeServerDist = resolve(engineRoot, "packages", "server", "dist");
@@ -54,7 +23,7 @@ function overlayPathForTarget(engineRoot, overlayRoot, segments) {
   throw new Error(`Mari Bridge server overlay target is outside supported distributions: ${nativePath}`);
 }
 
-async function readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion) {
+async function readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion, fingerprint) {
   const ready = JSON.parse(await readFile(join(target, ".mari-bridge-ready.json"), "utf8"));
   const resolvedEngineRoot = resolve(engineRoot);
   if (
@@ -62,6 +31,7 @@ async function readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion
     || ready?.engineRoot !== resolvedEngineRoot
     || ready?.engineVersion !== engineVersion
     || ready?.bridgeVersion !== bridgeVersion
+    || ready?.fingerprint !== fingerprint
   ) {
     throw new Error("Mari Bridge cached server overlay metadata is invalid");
   }
@@ -72,6 +42,7 @@ async function readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion
     engineRoot: resolvedEngineRoot,
     engineVersion,
     bridgeVersion,
+    fingerprint,
   });
 }
 
@@ -126,8 +97,12 @@ export async function prepareServerOverlay({
   const nativeSharedRoot = resolve(engineRoot, "packages", "shared");
   const overlaysRoot = join(resolve(dataDir), "mari-bridge");
   const target = join(overlaysRoot, SERVER_OVERLAY_DIRECTORY);
+  const fingerprint = await fingerprintOverlayInputs(
+    [nativeServerDist, join(nativeSharedRoot, "dist")],
+    [await readFile(join(nativeSharedRoot, "package.json")), JSON.stringify(patchTargets), String(patchModule)],
+  );
   try {
-    return await readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion);
+    return await readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion, fingerprint);
   } catch {
     // Build below.
   }
@@ -160,6 +135,7 @@ export async function prepareServerOverlay({
         bridgeVersion,
         engineRoot: resolve(engineRoot),
         engineVersion,
+        fingerprint,
       }, null, 2)}\n`,
     );
     await rm(target, { recursive: true, force: true });
@@ -167,76 +143,33 @@ export async function prepareServerOverlay({
       await rename(temporary, target);
     } catch (error) {
       if (error?.code !== "EEXIST" && error?.code !== "ENOTEMPTY") throw error;
-      await readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion);
+      await readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion, fingerprint);
       await rm(temporary, { recursive: true, force: true });
     }
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
     throw error;
   }
-  return readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion);
+  return readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion, fingerprint);
 }
 
-export function isServerOverlayEntry(entry, overlay) {
-  return Boolean(entry && overlay?.entry && resolve(entry) === resolve(overlay.entry));
-}
 
-export function serverOverlayProcessState(overlay, environment = process.env) {
-  const rawDepth = Number.parseInt(environment[SERVER_OVERLAY_HANDOFF_DEPTH_ENV] ?? "0", 10);
-  const depth = Number.isSafeInteger(rawDepth) && rawDepth >= 0 ? rawDepth : 0;
-  const active = environment[SERVER_OVERLAY_VERSION_ENV] === overlay?.bridgeVersion
-    && isServerOverlayEntry(environment[SERVER_OVERLAY_ENTRY_ENV], overlay);
-  return Object.freeze({ active, depth });
+/** Redirect only the not-yet-loaded native entry to the verified on-disk copy.
+ * Keep the native supervisor's child PID, signal delivery and exit-code protocol.
+ * Dependencies resolve normally from the copied distribution; no source loader runs.
+ */
+export function redirectServerEntryToOverlay(overlay) {
+  const nativeEntry = pathToFileURL(resolve(overlay.engineRoot, "packages", "server", "dist", "index.js")).href;
+  const overlayEntry = pathToFileURL(overlay.entry).href;
+  process.env[ENGINE_ROOT_ENV] = resolve(overlay.engineRoot);
+  return registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const resolution = nextResolve(specifier, context);
+      return resolution.url === nativeEntry ? { ...resolution, url: overlayEntry } : resolution;
+    },
+  });
 }
-
-export async function handoffToServerOverlay({ overlay, bootstrapUrl }) {
-  const state = serverOverlayProcessState(overlay);
-  if (state.active) return false;
-  if (state.depth >= 1) {
-    throw new Error(
-      `Mari Bridge refused a recursive server-overlay handoff at depth ${state.depth}`,
-    );
-  }
-  const inheritedExecArgs = withoutMariBridgeExecArgs(process.execArgv);
-  const args = [
-    ...inheritedExecArgs,
-    `--import=${bootstrapUrl.href}`,
-    overlay.entry,
-    ...process.argv.slice(2),
-  ];
-  const environment = Object.fromEntries(Object.entries({
-    ...process.env,
-    MARI_BRIDGE_SERVER_OVERLAY_VERSION: overlay.bridgeVersion,
-    MARI_BRIDGE_SERVER_OVERLAY_ENTRY: resolve(overlay.entry),
-    MARI_BRIDGE_SERVER_HANDOFF_DEPTH: String(state.depth + 1),
-    [ENGINE_ROOT_ENV]: resolve(overlay.engineRoot),
-    NODE_OPTIONS: withoutMariBridgeImports(process.env.NODE_OPTIONS),
-  }).filter((entry) => typeof entry[1] === "string"));
-  if (process.platform === "win32") {
-    const child = spawn(process.execPath, args, {
-      detached: true,
-      env: environment,
-      stdio: "inherit",
-      windowsHide: true,
-    });
-    await new Promise((resolveSpawn, reject) => {
-      child.once("spawn", resolveSpawn);
-      child.once("error", reject);
-    });
-    child.unref();
-    process.exit(0);
-  }
-  if (typeof process.execve !== "function") {
-    throw new Error("Mari Bridge cannot hand off to the patched server overlay on this Node runtime");
-  }
-  process.execve(process.execPath, [process.execPath, ...args], environment);
-  return true;
-}
-
 export const __test = Object.freeze({
   overlayPathForTarget,
   linkServerDependencies,
-  serverOverlayProcessState,
-  withoutMariBridgeExecArgs,
-  withoutMariBridgeImports,
 });

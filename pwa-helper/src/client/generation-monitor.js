@@ -48,6 +48,7 @@ function createGenerationMonitor({ bridgeGeneration, wakeLock, setGenerationStat
 
   function reconcileCurrentSnapshot() {
     reconcileFromSnapshot(bridgeGeneration.getSnapshot());
+    void wakeLock.reconcile();
   }
 
   function addListener(target, type, listener, options) {
@@ -68,10 +69,7 @@ function createGenerationMonitor({ bridgeGeneration, wakeLock, setGenerationStat
       return;
     }
 
-    addListener(document, "visibilitychange", () => {
-      void wakeLock.reconcile();
-      reconcileCurrentSnapshot();
-    });
+    addListener(document, "visibilitychange", reconcileCurrentSnapshot);
     addListener(window, "pageshow", reconcileCurrentSnapshot);
     addListener(window, "focus", reconcileCurrentSnapshot);
 

@@ -20,6 +20,8 @@ for (const required of [
   "src/server/tracker-context-registry.js",
   "src/server/turn-handoff-registry.js",
   "src/server/server-overlay.js",
+  "src/server/overlay-fingerprint.js",
+  "src/server/tracker-detail-patch.js",
   "src/client/runtime.js",
   "src/client/tracker-surface-registry.js",
 ]) {

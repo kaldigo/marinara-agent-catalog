@@ -4,7 +4,6 @@ import { createTrackerSurfaceRegistry } from "./tracker-surface-registry.js";
 const API_VERSION = Object.freeze({ major: 1, minor: 10 });
 const CLIENT_SYMBOL = Symbol.for("marinara.mari-bridge.client.v1");
 const NATIVE_SLOT_TAG = "marinara-mari-bridge-slot";
-const AGENT_SETTINGS_TAG = "marinara-mari-bridge-agent-settings";
 const TURN_HANDOFF_TAG = "marinara-mari-bridge-turn-handoff";
 const NATIVE_PATCHES = new Set(["__MARI_BRIDGE_NATIVE_PATCHES__"]);
 const IMPERSONATE_PRESET_OWNS_INSTRUCTIONS_KEY = "mari-bridge:impersonate-preset-owns-instructions";
@@ -165,7 +164,8 @@ function createDraftGenerationService() {
 
   function publish(run) {
     const current = snapshot(run?.chatId ?? null);
-    for (const subscriber of [...subscribers]) subscriber(current);
+    const detail = Object.freeze({ chatId: run?.chatId ?? null, active: current.activeCount > 0 });
+    for (const subscriber of [...subscribers]) subscriber(current, detail);
   }
 
   async function generate(ownerId, input = {}) {
@@ -410,7 +410,7 @@ function createUiRegistry(activeChat) {
     register(ownerId, input = {}) {
       const id = String(input.id ?? "").trim();
       const slot = String(input.slot ?? "").trim();
-      if (!id || !["agent.settings", "composer.above-input", "tracker.section", "roleplay.hud"].includes(slot)) {
+      if (!id || !["composer.above-input", "tracker.section"].includes(slot)) {
         throw new TypeError("Mari Bridge UI registration requires a supported slot and stable id");
       }
       if (slot === "tracker.section" && input.placement != null && input.placement !== "before:custom") {
@@ -423,7 +423,7 @@ function createUiRegistry(activeChat) {
         id,
         slot,
         priority: Number.isFinite(input.priority) ? Number(input.priority) : 0,
-        view: String(input.view ?? (slot === "agent.settings" ? "settings" : "surface")),
+        view: String(input.view ?? "surface"),
         agentIds: Object.freeze(
           [...new Set((input.agentIds ?? []).map((value) => String(value).trim()).filter(Boolean))],
         ),
@@ -517,33 +517,6 @@ function createAgentSuiteTrackerDataRegistry() {
   });
 }
 
-function defineAgentSettingsElement(ui) {
-  if (!globalThis.customElements || customElements.get(AGENT_SETTINGS_TAG)) return;
-  customElements.define(AGENT_SETTINGS_TAG, class MariBridgeAgentSettings extends HTMLElement {
-    connectedCallback() {
-      this.unsubscribe = ui.subscribe(() => this.render());
-      this.render();
-    }
-    disconnectedCallback() {
-      this.unsubscribe?.();
-      this.unsubscribe = null;
-    }
-    static get observedAttributes() { return ["agent-id"]; }
-    attributeChangedCallback() { if (this.isConnected) this.render(); }
-    render() {
-      const agentId = this.getAttribute("agent-id") ?? "";
-      const nodes = ui.list("agent.settings", { agentId }).map((item) => {
-        const node = document.createElement(`marinara-capability-${item.ownerId}`);
-        node.setAttribute("view", item.view);
-        node.capabilityProps = Object.freeze({ ...item.capabilityProps, agentId });
-        queueMicrotask(() => node.dispatchEvent(new CustomEvent("marinara-capability-props")));
-        return node;
-      });
-      this.replaceChildren(...nodes);
-    }
-  });
-}
-
 function createNativeSlotMounter() {
   const mountedByRoot = new WeakMap();
 
@@ -559,18 +532,8 @@ function createNativeSlotMounter() {
         host.dataset.mariBridgeNativeSlot = key;
         current.set(key, host);
       }
-      // Let HUD contributions participate as native flex items so the existing
-      // alignment and gap-0.5 spacing apply across package and native widgets.
-      if (slot === "roleplay.hud") host.style.display = "contents";
       if (host.parentElement !== target) target.appendChild(host);
     };
-    if (slot === "roleplay.hud") {
-      const targets = [...root.children].filter(
-        (child) => child.classList?.contains("md:hidden") || child.classList?.contains("md:flex"),
-      );
-      targets.forEach((target, index) => ensureHost(`${slot}:${index}`, target));
-      return;
-    }
     const existingHosts = new Set([...current.values()]);
     const target = options.target === "content"
       ? [...root.children].filter((child) => !existingHosts.has(child)).at(-1) ?? root
@@ -1028,22 +991,27 @@ function createNativeTrackerSectionRenderer(ui, trackerSurfaces) {
   };
 }
 
-function createGenerationLifecycle() {
+function createGenerationLifecycle(drafts) {
   const activeByChat = new Map();
   const subscribers = new Set();
 
   function snapshot() {
-    const active = [...activeByChat.entries()].map(([chatId, phase]) => Object.freeze({
+    const native = [...activeByChat.entries()].map(([chatId, phase]) => Object.freeze({
       id: `native:${chatId}`,
       chatId,
       kind: "main",
       phase,
     }));
+    const draftRuns = drafts.getSnapshot().active.map((run) => Object.freeze({
+      id: `draft:${run.chatId}`, chatId: run.chatId, kind: "draft", phase: run.status,
+    }));
+    const active = [...native, ...draftRuns];
     return Object.freeze({
       active: Object.freeze(active),
       activeCount: active.length,
-      mainActive: active.length > 0,
+      mainActive: native.length > 0,
       agentActive: false,
+      draftActive: draftRuns.length > 0,
     });
   }
 
@@ -1083,6 +1051,11 @@ function createGenerationLifecycle() {
     globalThis.addEventListener("marinara:generation-error", onSettled);
   }
 
+  // Bridge-owned native dry runs have their own AbortController, so native
+  // setAbortController events cannot report them. Include the actual service
+  // lifecycle here for all consumers, including wake-lock cleanup on Stop.
+  drafts.subscribe((_snapshot, detail) => publish("marinara:draft-generation", detail), { emitCurrent: false });
+
   return Object.freeze({
     getSnapshot: snapshot,
     subscribe(listener, options = {}) {
@@ -1099,6 +1072,7 @@ function createActiveChatLifecycle() {
   let chatId = null;
   let queryClient = null;
   let unsubscribeQueryCache = null;
+  let observedData;
   try {
     chatId = globalThis.localStorage?.getItem("marinara-active-chat-id") || null;
   } catch {
@@ -1115,7 +1089,10 @@ function createActiveChatLifecycle() {
   }
 
   function onActiveChat(event) {
-    chatId = String(event?.detail?.chatId ?? "").trim() || null;
+    const next = String(event?.detail?.chatId ?? "").trim() || null;
+    if (next === chatId) return;
+    chatId = next;
+    observedData = undefined;
     publish();
   }
 
@@ -1136,7 +1113,17 @@ function createActiveChatLifecycle() {
     queryClient = next;
     unsubscribeQueryCache = cache.subscribe((event) => {
       if (!isActiveChatDetailQuery(event?.query)) return;
-      if (event?.type === "added" || event?.type === "updated" || event?.type === "removed") publish();
+      // React Query also publishes fetch/observer/invalidation bookkeeping.
+      // Consumers need committed chat changes, not repeated reads for those events.
+      if (event.type === "updated" && event.action?.type === "success") {
+        const next = event.query.state?.data;
+        if (next === observedData) return;
+        observedData = next;
+        publish();
+      } else if (event.type === "removed") {
+        observedData = undefined;
+        publish();
+      }
     });
     return true;
   }
@@ -1162,6 +1149,12 @@ function createRoleplayBackgroundService(activeChat) {
   let live = null;
   let pending = null;
   let pendingReplayScheduled = false;
+  let version = 0;
+  const subscribers = new Set();
+  function publish() {
+    version += 1;
+    for (const listener of subscribers) listener();
+  }
 
   function apply(input) {
     const state = nativeStore?.getState?.();
@@ -1169,9 +1162,11 @@ function createRoleplayBackgroundService(activeChat) {
       setClientDiagnostic("data-mari-bridge-background-apply-last", `${input.chatId}:store-unavailable`);
       return false;
     }
+    const changed = !live || live.chatId !== input.chatId || live.url !== input.url || live.blurPx !== input.blurPx;
     live = input;
     pending = null;
     if (state.chatBackground !== input.url) state.setChatBackground(input.url);
+    if (changed) publish();
     setClientDiagnostic("data-mari-bridge-background-apply-last", `${input.chatId}:applied`);
     return true;
   }
@@ -1227,7 +1222,7 @@ function createRoleplayBackgroundService(activeChat) {
   }
 
   function release(ownerId) {
-    if (live?.ownerId === ownerId) live = null;
+    if (live?.ownerId === ownerId) { live = null; publish(); }
     if (pending?.ownerId === ownerId) pending = null;
   }
 
@@ -1250,7 +1245,10 @@ function createRoleplayBackgroundService(activeChat) {
     });
   }
 
-  return Object.freeze({ bindStore, set, release, resolve });
+  return Object.freeze({ bindStore, set, release, resolve,
+    getVersion: () => version,
+    subscribe(listener) { subscribers.add(listener); return () => subscribers.delete(listener); },
+  });
 }
 
 function createSpatialContextLifecycle() {
@@ -1357,13 +1355,13 @@ function createSpatialContextLifecycle() {
 
 function createClientRuntime(serverHealth) {
   const consumers = new Map();
-  const generation = createGenerationLifecycle();
+  const drafts = createDraftGenerationService();
+  const generation = createGenerationLifecycle(drafts);
   const activeChat = createActiveChatLifecycle();
   const turnHandoff = createTurnHandoffClient(activeChat, generation);
   const roleplayBackground = createRoleplayBackgroundService(activeChat);
   const spatialContext = createSpatialContextLifecycle();
   const commands = createCommandRegistry();
-  const drafts = createDraftGenerationService();
   const ui = createUiRegistry(activeChat);
   const trackerDetailFields = createTrackerDetailFieldRegistry();
   const trackerSurfaces = createTrackerSurfaceRegistry();
@@ -1389,15 +1387,13 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.commands") && NATIVE_PATCHES.has("client.command-drafts")) capabilities.add("commands");
   if (NATIVE_PATCHES.has("client.generation-lifecycle")) capabilities.add("generation.lifecycle");
   if (NATIVE_PATCHES.has("client.quick-replies")) capabilities.add("quick-replies.input-macro");
-  if (NATIVE_PATCHES.has("client.native-agent-settings")) capabilities.add("ui.agent-settings");
   if (NATIVE_PATCHES.has("client.impersonate-settings")) capabilities.add("ui.impersonate-settings");
   if (NATIVE_PATCHES.has("client.tracker-sections")) capabilities.add("ui.tracker-section");
   if (NATIVE_PATCHES.has("client.tracker-detail-fields")) capabilities.add("tracker.detail-fields");
   if (NATIVE_PATCHES.has("client.tracker-surfaces")) capabilities.add("tracker.surfaces");
-  if (NATIVE_PATCHES.has("client.roleplay-hud")) capabilities.add("ui.roleplay-hud");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.41",
+    implementationVersion: "1.0.42",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1495,10 +1491,8 @@ function createClientRuntime(serverHealth) {
         ui: Object.freeze({
           register(input) {
             const capability = ({
-              "agent.settings": "ui.agent-settings",
               "composer.above-input": "ui.composer.above-input",
               "tracker.section": "ui.tracker-section",
-              "roleplay.hud": "ui.roleplay-hud",
             })[input?.slot];
             if (!capability) throw new Error(`${consumerId} requested an unsupported Mari Bridge UI slot`);
             if (!required.includes(capability)) throw new Error(`${consumerId} did not require ${capability}`);
@@ -1582,6 +1576,9 @@ function createClientRuntime(serverHealth) {
     },
     resolveBackgroundProps(metadataValue, url, blurPx) {
       return roleplayBackground.resolve(metadataValue, url, blurPx);
+    },
+    useBackgroundVersion(react) {
+      return react.useSyncExternalStore(roleplayBackground.subscribe, roleplayBackground.getVersion, roleplayBackground.getVersion);
     },
     bindRoleplayBackgroundStore(store) {
       return roleplayBackground.bindStore(store);
@@ -1670,11 +1667,10 @@ function createClientRuntime(serverHealth) {
 if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
-    engineVersion: "2.4.4",
-    implementationVersion: "1.0.41",
+    engineVersion: "2.4.6",
+    implementationVersion: "1.0.42",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);
-  defineAgentSettingsElement(globalThis[CLIENT_SYMBOL].ui);
 }
 document.documentElement.dataset.mariBridgeClient = "ready";

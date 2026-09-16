@@ -37,7 +37,7 @@ await fs.writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify({
   name: "Tracker Profile Details",
   version,
   description: "Shows selected GameState custom fields as ordered native character and persona profile details.",
-  engine: { min: "2.4.4", maxExclusive: "2.4.5" },
+  engine: { min: "2.4.6", maxExclusive: "2.4.7" },
   kind: ["agent"],
   entrypoints: { server: "server.mjs", client: "client.js" },
   contributions: { slots: ["chat-runtime"] },

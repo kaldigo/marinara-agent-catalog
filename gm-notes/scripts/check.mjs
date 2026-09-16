@@ -244,6 +244,13 @@ const resumed = await runGmNotesBackfillBatch({ runtime: backfillRuntime, hostRe
 assert.equal(resumed.done, true);
 assert.equal(resumed.processed, 2);
 assert.equal(readGmNotesFromPlayerStats(backfillGameState.playerStats).notes.length, 2);
+backfillDocument = null;
+backfillGameState = null;
+const historyOnly = await runGmNotesBackfillBatch({ runtime: backfillRuntime, hostRequest: backfillHostRequest, chatId: "chat-1" });
+assert.equal(historyOnly.created, 1, "history-only chats can backfill before any tracker snapshot exists");
+assert.equal(backfillGameState.manual, true, "native manual patch owns first snapshot creation");
+assert.equal(backfillGameState.messageId, undefined, "do not invent a snapshot anchor");
+assert.equal(readGmNotesFromPlayerStats(backfillGameState.playerStats).notes.length, 1);
 const cancelledController = new AbortController();
 cancelledController.abort();
 await assert.rejects(

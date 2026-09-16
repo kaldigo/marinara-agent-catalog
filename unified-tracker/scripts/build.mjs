@@ -44,10 +44,10 @@ const manifest = {
   name: "Unified Tracker",
   version,
   description: "Combines selected native tracker domains into one structured Roleplay post-processing request.",
-  engine: { min: "2.4.4", maxExclusive: "2.4.5" },
+  engine: { min: "2.4.6", maxExclusive: "2.4.7" },
   kind: ["agent"],
   entrypoints: { server: "server.mjs", client: "client.js", agents: "agents.json" },
-  contributions: { slots: ["chat-runtime"] },
+  contributions: { slots: ["chat-runtime", "chat-settings"] },
   files: [
     { path: "server.mjs", sha256: "0".repeat(64), bytes: 0 },
     { path: "client.js", sha256: "0".repeat(64), bytes: 0 },

@@ -60,7 +60,7 @@ function manifest() {
     name: "Better Impersonate",
     version: pkg.version,
     description: "Adds bridge-registered persona draft commands for use from system Quick Replies.",
-    engine: { min: "2.4.4", maxExclusive: "2.4.5" },
+    engine: { min: "2.4.6", maxExclusive: "2.4.7" },
     kind: ["agent"],
     entrypoints: {
       client: "client.js",

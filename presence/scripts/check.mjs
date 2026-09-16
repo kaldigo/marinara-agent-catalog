@@ -23,8 +23,7 @@ assert((await router.run("/presence test", { chatId: "chat-1" })).result === "ch
 
 const clientRuntime = fs.readFileSync(new URL("../src/client/runtime.js", import.meta.url), "utf8");
 assert(clientRuntime.includes("bridgeSession.commands.register"), "client registers commands through the installed bridge");
-assert(clientRuntime.includes("bridgeSession.ui.register"), "client contributes settings inside the native agent card");
-assert(clientRuntime.includes('slot: "agent.settings"'), "client targets the native agent settings extension point");
+assert(!clientRuntime.includes("bridgeSession.ui.register"), "native capability host owns settings mounting");
 assert(clientRuntime.includes("data-presence-character-id"), "settings expose a compact avatar character picker");
 assert(clientRuntime.includes("Selected characters retain access"), "settings explain always-present behavior");
 assert(clientRuntime.includes("body: { characterId, alwaysPresent }"), "settings save one atomic character toggle");
@@ -96,7 +95,7 @@ assert(
   }).messagePatches.length === 0,
   "omnipresent characters are not hidden during backfill",
 );
-assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { rosterCharacterIds: ["a"] } } }).knownCharacterIds[0] === "a", "legacy roster snapshots migrate to the known-character set");
+assert(readPresenceChatState({ metadata: { marinaraPresencePackage: { rosterCharacterIds: ["a"] } } }).knownCharacterIds.length === 0, "obsolete roster snapshots are not a supported fallback");
 
 const registeredRoutes = [];
 const registeredRouteHandlers = new Map();

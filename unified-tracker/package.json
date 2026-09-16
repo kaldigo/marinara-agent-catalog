@@ -1,6 +1,6 @@
 {
   "name": "marinara-unified-tracker-package",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "One structured Roleplay agent for selected native tracker domains.",

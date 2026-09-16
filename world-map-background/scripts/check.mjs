@@ -16,7 +16,7 @@ assert(runtimeSource.includes("/global-gallery"), "client resolves native World 
 assert(runtimeSource.includes("useReferenceImage"), "client respects the location reference-image flag");
 assert(runtimeSource.includes("worldMapBackground"), "package ownership is recorded in chat metadata");
 assert(runtimeSource.includes("previousBackground"), "the prior native background is restored when disabled");
-assert(runtimeSource.includes('slot: "agent.settings"'), "blur control is inserted inside the native agent card");
+assert(!runtimeSource.includes("bridgeSession.ui.register"), "native capability host owns settings mounting");
 assert(runtimeSource.includes("data-wmb-blur"), "only the package-specific blur control is contributed");
 assert(!runtimeSource.includes("setInterval"), "client does not poll");
 assert(!runtimeSource.includes("MutationObserver"), "client does not observe the DOM");
@@ -25,7 +25,7 @@ assert(!runtimeSource.includes("new Image"), "client leaves image rendering and 
 assert(!runtimeSource.includes("wmb-live-background"), "client does not install a competing background overlay");
 
 const buildSource = await fs.readFile(new URL("../scripts/build.mjs", import.meta.url), "utf8");
-assert(buildSource.includes('slots: ["chat-runtime"]'), "manifest declares only its runtime contribution");
+assert(buildSource.includes('slots: ["chat-runtime", "chat-settings"]'), "manifest declares native runtime and agent settings contributions");
 assert(buildSource.includes("runtimeDisabled: true"), "feature marker is not executed as a model agent");
 assert(buildSource.includes('modeAllowlist: ["roleplay"]'), "feature remains Roleplay-only");
 assert(buildSource.includes('permissions: ["chat-read", "chat-write", "ui"]'), "permissions match metadata synchronization and inline UI");

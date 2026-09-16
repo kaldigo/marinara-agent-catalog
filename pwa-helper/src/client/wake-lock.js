@@ -56,7 +56,8 @@ function createWakeLockController({ setWakeLockStatus, warn }) {
     setWakeLockStatus("released", "");
   }
 
-  function onSentinelReleased() {
+  function onSentinelReleased(releasedSentinel) {
+    if (sentinel !== releasedSentinel) return;
     sentinel = null;
     publishStatus();
     if (shouldHoldWakeLock()) {
@@ -83,9 +84,14 @@ function createWakeLockController({ setWakeLockStatus, warn }) {
 
     publishStatus();
     requestPromise = navigator.wakeLock.request("screen")
-      .then((nextSentinel) => {
+      .then(async (nextSentinel) => {
+        // The request can finish after Stop, unloading, or hiding the page.
+        if (!shouldHoldWakeLock()) {
+          await nextSentinel.release();
+          return null;
+        }
         sentinel = nextSentinel;
-        sentinel.addEventListener("release", onSentinelReleased, { once: true });
+        sentinel.addEventListener("release", () => onSentinelReleased(nextSentinel), { once: true });
         publishStatus();
         return sentinel;
       })

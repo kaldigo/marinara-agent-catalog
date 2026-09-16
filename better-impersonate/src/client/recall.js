@@ -1,5 +1,4 @@
 const RECALL_PREFIX = "mari-better-impersonate:recall:";
-const LEGACY_GUIDANCE_PREFIX = "mari-si-guidance:";
 
 function emptyRecall() {
   return { lastGuidance: "", lastGeneratedDraft: "" };
@@ -17,10 +16,7 @@ export function readRecall(storage, chatId) {
         lastGeneratedDraft: typeof parsed?.lastGeneratedDraft === "string" ? parsed.lastGeneratedDraft : "",
       };
     }
-    return {
-      lastGuidance: storage.getItem(`${LEGACY_GUIDANCE_PREFIX}${id}`) || "",
-      lastGeneratedDraft: "",
-    };
+    return emptyRecall();
   } catch {
     return emptyRecall();
   }
@@ -35,7 +31,6 @@ function writeRecall(storage, chatId, recall) {
       lastGuidance: recall.lastGuidance,
       lastGeneratedDraft: recall.lastGeneratedDraft,
     }));
-    storage.removeItem?.(`${LEGACY_GUIDANCE_PREFIX}${id}`);
   } catch {
     // Recall is optional and must never block draft generation.
   }
@@ -57,4 +52,4 @@ export function rememberGeneratedDraft(storage, chatId, output) {
   return next;
 }
 
-export const __test = Object.freeze({ RECALL_PREFIX, LEGACY_GUIDANCE_PREFIX });
+export const __test = Object.freeze({ RECALL_PREFIX });

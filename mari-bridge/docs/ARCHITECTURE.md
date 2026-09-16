@@ -44,10 +44,12 @@ on the main thread, because `NODE_OPTIONS` is inherited by Engine workers.
 The runtime validates known server modules, copies the complete server and
 shared distributions into `DATA_DIR/mari-bridge/server`, links normal runtime
 dependencies to the native installation, and applies count-checked transforms
-only to that writable copy. It then performs one guarded handoff to the copied
-entry while carrying the original Engine root explicitly. A ready marker keyed
-by Engine and Mari Bridge versions makes subsequent starts reuse the verified
-copy. The original Engine distribution remains unchanged.
+only to that writable copy. An entry resolver imports that copy in the same
+server process, preserving the native supervisor parent and exit-75 restart
+protocol. A ready marker hashes native distributions, patch implementation,
+and Engine/Bridge versions; same-version rebuilds invalidate it. The original
+Engine distribution remains unchanged. See `ENGINE-2.4.6-UPDATE.md` for the
+current native-slot boundary and executable verification.
 
 The registry identity should use a versioned global symbol rather than a string
 property:

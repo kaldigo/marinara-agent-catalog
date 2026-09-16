@@ -4,7 +4,7 @@ PWA Helper is a client-side Marinara capability package.
 
 Current features:
 
-- Holds the Screen Wake Lock while the installed Mari Bridge runtime reports active main or agent generation.
+- Holds the Screen Wake Lock while Mari Bridge reports active main, agent, or persona-draft generation, and releases it after Stop or failure.
 - Exposes a small `window.marinaraPwaHelper.wakeLock` surface so other client packages can hold the same wake lock without duplicating wake-lock code.
 - Installs an iOS `apple-touch-icon` override using Marinara's logo on the current Mari gradient background.
 

@@ -65,9 +65,10 @@ The implemented zero-configuration sequence is:
    schedules one guarded restart after Fastify reaches `onReady`.
 3. The restart first calls `await app.close()`, which stops capability
    runtimes, flushes file-backed storage, and releases the writer lease. POSIX
-   uses `process.execve`; Windows development uses one hidden replacement
-   process and exits the original process.
-4. The stable `register.mjs` dispatcher checks `isMainThread` before importing
+   uses `process.execve` to enter the native supervisor. Windows starts that
+   supervisor hidden and retains the first-install launcher until it exits.
+   A forced update already running under the supervisor exits with native code 75.
+4. The stable `register.mjs` dispatcher skips the native supervisor and checks `isMainThread` before importing
    the implementation. Worker threads inherit `NODE_OPTIONS`, but they do not
    prepare patches, copy the server, or perform a handoff.
 5. The main-thread runtime verifies the exact Engine version and every patch
@@ -75,25 +76,21 @@ The implemented zero-configuration sequence is:
    distribution into `DATA_DIR/mari-bridge/server`, links its normal runtime
    dependencies back to the native installation, and applies the verified
    transforms only to that writable copy.
-6. A ready marker records the server-overlay format, Mari Bridge version, and
-   Engine version. A matching pair reuses the verified copy; a Bridge version
-   change rebuilds it; an Engine version mismatch fails closed without trying
-   to reinterpret the old copy.
-7. The native process performs one direct handoff to the copied server entry.
-   Environment markers identify that exact entry/version and a depth guard
-   refuses recursive handoff. The handoff also carries the original Engine root
-   explicitly, so the replacement does not infer it from the data-directory
-   layout. The replacement imports the already-installed Bridge runtime and
-   runs the patched environment without depending on capability-package
-   activation order.
+6. A ready marker records the overlay format and a hash of native distributions,
+   patch implementation, Engine version and Bridge version. Same-version rebuilds
+   invalidate the copy; unsupported Engine versions fail closed.
+7. A Node resolve hook redirects only the native main entry URL to the copied
+   entry in the same server process. Native dependencies use ordinary resolution.
+   The original Engine root is carried explicitly. There is no spawned server
+   overlay handoff or recursive handoff guard; the native supervisor remains the
+   server's parent and owns future restart requests.
 
 Do not call `execve` directly from package activation. At that point the
 database is open and buffered writes/writer-lease cleanup depend on
 `app.close()`.
 
 After the stable preload is part of the normal launch environment, cold starts
-skip the installer bounce. They may still perform the single native-to-overlay
-handoff; the handoff launcher exits and only the overlay server remains.
+skip the installer bounce. Their server entry redirects in place to the overlay.
 
 ## Argument reconstruction and process ownership
 
@@ -108,7 +105,8 @@ const args = [
   process.execPath,
   ...inheritedExecArgs,
   `--import=${registerPath}`,
-  entry,
+  nativeSupervisor,
+  nativeEntry,
   ...scriptArgs,
 ];
 ```
@@ -117,27 +115,26 @@ Use the direct process API; never invoke a shell. Validate that `entry` and the
 stable loader path are absolute or safely resolved. Preserve inspector and
 other legitimate Node flags. Remove the inherited Mari Bridge import from
 `NODE_OPTIONS` before starting the replacement and add one explicit import to
-the argument vector. Tests must assert that the launcher exits, one overlay
-process owns the server port, and no generic pre-handoff server retains the
-writer lease.
+the argument vector. Tests assert that one server owns the port, its parent is
+the native supervisor, and the closed first-install process holds no writer
+lease. Windows retains the first-install launcher until its supervisor exits.
 
 ## Local development
 
 The same patch engine should be testable without Docker:
 
-- Server production-build testing: launch Node directly with
-  `node --import <bridge-register> packages/server/dist/index.js`, verify the
-  handoff target, then count the port-owning process rather than matching only
-  the original command line.
+- Server production-build testing: launch
+  `node --import <bridge-register> scripts/run-server.mjs packages/server/dist/index.js`
+  and verify native restart plus same-process entry redirection.
 - Client production-overlay testing: build Marinara, create the verified
   overlay under a temporary/test data directory, and run the patched static
   root.
 - Source/Vite testing: provide a Mari Bridge Vite transform plugin using the
   same logical patch definitions where practical. Do not pretend a Node ESM
   loader can transform source files that Vite reads and compiles internally.
-- Windows: `process.execve` is unavailable. The development launcher should
-  start with `--import` directly. An automatic spawn-and-exit fallback can be
-  explored separately, but it is not needed for repeatable Codex testing.
+- Windows: `process.execve` is unavailable. `scripts/check-bootstrap.mjs`
+  executes first-install supervisor creation, forced update, app close and
+  same-process entry redirection against the real current supervisor script.
 
 Local and Docker tests must exercise the same registry contracts and patch
 fixtures even if their bootstrap mechanisms differ.
@@ -167,5 +164,5 @@ Provide a documented environment escape hatch such as
 
 If a bootstrap guard is present but the loader-active probe is absent, log the
 inconsistent state and start native Marinara rather than looping. The
-installer bounce and server-overlay handoff have separate attempt/depth guards;
-neither may retry recursively.
+installer bounce has a persistent attempt guard. Entry redirection does not
+spawn another process or recurse.
