@@ -53,7 +53,7 @@ async function install(data) {
 
 async function start(name, data, command = [], environment = []) {
   docker("run", "--detach", "--name", name, "--init", "--restart", "unless-stopped",
-    "--publish", "127.0.0.1::7860", "--mount", `type=bind,src=${data},dst=/app/data`,
+    "--publish", "127.0.0.1:17861:7860", "--mount", `type=bind,src=${data},dst=/app/data`,
     "--env", "ADMIN_SECRET=bridge-bootstrap-fixture", "--env", "MARINARA_ENV_WATCH=0", "--env", "LOG_LEVEL=info",
     "--env", "AUTO_CREATE_DEFAULT_CONNECTION=false", ...environment, image, ...command);
   active.add(name);
