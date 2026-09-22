@@ -1354,6 +1354,7 @@ function createSpatialContextLifecycle() {
 }
 
 function createClientRuntime(serverHealth) {
+  let nativeQueryClient = null;
   const consumers = new Map();
   const drafts = createDraftGenerationService();
   const generation = createGenerationLifecycle(drafts);
@@ -1393,7 +1394,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.tracker-surfaces")) capabilities.add("tracker.surfaces");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.0.43",
+    implementationVersion: "1.1.0",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1584,7 +1585,14 @@ function createClientRuntime(serverHealth) {
       return roleplayBackground.bindStore(store);
     },
     bindQueryClient(client) {
+      nativeQueryClient = client;
       return activeChat.bindQueryClient(client) && spatialContext.bindQueryClient(client);
+    },
+    notifyScriptGameStateSaved(snapshot) {
+      // HUD, docked tracker and Game panels subscribe to the native Zustand
+      // store. Agent Suite's editor has a separate native query cache.
+      if (snapshot?.chatId) nativeQueryClient?.setQueryData?.(["agent-suite", "game-state", snapshot.chatId], snapshot);
+      trackerSurfaces.refresh();
     },
     resolveAgentSuiteTrackerSlice(agentId) {
       return agentSuiteTrackerData.resolve(agentId);
@@ -1668,7 +1676,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.6",
-    implementationVersion: "1.0.43",
+    implementationVersion: "1.1.0",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);

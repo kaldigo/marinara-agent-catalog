@@ -15,6 +15,9 @@ for (const entrypoint of Object.values(manifest.entrypoints)) await fs.access(pa
 for (const required of [
   "bootstrap/register.mjs",
   "bootstrap/runtime.mjs",
+  "bootstrap/script-game-state.mjs",
+  "docs/SCRIPT-GAME-STATE.md",
+  "src/server/script-game-state.js",
   "src/server/runtime.js",
   "src/server/result-registry.js",
   "src/server/tracker-context-registry.js",

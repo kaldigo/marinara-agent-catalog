@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { patchScriptGameStateModule } from "./script-game-state.mjs";
 import { pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import { createBridgeRuntime } from "../src/server/runtime.js";
@@ -52,7 +53,7 @@ const kernel = globalThis[KERNEL_SYMBOL] ?? {
   patches: {},
   failures: [],
 };
-kernel.version = "1.0.43";
+kernel.version = "1.1.0";
 kernel.engineCompatibility = Object.freeze({
   detected: detectedEngine.version,
   supported: SUPPORTED_ENGINE_VERSIONS,
@@ -263,7 +264,7 @@ export function patchCommittedTrackerActiveGuard(source) {
 }
 
 export function patchServerModule(url, inputSource) {
-  let source = String(inputSource);
+  let source = patchScriptGameStateModule(url, String(inputSource), replaceExact);
       if (url.endsWith("/capability-module-runtime.service.js")) {
         source = replaceExact(
           source,
@@ -1430,7 +1431,10 @@ export function decodeModuleSource(source) {
   return String(source ?? "");
 }
 
-const SERVER_PATCH_TARGETS = Object.freeze([
+export const SERVER_PATCH_TARGETS = Object.freeze([
+  ["services/tools/custom-tool-script.worker.js", ["packages", "server", "dist", "services", "tools", "custom-tool-script.worker.js"]],
+  ["services/tools/tool-executor.js", ["packages", "server", "dist", "services", "tools", "tool-executor.js"]],
+  ["services/storage/game-state.storage.js", ["packages", "server", "dist", "services", "storage", "game-state.storage.js"]],
   ["capability-module-runtime.service.js", ["packages", "server", "dist", "services", "capability-packages", "capability-module-runtime.service.js"]],
   ["services/prompt/assembler.js", ["packages", "server", "dist", "services", "prompt", "assembler.js"]],
   ["services/storage/chats.storage.js", ["packages", "server", "dist", "services", "storage", "chats.storage.js"]],
@@ -1508,6 +1512,7 @@ if (disabled) {
       bridgeVersion: kernel.version,
       patchTargets: SERVER_PATCH_TARGETS,
       patchModule: patchServerModule,
+      patchSources: [readFileSync(new URL("./script-game-state.mjs", import.meta.url))],
     });
     kernel.serverRoot = serverOverlay.root;
     kernel.serverOverlay = Object.freeze({

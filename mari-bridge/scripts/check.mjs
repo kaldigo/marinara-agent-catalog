@@ -26,6 +26,7 @@ import {
   patchGenerationControllerEvents,
   patchImpersonateSettingsBridge,
   patchQueryClientBridge,
+  patchScriptGameStateClient,
   patchRoleplayHudBridge,
   patchRoleplayBackgroundBridge,
   patchRoleplayBackgroundStoreBridge,
@@ -509,7 +510,7 @@ const clientSource = `${trackerDetailRegistrySource}\n${trackerSurfaceRegistrySo
 await import(`data:text/javascript;base64,${Buffer.from(clientSource).toString("base64")}`);
 const observedSpatialFetch = globalThis.fetch;
 assert.equal(globalThis[clientSymbol]?.status, "ready");
-assert.equal(globalThis[clientSymbol].implementationVersion, "1.0.43");
+assert.equal(globalThis[clientSymbol].implementationVersion, "1.1.0");
 assert.equal(globalThis[clientSymbol].capabilities.has("agent-suite.tracker-data"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("chat.background"), true);
 assert.equal(globalThis[clientSymbol].capabilities.has("client.bridge-first"), true);
@@ -589,7 +590,9 @@ const spatialQuery = {
   queryKey: ["spatial-context", "chat-1"],
   state: { data: { currentLocationId: "location-a", definition: { revision: 4, locations: [] } } },
 };
+let savedScriptQuery;
 const queryClient = {
+  setQueryData(key, value) { savedScriptQuery = { key, value }; },
   getQueryCache() {
     return {
       subscribe(listener) { queryListeners.add(listener); return () => queryListeners.delete(listener); },
@@ -598,6 +601,9 @@ const queryClient = {
   },
 };
 assert.equal(globalThis[clientSymbol].bindQueryClient(queryClient), true);
+const committedScriptState = { chatId: "chat-1", weather: "Rain", presentCharacters: [], personaStats: null };
+globalThis[clientSymbol].notifyScriptGameStateSaved(committedScriptState);
+assert.deepEqual(savedScriptQuery, { key: ["agent-suite", "game-state", "chat-1"], value: committedScriptState });
 const activeLifecycleSession = globalThis[clientSymbol].registerConsumer({consumerId:"active-lifecycle-test",api:{major:1,minMinor:0},require:["chat.active"]});
 let activeChanges = 0;
 activeLifecycleSession.chat.active.subscribe(() => activeChanges++, {emitCurrent:false});
@@ -1040,6 +1046,9 @@ assert.match(patchedRoleplayHud, /shouldShowTrackerSurface\(item.id,\{surface:"h
 assert.match(patchedRoleplayHud, /shouldShowTrackerSurface\("persona-stats",\{surface:"hud"\}\)/u);
 assert.match(patchedRoleplayHud, /filterPersonaTrackerStats\(state\?\.personaStats\)/u);
 const queryClientFixture = 'Object.assign(globalThis,{React:react,ReactDOM:reactDom});const queryClient=new QueryClient({defaultOptions:{queries:{staleTime:3e4,retry:1,refetchOnWindowFocus:!1}}});';
+const scriptStateFixture = 'function applyState(chat,patch,anchor){const current=gameStore.getState().current;if(current?.chatId===chat){return current.playerStats.activeQuests}}function event(type){switch(type){case"game_state_patch":break}}';
+assert.match(patchScriptGameStateClient(scriptStateFixture), /notifyScriptGameStateSaved\(snapshot\)/u);
+assert.throws(() => patchScriptGameStateClient(scriptStateFixture + scriptStateFixture), /expected one native state applier/u);
 const patchedQueryClient = patchQueryClientBridge(queryClientFixture);
 assert.match(patchedQueryClient, /bindQueryClient\(mariBridgeQueryClient\)/u);
 assert.equal(patchQueryClientBridge('const queryClient = true;'), null);
@@ -1078,6 +1087,7 @@ await fs.writeFile(path.join(nativeAssetsRoot, "tracker-panel.js"), trackerPanel
 await fs.writeFile(path.join(nativeAssetsRoot, "tracker-details.js"), trackerDetailFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-hud.js"), roleplayHudFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "query-client.js"), queryClientFixture);
+await fs.writeFile(path.join(nativeAssetsRoot, "script-state.js"), scriptStateFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background-store.js"), roleplayBackgroundStoreFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-background.js"), roleplayBackgroundFixture);
 await fs.writeFile(path.join(nativeAssetsRoot, "roleplay-draft-placeholder.js"), roleplayDraftPlaceholderFixture);
@@ -1113,7 +1123,7 @@ assert.match(preparedOverlayIndex, /index-main\.js\?mariBridge=[a-f0-9]{16}/u);
 assert.doesNotMatch(preparedOverlayIndex, /mari-bridge-bootstrap/u);
 assert.match(preparedOverlayMain, /^import "\.\/mari-bridge-runtime-[a-f0-9]{16}\.js\?mariBridge=[a-f0-9]{16}";/u);
 assert.doesNotMatch(preparedOverlayMain, /const API_VERSION/u);
-assert.match(preparedOverlayRuntime, /implementationVersion: "1\.0\.43"/u);
+assert.match(preparedOverlayRuntime, /implementationVersion: "1\.1\.0"/u);
 assert.doesNotMatch(preparedOverlayRuntime, /__MARI_BRIDGE_NATIVE_PATCHES__/u);
 assert.deepEqual(preparedClientOverlay.failedPatches, []);
 assert.doesNotMatch(preparedOverlayRuntime, /\/api\/health/u);
@@ -1446,12 +1456,12 @@ const rebuiltServerOverlay = await prepareServerOverlay({
   engineRoot: serverOverlayFixtureRoot,
   dataDir: serverOverlayDataDir,
   engineVersion: "2.4.6",
-  bridgeVersion: "1.0.43",
+  bridgeVersion: "1.1.0",
   patchTargets: overlayTargets,
   patchModule: (_url, source) => `${source.trimEnd()}\nexport const rebuilt = true;\n`,
 });
 assert.equal(rebuiltServerOverlay.root, preparedServerOverlay.root);
-assert.equal(rebuiltServerOverlay.bridgeVersion, "1.0.43");
+assert.equal(rebuiltServerOverlay.bridgeVersion, "1.1.0");
 assert.match(await fs.readFile(path.join(rebuiltServerOverlay.root, "services", "patched.js"), "utf8"), /rebuilt = true/u);
 assert.deepEqual(
   bootstrapRestartTest.withoutMariBridgeExecArgs([

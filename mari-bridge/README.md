@@ -41,7 +41,7 @@ controls use the native `chat-settings` slot on the existing agent card.
 
 ## Current implementation boundary
 
-Version `1.0.43` targets Marinara Engine **2.4.6 only**. Previous Engine releases
+Version `1.1.0` targets Marinara Engine **2.4.6 only**. Previous Engine releases
 and the retired Bridge `agent.settings` / `roleplay.hud` mounts are unsupported.
 Settings and GM Notes toolbar elements now use native package slots. The
 remaining tracker hook contributes descriptors to native field editors and
@@ -149,6 +149,18 @@ Windows retains its first-install launcher until the supervisor exits. Required
 files are checked before closing the app, and a persistent loop guard bounds
 attempts. The release workflow checks Linux process replacement and the official
 Docker image before rebuilding the published catalog.
+
+## Custom Script GameState API
+
+Bridge 1.1.0 extends Marinara's existing **custom Script tools** with
+`mari.gameState.patch(patch)`. It registers no built-in tool and creates no
+custom tool definition. Configure the name, input schema and script in the
+native custom-tool editor. See [the API and examples](docs/SCRIPT-GAME-STATE.md).
+
+Successful scripts propose one atomic data patch for their current saved
+Roleplay or Game turn. Native storage enforces tracker locks and Spatial
+Context ownership again at commit time. The committed snapshot updates the
+native HUD, docked tracker, popup panels, and Agent Suite tracker-data cache.
 
 ## Intended outcome
 

@@ -63,3 +63,4 @@ assert.equal(output,'Hello  world ');
 // No optional filter must leave streaming byte-for-byte intact, including EOF.
 output="";const inert=make(null,null,null,null,null,()=>{},async s=>{output+=s;});await inert.push('unaltered <text>');await inert.flush();assert.equal(output,'unaltered <text>');
 console.log(`Engine ${manifest.version}: current storage API, both exact snapshot callbacks, ${cases+2} executable stream-chain cases passed.`);
+await import("./check-script-game-state.mjs");

@@ -11,6 +11,8 @@ await fs.mkdir(packageRoot, { recursive: true });
 await fs.cp(path.join(projectRoot, "src"), path.join(packageRoot, "src"), { recursive: true });
 await fs.cp(path.join(projectRoot, "bootstrap"), path.join(packageRoot, "bootstrap"), { recursive: true });
 await fs.copyFile(path.join(projectRoot, "README.md"), path.join(packageRoot, "README.md"));
+await fs.mkdir(path.join(packageRoot, "docs"), { recursive: true });
+await fs.copyFile(path.join(projectRoot, "docs", "SCRIPT-GAME-STATE.md"), path.join(packageRoot, "docs", "SCRIPT-GAME-STATE.md"));
 await fs.writeFile(path.join(packageRoot, "server.mjs"), 'export { activate, selfCheck } from "./src/server/index.js";\n');
 await fs.writeFile(path.join(packageRoot, "manifest.json"), `${JSON.stringify({
   schemaVersion: 1,
