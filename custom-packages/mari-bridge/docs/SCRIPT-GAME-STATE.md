@@ -108,6 +108,38 @@ HUD, docked tracker and popup panels consuming that state refresh normally.
 Native panel visibility and edit/lock controls keep their existing settings.
 No DOM polling, duplicate panel, or parallel GameState store is added.
 
+## Optional model follow-up
+
+Since Bridge 1.2.0, a custom Script tool's top-level return can include the
+boolean `noFollowup` option:
+
+```js
+mari.gameState.patch({ weather: "Rain", time: "12:05" });
+return { ok: true, noFollowup: true };
+```
+
+`true` ends the current chat responder's tool loop after the current batch
+finishes. No tool-result follow-up, forced final tool round, separate Game
+narrator request, or Game dice narration rewrite is sent. Any already generated
+prose is retained. If there is no prose, the native hidden-message anchor
+completes the turn without an empty assistant bubble. GameState effects still
+commit through the normal saved-turn path and update all affected trackers.
+
+`false` or omission keeps native follow-up behavior. Only boolean `true`
+stops it; strings such as `"true"` do not. The option also works without a
+GameState patch, in normal Roleplay, Game and Conversation chat generation.
+It belongs in the Script return object, not in `mari.gameState.patch(...)`.
+
+If any Script in a batch returns `noFollowup: true`, that batch finishes and
+then the responder stops, even when another tool returns `false`. An explicit
+`{error: "...", noFollowup: true}` also suppresses a model retry; the failure
+is still reported and its GameState effects are discarded. A returned flag is
+also honored if Bridge rejects the proposed state patch. A thrown exception
+or timeout supplies no returned flag and follows the native error path.
+Independently enabled agents and other group responders
+retain their own lifecycle; this option controls the current chat responder,
+not agent tool loops. Impersonation is outside this saved-turn contract.
+
 ## Verification
 
 From the workspace root, with the shared harness lease held when using its
@@ -133,3 +165,9 @@ Character, Quest, Inventory and Custom docked sections and HUD summaries;
 World and Persona popups; and persistence after a browser reload. Agent Suite
 cache synchronization has executable coverage. The local test provider was
 deterministic; Docker startup was not rerun for this change.
+
+The 1.2.0 follow-up checks count provider calls through 39 native Roleplay,
+Game and Conversation generation scenarios: boolean/omitted flags, failures,
+mixed tool batches, empty and visible replies, saved patches, regeneration,
+the final tool round, a separate Game tool connection and dice narration.
+The existing compiled UI applier test still verifies the committed snapshot.

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
   "engine": {
     "min": "2.4.6",
@@ -22,18 +22,18 @@
     },
     {
       "path": "bootstrap/runtime.mjs",
-      "sha256": "b8159ed447745ac47a98ccac640f2dd7e71848cb2674deb7e9fa4469035e7a4a",
+      "sha256": "9a557de561b7d6544a4f825324f6af78e2bc7a65a90971731d9b3ad658af24d9",
       "bytes": 80518
     },
     {
       "path": "bootstrap/script-game-state.mjs",
-      "sha256": "9831a8eb89aef8168923fe768e94b795f678320595458da6e12c5d34ce21fdc0",
-      "bytes": 8869
+      "sha256": "12d24da7dc220c699c2f0ad4b59a542c3ce69074c07336b9df0ea9a998182ea9",
+      "bytes": 11182
     },
     {
       "path": "docs/SCRIPT-GAME-STATE.md",
-      "sha256": "71605bed1742123635a2abdf53ce1faafc07efd45408ae7d32f52fb1b2f217da",
-      "bytes": 6158
+      "sha256": "733807b5212f6e6950921c432439f8c566e59ccafe9068658c5fd33498935bf5",
+      "bytes": 8208
     },
     {
       "path": "server.mjs",
@@ -42,7 +42,7 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "e05b561fa306bbf8f8fd69131322ca19f73c41678a6a10ba714d9dc3977a0e26",
+      "sha256": "c7bb0ed6a312502fd56336b2065d2f3c326d84eb995c764fa1245a5df9ecc299",
       "bytes": 72040
     },
     {
@@ -152,7 +152,7 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "f24f109a42221fe8996810ded0e25d1d0c90d84f5e5310d8e07481481bda790a",
+      "sha256": "3c39d7e45f3e529eb297876204a8ff328d8745c291e8a9c130e8fac80a050ff7",
       "bytes": 1841
     }
   ],

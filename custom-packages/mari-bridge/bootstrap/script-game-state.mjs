@@ -29,20 +29,28 @@ export function patchScriptGameStateModule(url, input, replace) {
   }
   if (url.endsWith("/services/tools/tool-executor.js")) {
     edit('resolve(message.value);', 'resolve({ value: message.value, effects: message.effects });', "executor-envelope");
-    edit('const result = await executeCustomToolScript(tool.scriptBody, args, hiddenContext, customToolTimeoutMs);\n                return classifyToolExecution(result ?? { result: "OK" });', `const envelope = await executeCustomToolScript(tool.scriptBody, args, hiddenContext, customToolTimeoutMs);
+    edit('try {\n                const result = await executeCustomToolScript(tool.scriptBody, args, hiddenContext, customToolTimeoutMs);\n                return classifyToolExecution(result ?? { result: "OK" });', `let mariBridgeScriptNoFollowup = false;
+            try {
+                const envelope = await executeCustomToolScript(tool.scriptBody, args, hiddenContext, customToolTimeoutMs);
+                mariBridgeScriptNoFollowup = envelope.value?.noFollowup === true;
                 const outcome = classifyToolExecution(envelope.value ?? { result: "OK" });
+                // Control comes only from the Script's top-level return, before
+                // any pending GameState receipt wraps that result.
+                if (mariBridgeScriptNoFollowup) outcome.noFollowup = true;
                 if (!outcome.success) return outcome;
                 const { mergeScriptGameStateEffects } = await import(${JSON.stringify(helpersUrl)});
                 const patch = mergeScriptGameStateEffects(envelope.effects);
                 if (!patch) return outcome;
                 if (!context?.prepareScriptGameStatePatch) throw new Error("Game-state writes are not available in this context.");
                 await context.prepareScriptGameStatePatch(patch);
-                return { success: true, mariBridgeScriptPatch: patch, result: {
+                return { ...outcome, mariBridgeScriptPatch: patch, result: {
                     result: outcome.result,
                     gameState: { applied: false, pending: true, patch,
                         note: "Queued for this turn. The change is not applied until this response is saved." },
                 } };`, "executor-effects");
-    edit('success: outcome.success,', 'success: outcome.success,\n                ...(outcome.mariBridgeScriptPatch ? { mariBridgeScriptPatch: outcome.mariBridgeScriptPatch } : {}),', "executor-patch-result");
+    edit('result: { error: `Script error: ${err instanceof Error ? err.message : "unknown"}` },',
+      'result: { error: `Script error: ${err instanceof Error ? err.message : "unknown"}` },\n                    ...(mariBridgeScriptNoFollowup ? { noFollowup: true } : {}),', "executor-error-followup");
+    edit('success: outcome.success,', 'success: outcome.success,\n                ...(outcome.noFollowup === true ? { noFollowup: true } : {}),\n                ...(outcome.mariBridgeScriptPatch ? { mariBridgeScriptPatch: outcome.mariBridgeScriptPatch } : {}),', "executor-patch-result");
   }
   if (url.endsWith("/services/storage/game-state.storage.js")) {
     edit('export function createGameStateStorage(db) {', `import { prepareScriptGameStatePatch } from ${JSON.stringify(helpersUrl)};
@@ -73,6 +81,18 @@ export function createGameStateStorage(db) {`, "storage-import");
       'if (fields.recentEvents !== undefined) updates.recentEvents = JSON.stringify(fields.recentEvents);\n            if (fields.presentCharacters !== undefined)\n                updates.presentCharacters = JSON.stringify(fields.presentCharacters);', "storage-events-update");
   }
   if (url.endsWith("/routes/generate.routes.js")) {
+    edit('let narratorMessages = initialProviderMessages;',
+      'let mariBridgeNoFollowup = false;\n                    let narratorMessages = initialProviderMessages;', "followup-state");
+    // Finish the complete batch and emit its results before leaving the loop.
+    // Do not return from generation: native saving, effects and cleanup must run.
+    edit('if (gameToolPlan) {\n                                // This list is already provider-formatted.',
+      'if (toolResults.some((result) => result.noFollowup === true)) {\n                                mariBridgeNoFollowup = true;\n                                finishReason = "stop";\n                                break;\n                            }\n                            if (gameToolPlan) {\n                                // This list is already provider-formatted.', "followup-stop");
+    edit('if (!responderToolsAttached || gameToolConnection) {',
+      'if (!mariBridgeNoFollowup && (!responderToolsAttached || gameToolConnection)) {', "followup-narrator");
+    edit('if (shouldNarrateGameDiceOutcome(chatMeta, Boolean(rolled.resolved || generalRolls.rolled))) {',
+      'if (!mariBridgeNoFollowup && shouldNarrateGameDiceOutcome(chatMeta, Boolean(rolled.resolved || generalRolls.rolled))) {', "followup-dice-narrator");
+    edit('(pendingGameStateToolCalls.length > 0 && !abortController.signal.aborted),',
+      '((pendingGameStateToolCalls.length > 0 || mariBridgeNoFollowup) && !abortController.signal.aborted),', "followup-hidden-anchor");
     edit('const pendingGameStateToolCalls = [];', `const pendingGameStateToolCalls = [];
                     const { prepareScriptGameStatePatch, executePendingScriptGameStateCalls } = await import(${JSON.stringify(helpersUrl)});
                     const { normalizeWorldCustomFields: mariNormalizeWorldFields } = await import("@marinara-engine/shared");`, "generation-helpers");

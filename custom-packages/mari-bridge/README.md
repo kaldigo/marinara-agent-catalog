@@ -41,7 +41,7 @@ controls use the native `chat-settings` slot on the existing agent card.
 
 ## Current implementation boundary
 
-Version `1.1.0` targets Marinara Engine **2.4.6 only**. Previous Engine releases
+Version `1.2.0` targets Marinara Engine **2.4.6 only**. Previous Engine releases
 and the retired Bridge `agent.settings` / `roleplay.hud` mounts are unsupported.
 Settings and GM Notes toolbar elements now use native package slots. The
 remaining tracker hook contributes descriptors to native field editors and
@@ -161,6 +161,11 @@ Successful scripts propose one atomic data patch for their current saved
 Roleplay or Game turn. Native storage enforces tracker locks and Spatial
 Context ownership again at commit time. The committed snapshot updates the
 native HUD, docked tracker, popup panels, and Agent Suite tracker-data cache.
+
+Since 1.2.0, Script tools can return `{ noFollowup: true }` to finish the
+current chat responder's tool round without another model request. `false`
+or omission keeps the native follow-up behavior. Pending state still saves
+and refreshes the native UI. See the API guide for batch and error behavior.
 
 ## Intended outcome
 

@@ -1394,7 +1394,7 @@ function createClientRuntime(serverHealth) {
   if (NATIVE_PATCHES.has("client.tracker-surfaces")) capabilities.add("tracker.surfaces");
   return Object.freeze({
     apiVersion: API_VERSION,
-    implementationVersion: "1.1.0",
+    implementationVersion: "1.2.0",
     status: "ready",
     capabilities,
     serverHealth,
@@ -1676,7 +1676,7 @@ if (!globalThis[CLIENT_SYMBOL]) {
   globalThis[CLIENT_SYMBOL] = createClientRuntime(Object.freeze({
     status: "injected",
     engineVersion: "2.4.6",
-    implementationVersion: "1.1.0",
+    implementationVersion: "1.2.0",
   }));
   defineTurnHandoffElement(globalThis[CLIENT_SYMBOL].turnHandoff);
   defineNativeSlotElement(globalThis[CLIENT_SYMBOL].ui, globalThis[CLIENT_SYMBOL].turnHandoff);
