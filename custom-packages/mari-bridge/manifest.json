@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mari-bridge",
   "name": "Mari Bridge",
-  "version": "1.0.43",
+  "version": "1.1.0",
   "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
   "engine": {
     "min": "2.4.6",
@@ -22,8 +22,18 @@
     },
     {
       "path": "bootstrap/runtime.mjs",
-      "sha256": "3d6b6ff4c47d2f89310c99bffc54317c1edfca2fdb7e2e635ce0bd9186712924",
-      "bytes": 79932
+      "sha256": "b8159ed447745ac47a98ccac640f2dd7e71848cb2674deb7e9fa4469035e7a4a",
+      "bytes": 80518
+    },
+    {
+      "path": "bootstrap/script-game-state.mjs",
+      "sha256": "9831a8eb89aef8168923fe768e94b795f678320595458da6e12c5d34ce21fdc0",
+      "bytes": 8869
+    },
+    {
+      "path": "docs/SCRIPT-GAME-STATE.md",
+      "sha256": "71605bed1742123635a2abdf53ce1faafc07efd45408ae7d32f52fb1b2f217da",
+      "bytes": 6158
     },
     {
       "path": "server.mjs",
@@ -32,8 +42,8 @@
     },
     {
       "path": "src/client/runtime.js",
-      "sha256": "eac30c3c587a62d21e92a35975dd5124f1f9dc29c21faca189463a18be0be059",
-      "bytes": 71623
+      "sha256": "e05b561fa306bbf8f8fd69131322ca19f73c41678a6a10ba714d9dc3977a0e26",
+      "bytes": 72040
     },
     {
       "path": "src/client/tracker-detail-field-registry.js",
@@ -67,8 +77,8 @@
     },
     {
       "path": "src/server/client-overlay.js",
-      "sha256": "bf4166c0739c4eeb03530fb7c6101511e82231902ff51c98814f17b26baf3bc5",
-      "bytes": 51527
+      "sha256": "4bb0ff83a4e524317fb622031585de978314c729995689404d88bb5b4d1acfe8",
+      "bytes": 53038
     },
     {
       "path": "src/server/group-selector-registry.js",
@@ -77,8 +87,8 @@
     },
     {
       "path": "src/server/index.js",
-      "sha256": "a18764cd4569bfd5c06b2d84ebcec06c023bd4aaae17f48b6673a92d9fa1ef15",
-      "bytes": 2975
+      "sha256": "66d12be433f42e01f252ab3a722f74b39419941529903acc29ea2738fef7c060",
+      "bytes": 3049
     },
     {
       "path": "src/server/message-registry.js",
@@ -111,9 +121,14 @@
       "bytes": 14558
     },
     {
+      "path": "src/server/script-game-state.js",
+      "sha256": "12ab3ff1e0c688a7f7777a0d629b825e45be45b126f4a88a904c615ae2d4e0e5",
+      "bytes": 8266
+    },
+    {
       "path": "src/server/server-overlay.js",
-      "sha256": "b7d2971a5ec59c60e903f5189f33ebaf68d4fb34e08fc790532f07a3e0950a18",
-      "bytes": 7373
+      "sha256": "fb5254bb8889e7187ca1714d021a564c2b8a82ae4b0cba8124e28608acfc9fc6",
+      "bytes": 7411
     },
     {
       "path": "src/server/spatial-directive-compat.js",
@@ -137,8 +152,8 @@
     },
     {
       "path": "src/shared/contracts.js",
-      "sha256": "8e97e346f44e2f907debb1cf9834850c77197ada131abd73cb98c43b17444026",
-      "bytes": 1842
+      "sha256": "f24f109a42221fe8996810ded0e25d1d0c90d84f5e5310d8e07481481bda790a",
+      "bytes": 1841
     }
   ],
   "permissions": [

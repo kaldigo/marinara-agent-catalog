@@ -23,6 +23,8 @@ const STABLE_RUNTIME_FILES = Object.freeze([
   "src/client/tracker-detail-field-registry.js",
   "src/client/tracker-surface-registry.js",
   "bootstrap/runtime.mjs",
+  "bootstrap/script-game-state.mjs",
+  "src/server/script-game-state.js",
   // Commit the preload entry last, after every module it imports exists.
   "bootstrap/register.mjs",
 ]);

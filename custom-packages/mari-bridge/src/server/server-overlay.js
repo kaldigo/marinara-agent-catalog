@@ -91,6 +91,7 @@ export async function prepareServerOverlay({
   bridgeVersion,
   patchTargets,
   patchModule,
+  patchSources = [],
 }) {
   const serverPackageRoot = resolve(engineRoot, "packages", "server");
   const nativeServerDist = join(serverPackageRoot, "dist");
@@ -99,7 +100,7 @@ export async function prepareServerOverlay({
   const target = join(overlaysRoot, SERVER_OVERLAY_DIRECTORY);
   const fingerprint = await fingerprintOverlayInputs(
     [nativeServerDist, join(nativeSharedRoot, "dist")],
-    [await readFile(join(nativeSharedRoot, "package.json")), JSON.stringify(patchTargets), String(patchModule)],
+    [await readFile(join(nativeSharedRoot, "package.json")), JSON.stringify(patchTargets), String(patchModule), ...patchSources],
   );
   try {
     return await readReadyOverlay(target, engineRoot, engineVersion, bridgeVersion, fingerprint);

@@ -520,6 +520,17 @@ export function patchQueryClientBridge(source) {
   );
 }
 
+export function patchScriptGameStateClient(source) {
+  if (!source.includes('case"game_state_patch":') || !source.includes(".playerStats.activeQuests")) return null;
+  const id = "[A-Za-z_$][\\w$]*";
+  const pattern = new RegExp(`function (?<fn>${id})\\((?<chat>${id}),(?<patch>${id}),(?<anchor>${id})\\)\\{const (?<current>${id})=(?<store>${id})\\.getState\\(\\)\\.current;if\\(\\k<current>\\?\\.chatId===\\k<chat>\\)`, "gu");
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) throw new Error(`Mari Bridge Script GameState client expected one native state applier, found ${matches.length}`);
+  const { fn, chat, patch, anchor, current, store } = matches[0].groups;
+  return source.replace(pattern,
+    `function ${fn}(${chat},${patch},${anchor}){if(${patch}?.__mariBridgeScriptState===true&&${patch}.chatId===${chat}){const {__mariBridgeScriptState,...snapshot}=${patch};${store}.getState().setGameState(snapshot);${CLIENT_SYMBOL_EXPRESSION}?.notifyScriptGameStateSaved(snapshot);return}const ${current}=${store}.getState().current;if(${current}?.chatId===${chat})`);
+}
+
 export function patchRoleplayBackgroundStoreBridge(source) {
   if (
     !source.includes('"chat-area"')
@@ -735,6 +746,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
   let roleplayBackgroundPatchCount = 0;
   let roleplayDraftPlaceholderPatchCount = 0;
   let queryClientPatchCount = 0;
+  let scriptGameStatePatchCount = 0;
   const attemptAssetPatch = (patchId, patcher, source) => {
     if (failedPatches.has(patchId)) return null;
     try {
@@ -749,6 +761,12 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     const assetPath = join(assetsRoot, entry.name);
     let assetSource = await readFile(assetPath, "utf8");
     let changed = false;
+    const scriptGameStatePatched = attemptAssetPatch("client.script-game-state", patchScriptGameStateClient, assetSource);
+    if (scriptGameStatePatched !== null) {
+      assetSource = scriptGameStatePatched;
+      scriptGameStatePatchCount += 1;
+      changed = true;
+    }
     const chatInputPatched = attemptAssetPatch("client.command-drafts", patchChatInputBridge, assetSource);
     if (chatInputPatched !== null) {
       assetSource = chatInputPatched;
@@ -818,6 +836,7 @@ export async function prepareClientOverlay({ dataDir, sourceRoot, engineVersion 
     if (changed) await writeFile(assetPath, assetSource);
   }
   const patchExpectations = [
+    ["client.script-game-state", scriptGameStatePatchCount, 1, "native GameState stream applier"],
     ["client.command-drafts", chatInputPatchCount, 2, "chat input assets"],
     ["client.command-drafts", roleplayDraftPlaceholderPatchCount, 1, "Roleplay draft placeholder asset"],
     ["client.impersonate-settings", impersonateSettingsPatchCount, 1, "Impersonate settings asset"],
