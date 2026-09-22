@@ -41,6 +41,23 @@ try {
   }))[0];
   const ordinary = await execute("return { unchanged: true };");
   assert.deepEqual(JSON.parse(ordinary.result), { unchanged: true });
+  assert.equal(ordinary.noFollowup, undefined);
+  for (const value of [true, false, "true", 1, null]) {
+    const result = await execute(`return { noFollowup: ${JSON.stringify(value)}, result: "Done" };`);
+    assert.equal(result.noFollowup === true, value === true);
+    assert.deepEqual(JSON.parse(result.result), { noFollowup: value, result: "Done" });
+  }
+  const noFollowupPatch = await execute('mari.gameState.patch({time:"12:00"}); return {noFollowup:true};');
+  assert.equal(noFollowupPatch.noFollowup, true);
+  assert.deepEqual(noFollowupPatch.mariBridgeScriptPatch, {time:"12:00"});
+  const noFollowupError = await execute('mari.gameState.patch({time:"12:00"}); return {error:"Handled failure",noFollowup:true};');
+  assert.equal(noFollowupError.noFollowup, true);
+  assert.equal(noFollowupError.success, false);
+  assert.equal(noFollowupError.mariBridgeScriptPatch, undefined);
+  const rejectedNoFollowupPatch = await execute('mari.gameState.patch({committed:true}); return {noFollowup:true};');
+  assert.equal(rejectedNoFollowupPatch.noFollowup, true);
+  assert.equal(rejectedNoFollowupPatch.success, false);
+  assert.equal(rejectedNoFollowupPatch.mariBridgeScriptPatch, undefined);
   const successful = await execute('mari.gameState.patch({time:"12:00"}); mari.gameState.patch({weather:"Rain"}); mari.gameState.patch({time:"12:05"}); return {ok:true};');
   assert.equal(successful.success, true, successful.result);
   assert.deepEqual(successful.mariBridgeScriptPatch, { time: "12:05", weather: "Rain" });
@@ -192,6 +209,129 @@ try {
     beforeSave=undefined;requestWeather="Rain";
     assertions += 5;
   }
+
+  // Count actual provider calls through native generation, including the final
+  // forced follow-up and Game's separate tool planner/narrator path.
+  const originalScript = customTool.scriptBody;
+  const stateProvider = Provider.prototype.chatComplete;
+  const originalChat = Provider.prototype.chat;
+  const originalMaxRounds = process.env.MAX_TOOL_ROUNDS;
+  const {createCharactersStorage}=await module("services/storage/characters.storage.js");
+  const responder=await createCharactersStorage(db).create(shared.characterDataSchema.parse({name:"Fixture responder"}));
+  const secondTool = await custom.create({name:"fixture_second",executionType:"script",enabled:true,
+    description:"Second tool in one batch",parametersSchema:{type:"object",properties:{}},
+    scriptBody:'mari.gameState.patch({time:"19:30"}); return {noFollowup:false};'});
+  let followupCases = 0;
+  try {
+    for (const mode of ["roleplay", "game", "conversation"]) {
+      const cases = [
+        {name:"stop-empty",flag:true},
+        {name:"stop-visible",flag:true,content:"Already narrated."},
+        {name:"continue",flag:false},
+        {name:"default"},
+        {name:"not-boolean",flag:"true"},
+        {name:"last-round-stop",flag:true,lastRound:true},
+        {name:"last-round-continue",flag:false,lastRound:true},
+        {name:"explicit-error",flag:true,error:true},
+        {name:"exception",flag:true,throws:true},
+        {name:"rejected-patch",flag:true,rejectedPatch:true},
+        ...(mode !== "conversation" ? [
+          {name:"save-patch",flag:true,patch:true,regenerate:true},
+          {name:"save-visible-patch",flag:true,patch:true,content:"The weather changes."},
+          {name:"mixed-batch",flag:true,patch:true,batch:true},
+        ] : []),
+        ...(mode === "game" ? [
+          {name:"separate-planner-stop",flag:true,patch:true,planner:true},
+          {name:"separate-planner-continue",flag:false,planner:true},
+          {name:"no-dice-followup",flag:true,content:"A roll: [dice:1d6]"},
+        ] : []),
+      ];
+      for (const scenario of cases) {
+        let completeCalls=0, narrationCalls=0;
+        const stops = scenario.flag === true && !scenario.throws;
+        process.env.MAX_TOOL_ROUNDS = scenario.lastRound ? "1" : "3";
+        await custom.update(customTool.id,{scriptBody:
+          `${scenario.patch ? 'mari.gameState.patch({weather:args.weather});' : ''}
+           ${scenario.rejectedPatch ? 'mari.gameState.patch({committed:true});' : ''}
+           ${scenario.throws ? 'throw Error("Fixture exception");' : ''}
+           return ${JSON.stringify({ok:!scenario.error,...(Object.hasOwn(scenario,"flag")?{noFollowup:scenario.flag}:{}),
+             ...(scenario.error?{error:"Handled failure"}:{})})};`});
+        Provider.prototype.chatComplete = async (_messages, options) => {
+          completeCalls++;
+          if (completeCalls > 1) {
+            assert.equal(stops,false,`${mode}/${scenario.name} made another model request`);
+            return {content:"Follow-up narration.",toolCalls:[],finishReason:"stop"};
+          }
+          const calls=[toolCall(customTool.name,{weather:"Stopped rain"})];
+          if (scenario.batch) calls.push({...toolCall(secondTool.name),id:"second"});
+          if (scenario.content && options.onToken) await options.onToken(scenario.content);
+          return {content:scenario.content??null,toolCalls:calls,finishReason:"tool_calls"};
+        };
+        Provider.prototype.chat = async function* () {
+          narrationCalls++;
+          assert.equal(stops,false,`${mode}/${scenario.name} started a narrator request`);
+          yield "Follow-up narration.";
+          return {finishReason:"stop"};
+        };
+        const chat=await chats.create({name:`Follow-up ${mode}/${scenario.name}`,mode,characterIds:mode==="conversation"?[responder.id]:[],connectionId:conn.id,promptPresetId:null});
+        await chats.patchMetadata(chat.id,{enableAgents:false,enableTools:true,
+          activeToolIds:[customTool.name,...(scenario.batch?[secondTool.name]:[])],
+          ...(scenario.planner?{gameGmToolConnectionId:conn.id}:{}),
+          ...(scenario.name==="no-dice-followup"?{gameOneRequestDice:false,gameDiceOutcomeNarration:true}:{}),
+        });
+        await states.create({...initial,chatId:chat.id,messageId:""});
+        await chats.createMessage({chatId:chat.id,role:"user",content:"Run the tool."});
+        const run=()=>app.inject({method:"POST",url:"/api/generate/",payload:{chatId:chat.id,streaming:true}});
+        const response=await run();
+        assert.equal(response.statusCode,200,response.body);
+        const events=response.body.split("\n").filter(line=>line.startsWith("data: ")).map(line=>JSON.parse(line.slice(6)));
+        assert.equal(events.some(event=>event.type==="error"),false,response.body);
+        assert.ok(events.some(event=>event.type==="done"),response.body);
+        assert.equal(completeCalls,stops||scenario.planner?1:2,`${mode}/${scenario.name}`);
+        assert.equal(narrationCalls,scenario.planner&&!stops?1:0,`${mode}/${scenario.name}`);
+        const toolEvents=events.filter(event=>event.type==="tool_result");
+        assert.ok(toolEvents.some(event=>event.data.name===customTool.name),response.body);
+        if(scenario.rejectedPatch) {
+          assert.ok(toolEvents.some(event=>event.data.name===customTool.name&&event.data.success===false));
+          assert.doesNotMatch(response.body,/__mariBridgeScriptState/);
+        }
+        if(scenario.name==="no-dice-followup") assert.ok(toolEvents.some(event=>event.data.name==="roll_dice"),response.body);
+        const saved=(await chats.listMessages(chat.id)).at(-1);
+        assert.equal(saved.role,"assistant",response.body);
+        if(stops&&!scenario.content) {
+          assert.equal(saved.content,"");
+          const extra=typeof saved.extra==="string"?JSON.parse(saved.extra):saved.extra;
+          assert.equal(extra.hiddenFromUser,true);
+        }
+        if(stops&&scenario.content&&scenario.name!=="no-dice-followup") assert.equal(saved.content,scenario.content);
+        if(scenario.patch) {
+          assert.match(response.body,/__mariBridgeScriptState/);
+          const snapshot=await states.getByChatAndMessage(chat.id,saved.id,saved.activeSwipeIndex);
+          assert.equal(snapshot.weather,"Stopped rain");
+          if(scenario.batch) {
+            assert.equal(snapshot.time,"19:30","remaining batch tools still execute and save");
+            assert.ok(toolEvents.some(event=>event.data.name===secondTool.name));
+          }
+          if(scenario.regenerate) {
+            completeCalls=0;
+            const regenerated=await app.inject({method:"POST",url:"/api/generate/",payload:{chatId:chat.id,streaming:false,regenerateMessageId:saved.id}});
+            assert.equal(regenerated.statusCode,200,regenerated.body);
+            assert.equal(completeCalls,1);
+            assert.equal((await states.getByChatAndMessage(chat.id,saved.id,1)).weather,"Stopped rain");
+            assert.ok(await states.getByChatAndMessage(chat.id,saved.id,0));
+          }
+        }
+        followupCases++;
+      }
+    }
+  } finally {
+    Provider.prototype.chatComplete=stateProvider;
+    Provider.prototype.chat=originalChat;
+    if(originalMaxRounds===undefined) delete process.env.MAX_TOOL_ROUNDS;
+    else process.env.MAX_TOOL_ROUNDS=originalMaxRounds;
+    await custom.update(customTool.id,{scriptBody:originalScript});
+  }
+  console.log(`Script noFollowup: ${followupCases} native generation cases passed (provider call counts, mixed batches, hidden saves, regeneration and separate Game narration).`);
 
   // Exercise the compiled native UI applier: additions and removals reach the
   // same store consumed by docked HUD, World/Characters/Stats/Inventory/Quests.
