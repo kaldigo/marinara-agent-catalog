@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";
-import { runInNewContext } from "node:vm";
 
-import { resolveSlurpCreatorScheduleStatus } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-creator-schedule-context.js";
 import {
-  reconcileNoodleRefreshSchedule,
-  type PersistedNoodleRefreshSchedule,
-} from "../packages/slurp/src/engine/packages/server/src/services/slurp/slurp-refresh-schedule.js";
+  resolveSlurpCreatorAvailability,
+  resolveSlurpCreatorScheduleContext,
+  resolveSlurpCreatorScheduleStatus,
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/creators/slp-creator-schedule-context.js";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 async function main() {
   // A Tuesday, so "this week" starts on the Monday before it.
@@ -39,6 +38,46 @@ async function main() {
     ),
     { state: "stale" },
   );
+
+  // Writers store Monday at *local* midnight. East of UTC that instant is Sunday in UTC, which used
+  // to read as last week: a schedule regenerated a minute ago still warned "Needs attention".
+  for (const [zone, weekStart] of [
+    ["Europe/Berlin", "2026-09-06T22:00:00.000Z"],
+    ["Asia/Tokyo", "2026-09-06T15:00:00.000Z"],
+    ["America/Los_Angeles", "2026-09-07T07:00:00.000Z"],
+    ["Pacific/Auckland", "2026-09-06T11:00:00.000Z"],
+    ["Pacific/Kiritimati", "2026-09-06T10:00:00.000Z"],
+    ["UTC", "2026-09-07T00:00:00.000Z"],
+  ] as const) {
+    // Far-east zones are already on Wednesday at `now`, so assert only that this week still counts.
+    assert.notEqual(
+      (
+        await resolveSlurpCreatorScheduleStatus(
+          character({ conversationSchedule: week(weekStart, tuesdayBlocks) }),
+          characterSource,
+          zone,
+          now,
+        )
+      ).state,
+      "stale",
+      zone,
+    );
+  }
+  assert.deepEqual(
+    await resolveSlurpCreatorScheduleStatus(
+      character({ conversationSchedule: week("2026-08-30T22:00:00.000Z", tuesdayBlocks) }),
+      characterSource,
+      "Europe/Berlin",
+      now,
+    ),
+    { state: "stale" },
+  );
+
+  // Second line of defence: whatever makes a week look old (time zones, the Engine editor keeping the
+  // original weekStart on save), the routine keeps applying, as Engine chats use it.
+  const oldWeek = character({ conversationSchedule: week(lastMonday, tuesdayBlocks) });
+  assert.match(await resolveSlurpCreatorScheduleContext(oldWeek, characterSource, "UTC", now), /at the studio/u);
+  assert.equal((await resolveSlurpCreatorAvailability(oldWeek, characterSource, "UTC", now)).estimated, undefined);
 
   // ── Every other reason is reported as itself ────────────────────────────────
   // The prompt paths collapse all of these into one sentence, which is right for a prompt and
@@ -107,49 +146,18 @@ async function main() {
     );
     assert.equal(status.state, "missing", `unexpected status for ${JSON.stringify(bad)}`);
   }
-
-  // Execute the actual legacy storage method: its disabled refresh schedule must
-  // not depend on reading unrelated settings or write again when already current.
-  const legacyStorage = readFileSync(
-    new URL("../packages/slurp/src/engine/packages/server/src/services/storage/slurp.storage.ts", import.meta.url),
-    "utf8",
-  );
-  const scheduleMethod = legacyStorage.slice(
-    legacyStorage.indexOf("async ensureRefreshSchedule("),
-    legacyStorage.indexOf("async listAccounts()"),
-  );
-  let stored: PersistedNoodleRefreshSchedule | null = null;
-  let scheduleWrites = 0;
-  const storage = {
-    getSettings: async () => {
-      throw new Error("The disabled legacy refresh schedule does not need settings");
-    },
-    getRefreshSchedule: async () => stored,
-    saveRefreshSchedule: async (value: PersistedNoodleRefreshSchedule) => {
-      stored = value;
-      scheduleWrites += 1;
-    },
-  };
-  const ensureRefreshSchedule = runInNewContext(stripTypeScriptTypes(`({${scheduleMethod}})`), {
-    reconcileNoodleRefreshSchedule,
-  }).ensureRefreshSchedule as (this: typeof storage, at: Date) => Promise<PersistedNoodleRefreshSchedule>;
-  const initialized = await ensureRefreshSchedule.call(storage, now);
-  assert.equal(initialized.refreshesPerDay, 0);
-  assert.deepEqual(initialized.scheduledTimes, []);
-  assert.equal(await ensureRefreshSchedule.call(storage, now), initialized);
-  assert.equal(scheduleWrites, 1);
 }
 
 void main();
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 assert.match(read("server/src/services/storage/slurp.storage.ts"), /scheduleStatus: publicAccount/u);
-const settings = read("client/src/components/slurp/SlurpSettings.tsx");
-// Only the stale case earns a warning in the list. The others are stated on the Creator itself,
-// where somebody is already deciding what to do about them.
+const settings = slurp2BackstageSource();
+// An older schedule keeps repeating, so it is a note on the Creator, never a "Needs attention" warning.
+assert.doesNotMatch(settings, /function needsAttention\([^)]*\) \{[^}]*scheduleStatus/u);
 assert.match(settings, /creator\.scheduleStatus\?\.state === "stale"/u);
 assert.match(settings, /ui\.slurp\.settings\.creators\.schedule\.\$\{selectedCreator\.scheduleStatus\.state\}/u);
 

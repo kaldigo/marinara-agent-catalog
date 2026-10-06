@@ -1,32 +1,38 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { createSlurpActivationLifecycle } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-activation-lifecycle.ts";
-import { buildSlurpPostTimingContext } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-timing.ts";
-import { runSlurpAutoPostPollOperations } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-autopost-poll.ts";
-import { normalizeSlurpFanActivityRows } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-fan-activity-response.ts";
-import { hasSlurpCreatorPostingIntervalConflict } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-posting-interval.ts";
+import { createSlurpActivationLifecycle } from "../packages/slurp2/src/engine/packages/server/src/slp/base/locking/slp-activation-lifecycle.ts";
+import { buildSlurpPostTimingContext } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/feed/slp-post-timing.ts";
+import { runSlurpAutoPostPollOperations } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/feed/slp-autopost-poll.ts";
+import { normalizeSlurpFanActivityRows } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/audience/slp-fan-activity-response.ts";
+import { hasSlurpCreatorPostingIntervalConflict } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/feed/slp-posting-interval.ts";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
-const storage = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts",
-  "utf8",
+const storage = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
+const reserveStorage = slurp2Source(
+  "packages/slurp2/src/engine/packages/server/src/slp/data/feed/reserve/slp-reserve-storage-2.ts",
 );
-const refreshScheduler = readFileSync(
+const reserveOperation = slurp2Source(
+  "packages/slurp2/src/engine/packages/server/src/slp/features/feed/reserve/slp-reserve-operation.ts",
+);
+const imageStorage = slurp2Source(
+  "packages/slurp2/src/engine/packages/server/src/slp/features/media/slp-images-service.ts",
+);
+const publicImageStorage = slurp2Source(
+  "packages/slurp2/src/engine/packages/server/src/slp/features/media/slp-public-images-service.ts",
+);
+const postPrompt = slurp2Source("packages/slurp2/src/engine/packages/server/src/slp/features/feed/slp-post-prompt.ts");
+const refreshScheduler = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-refresh-scheduler.service.ts",
-  "utf8",
 );
-const hooks = readFileSync("packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts", "utf8");
-const routes = readFileSync("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts", "utf8");
-const settingsUi = readFileSync(
-  "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpSettings.tsx",
-  "utf8",
-);
-const homeUi = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx", "utf8");
-const onboardingUi = readFileSync(
+const hooks = slurp2Source("packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts");
+const routes = slurp2Source("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts");
+const settingsUi = slurp2BackstageSource();
+const homeUi = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx");
+const onboardingUi = slurp2Source(
   "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpOnboardingPanel.tsx",
-  "utf8",
 );
 const locale = JSON.parse(
-  readFileSync("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json", "utf8"),
+  slurp2Source("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json"),
 ) as Record<string, string>;
 
 assert.match(
@@ -50,11 +56,14 @@ assert.match(
   "the Slurp refresh scheduler must call the supported NoodleR route mode",
 );
 const viewerHook = hooks.slice(
-  hooks.indexOf("export function useNoodlerViewer"),
+  hooks.indexOf("export function useCreatorViewer"),
   hooks.indexOf("/**\n * Unseen-post count"),
 );
-assert.match(viewerHook, /refetchInterval: enabled && personaId \? 30_000 : false/u);
-assert.match(hooks, /invalidateQueries\(\{ queryKey: noodleKeys\.viewer\(personaId\) \}\)/u);
+// Step 3.1 (user): the feed keeps itself fresh instead of a refresh button. 0.3.6: the cheap unseen count
+// polls every 30 s and refreshes the feed on new posts; the full feed only polls slowly.
+assert.match(viewerHook, /refetchInterval: enabled && personaId \? 180_000 : false/u);
+assert.match(hooks, /refetchInterval: enabled && personaId \? 30_000 : false/u);
+assert.match(hooks, /invalidateQueries\(\{ queryKey: slpKeys\.viewer\(personaId\) \}\)/u);
 assert.match(storage, /autoPostGenerationMode: z\.enum\(\["pre_generate", "on_demand"\]\)/u);
 assert.match(
   storage,
@@ -70,10 +79,38 @@ assert.match(
   /Date\.parse\(item\.publishAt\) < at\.getTime\(\) - elapsedPreparedSlotMs\(settings\.postsPerDay\)/u,
 );
 assert.match(storage, /slurpCreatorPostingIntervalMs\(settings\.postsPerDay\)/u);
-assert.match(storage, /hasSlurpCreatorPostingIntervalConflict\(activityTimes, publishMs, settings\.postsPerDay\)/u);
+assert.match(storage, /hasSlurpCreatorPostingIntervalConflict\(activityTimes, publishMs, perCreator\)/u);
+assert.doesNotMatch(
+  reserveStorage.slice(reserveStorage.indexOf("const invalidIds"), reserveStorage.indexOf("const invalidIdSet")),
+  /preserveFutureRows/u,
+  "future generated posts must survive source and policy snapshot changes",
+);
+assert.doesNotMatch(
+  reserveStorage.slice(reserveStorage.indexOf("const invalidIds"), reserveStorage.indexOf("const invalidIdSet")),
+  /policyFingerprint\s*!==\s*slpCreatorReservePolicyFingerprint/u,
+  "reconciliation must not discard future posts when their policy snapshot changes",
+);
+const publishPreparedPosts = reserveStorage.slice(
+  reserveStorage.indexOf("async publishDueNoodlerPreparedPosts"),
+  reserveStorage.indexOf("async reconcileNoodlerPreparedPosts"),
+);
+assert.doesNotMatch(
+  publishPreparedPosts,
+  /policyFingerprint\s*!==\s*slpCreatorReservePolicyFingerprint/u,
+  "publishing must not discard future posts when their policy snapshot changes",
+);
+assert.match(imageStorage, /const includeAppearance = input\.settings\.imageGenerationIncludeDescriptions/u);
+assert.match(imageStorage, /if \(includeAppearance && !stageAppearance && !input\.suppressCharacterContext/u);
+assert.match(publicImageStorage, /input\.settings\.imageGenerationIncludeDescriptions\s*\?/u);
+assert.doesNotMatch(postPrompt, /It is a phone picture rather than an advertisement/u);
+assert.match(
+  reserveOperation,
+  /await noodle\.reconcileNoodlerPreparedPosts\(at\)/u,
+  "startup reconciliation must use the current one-argument storage call",
+);
 assert.match(
   storage,
-  /latestCreatorPost\.createdAt\) \+ slurpCreatorPostingIntervalMs\(settings\.postsPerDay\) > at\.getTime\(\)/u,
+  /latestCreatorPost\.createdAt\) \+\s*slurpCreatorPostingIntervalMs\(\s*slurpPacedPostsPerDay\(settings\.postsPerDay, await readSlurpCreatorPaceFactor\(db, account\.id\)\),?\s*\) >\s*at\.getTime\(\)/u,
 );
 const postingInterval = (24 * 60 * 60 * 1000) / 8;
 const candidateAt = Date.parse("2026-08-27T12:00:00.000Z");
@@ -89,9 +126,8 @@ assert.equal(hasSlurpCreatorPostingIntervalConflict([candidateAt - postingInterv
 // back to `postsPerDay` and discarded the rest, and the rolling daily attempt budget — also
 // `postsPerDay` — ran out halfway through the day. A production install showed the result: slot
 // gaps of 30 minutes for a requested 24 a day, and 100 discarded rows against 42 published.
-const reserve = readFileSync(
+const reserve = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-reserve.operation.ts",
-  "utf8",
 );
 assert.match(
   reserve,
@@ -167,7 +203,7 @@ assert.match(reserve, /Date\.parse\(item\.publishAt\) > at\.getTime\(\) - DAY_MS
 // has to stay for the widened grace to be safe.
 assert.match(
   storage,
-  /latestCreatorPost\.createdAt\) \+ slurpCreatorPostingIntervalMs\(settings\.postsPerDay\) > at\.getTime\(\)/u,
+  /latestCreatorPost\.createdAt\) \+\s*slurpCreatorPostingIntervalMs\(\s*slurpPacedPostsPerDay\(settings\.postsPerDay, await readSlurpCreatorPaceFactor\(db, account\.id\)\),?\s*\) >\s*at\.getTime\(\)/u,
 );
 // A slot is publishable right up to its interval and retired past it, at every pace.
 for (const postsPerDay of [4, 24, 96]) {
@@ -176,19 +212,17 @@ for (const postsPerDay of [4, 24, 96]) {
   assert.equal(hasSlurpCreatorPostingIntervalConflict([0], interval, postsPerDay), false);
 }
 assert.match(settingsUi, /value=\{settings\.postsPerDay\}\s*\n\s*min=\{1\}\s*\n\s*max=\{96\}/u);
-assert.match(routes, /app\.patch\("\/noodler\/auto-post\/schedule\/:slotId"/u);
+assert.match(routes, /app\.patch\("\/slurp\/auto-post\/schedule\/:slotId"/u);
 assert.match(storage, /item\.id !== current\.id && \(item\.state === "scheduled" \|\| item\.state === "prepared"\)/u);
-assert.match(storage, /hasSlurpCreatorPostingIntervalConflict\(activityTimes, publishMs, settings\.postsPerDay\)/u);
+assert.match(storage, /hasSlurpCreatorPostingIntervalConflict\(activityTimes, publishMs, perCreator\)/u);
 assert.match(routes, /result === "conflict"/u);
 assert.match(hooks, /slots: SlurpScheduleSlot\[\]/u);
-assert.match(settingsUi, /useUpdateNoodlerScheduleSlot/u);
-assert.match(settingsUi, /type="datetime-local"/u);
-assert.match(homeUi, /ui\.noodle\.stageprofileview\.automaticPostingProviderDisclosure/u);
-assert.match(onboardingUi, /ui\.noodle\.noodlerwizard\.autoPostingHelp/u);
-for (const key of [
-  "ui.noodle.stageprofileview.automaticPostingProviderDisclosure",
-  "ui.noodle.noodlerwizard.autoPostingHelp",
-]) {
+assert.match(settingsUi, /useUpdateCreatorScheduleSlot/u);
+assert.match(settingsUi, /<ScheduleAgenda/u);
+assert.match(settingsUi, /type="time"[\s\S]*onBlur=\{commitTime\}/u, "a slot time saves when the field is left");
+assert.match(homeUi, /onRunNow\(profile\.id\)/u);
+assert.match(onboardingUi, /providerConfirmationOpen/u);
+for (const key of ["ui.slurp.providerDisclosure.generationDetail", "ui.slurp.providerDisclosure.onboardingDetail"]) {
   assert.match(locale[key] ?? "", /provider|API/u, `${key} must disclose provider or API use`);
 }
 assert.match(
@@ -235,7 +269,11 @@ const reschedule = storage.slice(
   storage.indexOf("async rescheduleNoodlerPost"),
   storage.indexOf("async listNoodlerPreparedPosts"),
 );
-assert.match(reschedule, /policyFingerprint: noodlerReservePolicyFingerprint\(account, settings, source\?\.updatedAt/u);
+assert.match(
+  reschedule,
+  // 0.2.56: the fingerprint carries the content hash staleness is judged on.
+  /policyFingerprint: await slpCreatorReserveFingerprintFor\(db, account, settings, source\)/u,
+);
 
 async function testPollOrdering() {
   const operations: string[] = [];

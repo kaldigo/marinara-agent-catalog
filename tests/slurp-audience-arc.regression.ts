@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -8,7 +7,8 @@ import {
   slurpNextAudienceArc,
   SLURP_AUDIENCE_ARCS,
   SLURP_AUDIENCE_ARC_DAYS,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-audience-arc.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-audience-arc.js";
+import { slurp2Source } from "./slurp2-source";
 
 const base = {
   stage: "follower" as const,
@@ -101,7 +101,7 @@ for (const arc of SLURP_AUDIENCE_ARCS) {
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages/server/src");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 // The arc is derived from state alone: a trajectory the player cannot account for is worse than
 // none, because they would learn to distrust the ones that are real.
@@ -139,3 +139,26 @@ assert.match(schema, /audienceArc: text\("audience_arc"\)\.notNull\(\)\.default\
 assert.match(schema, /audienceArcSince: text\("audience_arc_since"\)/u);
 
 console.log("slurp audience arc regression passed");
+
+// ── The parasocial spiral ───────────────────────────────────────────────────
+// Heavy spend plus constant presence is attachment, and it outranks rising. Easing off ends it.
+assert.equal(slurpNextAudienceArc({ ...base, stage: "whale", interactions: 40, spent: 300 }), "overattached");
+assert.equal(
+  slurpNextAudienceArc({
+    ...base,
+    stage: "whale",
+    interactions: 40,
+    spent: 300,
+    daysSinceSeen: 5,
+    audienceArc: "overattached",
+  }),
+  "overattached",
+  "a few quiet days keep the arc until it has run its course",
+);
+assert.equal(
+  slurpNextAudienceArc({ ...base, interactions: 40, spent: 100 }),
+  "rising",
+  "spend alone is not attachment",
+);
+assert.ok(isNotableAudienceArcChange("rising", "overattached"));
+assert.match(slurpAudienceArcDescription("overattached") ?? "", /boundaries/);

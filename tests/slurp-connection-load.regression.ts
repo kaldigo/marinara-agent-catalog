@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   slurpPollBackoffMs,
   SLURP_POLL_BACKOFF_MAX_MS,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-poll-backoff.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/base/model/slp-poll-backoff.js";
+import { slurp2Source } from "./slurp2-source";
 
 // A healthy poll keeps its normal cadence; a connection that keeps failing is retried
 // exponentially slower instead of once a minute forever, and never slower than the cap.
@@ -17,11 +17,10 @@ assert.equal(slurpPollBackoffMs(60_000, 50), SLURP_POLL_BACKOFF_MAX_MS);
 
 const root = join(import.meta.dirname, "..");
 const read = (path: string) =>
-  readFileSync(join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp", path), "utf8");
+  slurp2Source(join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp", path));
 
-const storage = readFileSync(
+const storage = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts"),
-  "utf8",
 );
 const autoPost = read("slurp-autopost-scheduler.service.ts");
 assert.match(autoPost, /slurpPollBackoffMs\(POLL_MS, consecutiveFailures\)/);
@@ -48,7 +47,7 @@ assert.match(fanActivity, /schedule\(slurpPollBackoffMs\(POLL_MS, consecutiveFai
 
 // Unattended artwork must yield the image connection to the user's own work.
 const artwork = read("slurp-artwork.operation.ts");
-const backfill = artwork.slice(artwork.indexOf("export async function backfillNextNoodlerCreatorArtwork"));
+const backfill = artwork.slice(artwork.indexOf("export async function backfillNextCreatorArtwork"));
 assert.match(backfill, /admissionMode: \{ kind: "background" \}/);
 assert.match(backfill, /if \(isConnectionAdmissionFailure\(error\)\) return "idle";/);
 
@@ -58,7 +57,11 @@ console.log("slurp poll backoff regression passed");
 // by an attempt budget so a broken image connection cannot retry for ever.
 const images = read("slurp-images.service.ts");
 assert.match(images, /imageRetryAttempts: attempts/);
-assert.match(images, /imagePrompt: attempts >= NOODLER_POST_IMAGE_RETRY_LIMIT \? null : undefined/);
+// The prompt is kept even once the automatic budget is spent. Deleting it left a permanently
+// image-less post with no record of what the picture was meant to be, so nobody could redraw it
+// by hand — which is the one thing left to do after three automatic failures. The automatic pass
+// stops on the attempt counter checked below, so the prompt never needed to be the off switch.
+assert.doesNotMatch(images, /imagePrompt: attempts >= SLP_CREATOR_POST_IMAGE_RETRY_LIMIT \? null : undefined/);
 assert.match(images, /if \(isConnectionAdmissionFailure\(error\)\) \{\s*await noodle\.releasePostImageClaim/);
 assert.match(images, /retryNextFailedPostImage/);
 assert.match(images, /admissionMode: \{ kind: "background" \}/);
@@ -70,7 +73,10 @@ assert.match(
   awaiting.slice(0, 1200),
   /metadata\.imagePendingReview === true \|\| metadata\.imageGenerationFailed !== true/,
 );
-assert.match(awaiting.slice(0, 1400), /noodlerPostImageRetryAttempts\(metadata\) >= NOODLER_POST_IMAGE_RETRY_LIMIT/);
+assert.match(
+  awaiting.slice(0, 1400),
+  /slpCreatorPostImageRetryAttempts\(metadata\) >= SLP_CREATOR_POST_IMAGE_RETRY_LIMIT/,
+);
 
 // The failure fallbacks persist the prompt, or there would be nothing to redraw from.
 const generation = read("slurp-generation.service.ts");

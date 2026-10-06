@@ -15,11 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  spatialContextDefinitionSchema,
-  type SpatialContextDefinition,
-  type SpatialOwnerMode,
-} from "@marinara-engine/shared";
+import { type SpatialContextDefinition, type SpatialOwnerMode } from "@marinara-engine/shared";
 import {
   useCreateSpatialMapTemplate,
   useCreateSpatialSharedWorld,
@@ -41,6 +37,7 @@ import {
   normalizeHierarchyProfile,
   type SpatialMapTemplateRecord,
   type SpatialSharedWorldRecord,
+  spatialMapDefinitionSchema,
 } from "../../../../maps-shared/src/maps-model";
 import { createEmptySpatialDefinition } from "./editor-state";
 import {
@@ -326,7 +323,7 @@ export function SpatialMapLibrary({
           ? (record.data as Record<string, unknown>)
           : record;
       const candidate = data && "definition" in data ? data.definition : raw;
-      const parsed = spatialContextDefinitionSchema.safeParse(candidate);
+      const parsed = spatialMapDefinitionSchema.safeParse(candidate);
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "This is not a valid map file.");
       const portableLoreValue = record?.portableLore;
       const hasPortableLore = portableLoreValue !== null && portableLoreValue !== undefined;

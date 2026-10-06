@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { resolveSlurpCreatorAvailability } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-creator-schedule-context";
-import { SLURP_DEFAULT_REPLY_DELAYS } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-messaging";
+import { resolveSlurpCreatorAvailability } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/creators/slp-creator-schedule-context";
+import { SLURP_DEFAULT_REPLY_DELAYS } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/messages/slp-messaging";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 const root = "packages/slurp2/src/engine/packages";
 async function main() {
   const [settings, hooks, routes, generator] = await Promise.all([
-    readFile(`${root}/client/src/components/slurp/SlurpSettings.tsx`, "utf8"),
-    readFile(`${root}/client/src/hooks/use-slurp.ts`, "utf8"),
-    readFile(`${root}/server/src/routes/slurp.routes.ts`, "utf8"),
-    readFile(`${root}/server/src/services/slurp/slurp-conversation-schedule-generation.ts`, "utf8"),
+    slurp2BackstageSource(),
+    slurp2Source(`${root}/client/src/hooks/use-slurp.ts`),
+    slurp2Source(`${root}/server/src/routes/slurp.routes.ts`),
+    slurp2Source(`${root}/server/src/services/slurp/slurp-conversation-schedule-generation.ts`),
   ]);
 
   assert.match(settings, /postingSchedule/u, "the existing schedule action must identify Slurp post timing");
@@ -22,7 +23,7 @@ async function main() {
   assert.match(generator, /Return only one JSON object/u);
 
   // #128: feedback must not depend on per-call mutate() callbacks, which die with the caller.
-  const hook = hooks.slice(hooks.indexOf("export function useRefreshNoodlerConversationSchedule"));
+  const hook = hooks.slice(hooks.indexOf("export function useRefreshCreatorConversationSchedule"));
   const hookBody = hook.slice(0, hook.indexOf("\nexport function"));
   assert.match(hookBody, /toast\.success/u, "schedule refresh success toast must live in the hook");
   assert.match(hookBody, /toast\.error/u, "schedule refresh error toast must live in the hook");
@@ -40,7 +41,7 @@ async function main() {
   );
   assert.equal(guessed.online, false);
   assert.equal(guessed.estimated, true, "availability inferred from posts must be flagged as estimated");
-  const messagesUi = await readFile(`${root}/client/src/components/slurp/SlurpMessages.tsx`, "utf8");
+  const messagesUi = await slurp2Source(`${root}/client/src/components/slurp/SlurpMessages.tsx`);
   assert.match(messagesUi, /availability\.estimated/u, "the away status must label estimated availability");
 
   console.log("Slurp Conversation Schedule refresh wiring passed.");

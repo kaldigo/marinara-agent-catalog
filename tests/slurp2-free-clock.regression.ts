@@ -1,27 +1,27 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { tryNoodleOperation } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-operation-lock.ts";
+import { trySlpOperation } from "../packages/slurp2/src/engine/packages/server/src/slp/base/locking/slp-operation-lock.ts";
 import {
   SLURP_TUNING_EVENTS_PER_TICK_CEILING,
   SLURP_WORLD_IDLE_POLL_MS,
   slurpCapTickEvents,
   slurpWorldTimerDue,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-tuning.ts";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-tuning.js";
+import { slurp2Source } from "./slurp2-source";
 
 const src = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages/server/src/services/slurp");
-const read = (name: string) => readFileSync(join(src, name), "utf8");
+const read = (name: string) => slurp2Source(join(src, name));
 
 async function main() {
   // Guard: two concurrent ticks on the shared key, one execution.
   let runs = 0;
   let release!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
-  const first = tryNoodleOperation("slurp-world-tick", async () => {
+  const first = trySlpOperation("slurp-world-tick", async () => {
     runs += 1;
     await gate;
   });
-  const second = await tryNoodleOperation("slurp-world-tick", async () => {
+  const second = await trySlpOperation("slurp-world-tick", async () => {
     runs += 1;
   });
   release();
@@ -29,7 +29,7 @@ async function main() {
   assert.equal(second.acquired, false, "an overlapping tick must be refused");
   assert.equal(runs, 1);
   const operation = read("slurp-world.operation.ts");
-  assert.match(operation, /tryNoodleOperation\("slurp-world-tick"/u, "every caller shares the tick guard");
+  assert.match(operation, /trySlpOperation\("slurp-world-tick"/u, "every caller shares the tick guard");
 
   // Timer: on ticks every wake, off only every idle poll; interval and toggle re-read each wake.
   assert.equal(slurpWorldTimerDue({ backgroundTimer: true }, 1_000, 1_001), true);

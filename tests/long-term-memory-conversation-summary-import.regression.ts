@@ -46,13 +46,56 @@ const gameChat = {
     gamePreviousSessionSummaries: [{ sessionNumber: 1, summary: "The party reached the Moon Vault." }],
   },
 };
+const duplicateSourceChat = {
+  ...roleplayChat,
+  id: "chat-duplicate-source",
+  metadata: {
+    summaryEntries: [
+      { id: "same-id", content: "The same imported summary." },
+      { id: "same-id", content: "The same imported summary." },
+    ],
+  },
+};
+const conflictingSourceChat = {
+  ...roleplayChat,
+  id: "chat-conflicting-source",
+  metadata: {
+    summaryEntries: [
+      { id: "same-id", content: "The first imported summary." },
+      { id: "same-id", content: "A different imported summary." },
+      { id: "same-id", content: "The first imported summary." },
+    ],
+  },
+};
+const sharedBranchChat = {
+  ...roleplayChat,
+  id: "chat-shared-branch",
+  groupId: "group-shared-branches",
+  metadata: {
+    branchName: "Shared branch",
+    summaryEntries: [{ id: "shared-summary", content: "The shared branch summary." }],
+  },
+};
+const sharedBranchSiblingChat = {
+  ...sharedBranchChat,
+  id: "chat-shared-branch-sibling",
+  metadata: {
+    branchName: "Shared branch sibling",
+    summaryEntries: [{ id: "shared-summary", content: "The shared branch summary." }],
+  },
+};
 
 async function main() {
   const [
     { configurePackageRuntime },
     { previewPackageInterop, previewPackageLorebooks, sourcePackageDetails, importPackageInterop },
     { LongTermMemoryStorage },
-    { ltmInteropPreviewRequestSchema, ltmLorebookPreviewResponseSchema, ltmSourceDetailsRequestSchema },
+    {
+      ltmImportSourceNotesResponseSchema,
+      ltmInteropPreviewRequestSchema,
+      ltmLorebookPreviewResponseSchema,
+      ltmSourceDetailsRequestSchema,
+    },
   ] = await Promise.all([
     import("../packages/long-term-memory/src/engine/packages/server/src/services/long-term-memory/package-runtime.ts"),
     import("../packages/long-term-memory/src/engine/packages/server/src/services/long-term-memory/interop.ts"),
@@ -67,7 +110,15 @@ async function main() {
   await runWithSafeCleanup(
     "Long-Term Memory Conversation summary import",
     async () => {
-      const chats = [conversationChat, roleplayChat, gameChat];
+      const chats = [
+        conversationChat,
+        roleplayChat,
+        gameChat,
+        duplicateSourceChat,
+        conflictingSourceChat,
+        sharedBranchChat,
+        sharedBranchSiblingChat,
+      ];
       releaseRuntime = configurePackageRuntime({
         dataDir,
         logger: { debug() {}, info() {}, warn() {}, error() {} },
@@ -508,6 +559,134 @@ async function main() {
       assert.ok(importedAgain.imported.every((item) => !item.created));
       assert.equal((await storage.listNotes({ type: "source" })).length, 7);
 
+      const sharedBranchPreview = await previewPackageInterop(
+        {
+          source: "chats",
+          sourceScope: { groupId: "group-shared-branches", groupIds: ["group-shared-branches"] },
+          limit: 100,
+        },
+        join(dataDir, "long-term-memory"),
+      );
+      assert.deepEqual(
+        sharedBranchPreview.samples.map((candidate) => candidate.sourceId),
+        [`${sharedBranchChat.id}:shared-summary`],
+        "identical branch summaries must collapse to one ready-to-import preview row",
+      );
+      assert.deepEqual(sharedBranchPreview.totals, { matches: 1, ready: 1, imported: 0 });
+
+      const sharedBranchDestinationScope = {
+        groupId: "group-shared-branches",
+        groupIds: ["group-shared-branches"],
+      };
+      const importedSibling = await importPackageInterop(
+        {
+          source: "chats",
+          sourceIds: [`${sharedBranchSiblingChat.id}:shared-summary`],
+          destinationScope: sharedBranchDestinationScope,
+          extract: false,
+          limit: 100,
+        },
+        join(dataDir, "long-term-memory"),
+        new AbortController().signal,
+      );
+      assert.equal(importedSibling.imported.length, 1);
+      assert.ok(importedSibling.imported.every((item) => item.created));
+
+      const sharedBranchPreviewAfterImport = await previewPackageInterop(
+        {
+          source: "chats",
+          sourceScope: sharedBranchDestinationScope,
+          limit: 100,
+        },
+        join(dataDir, "long-term-memory"),
+      );
+      assert.deepEqual(
+        sharedBranchPreviewAfterImport.samples.map((candidate) => candidate.sourceId),
+        [`${sharedBranchSiblingChat.id}:shared-summary`],
+        "the collapsed row must switch to the imported sibling instead of re-offering the summary",
+      );
+      assert.equal(sharedBranchPreviewAfterImport.samples[0].status, "imported");
+      assert.deepEqual(sharedBranchPreviewAfterImport.totals, { matches: 1, ready: 0, imported: 1 });
+
+      const duplicateImport = ltmImportSourceNotesResponseSchema.parse(
+        await importPackageInterop(
+          {
+            source: "chats",
+            chatId: duplicateSourceChat.id,
+            sourceIds: [`${duplicateSourceChat.id}:same-id`],
+            extract: false,
+            limit: 100,
+          },
+          join(dataDir, "long-term-memory"),
+          new AbortController().signal,
+        ),
+      );
+      assert.equal(duplicateImport.batchStatus, "success");
+      assert.equal(duplicateImport.imported.length, 1);
+      assert.equal(duplicateImport.writeFailures.length, 0);
+      assert.deepEqual(duplicateImport.counts, {
+        requested: 1,
+        sourceNotesWritten: 1,
+        succeeded: 0,
+        failed: 0,
+        cancelled: 0,
+        missing: 0,
+        sourceWriteFailed: 0,
+      });
+      assert.equal(
+        (await storage.listNotes({ type: "source" })).filter(
+          (note) => note.provenance?.sourceId === duplicateSourceChat.id,
+        ).length,
+        1,
+      );
+
+      const conflictingImport = ltmImportSourceNotesResponseSchema.parse(
+        await importPackageInterop(
+          {
+            source: "chats",
+            chatId: conflictingSourceChat.id,
+            sourceIds: [`${conflictingSourceChat.id}:same-id`],
+            extract: false,
+            limit: 100,
+          },
+          join(dataDir, "long-term-memory"),
+          new AbortController().signal,
+        ),
+      );
+      assert.equal(conflictingImport.batchStatus, "failed");
+      assert.equal(conflictingImport.imported.length, 0);
+      assert.equal(conflictingImport.writeFailures[0]?.error.code, "ltm_source_identity_conflict");
+      assert.equal(conflictingImport.counts.sourceNotesWritten, 0);
+      assert.equal(conflictingImport.writeFailures.length, 1);
+      assert.equal(conflictingImport.writeFailures[0]?.retryable, false);
+      assert.equal(
+        (await storage.listNotes({ type: "source" })).some(
+          (note) => note.provenance?.sourceId === conflictingSourceChat.id,
+        ),
+        false,
+      );
+
+      const duplicateRequest = {
+        source: "chats" as const,
+        chatId: duplicateSourceChat.id,
+        sourceIds: [`${duplicateSourceChat.id}:same-id`],
+        extract: false,
+        limit: 100,
+      };
+      const refreshedDuplicate = ltmImportSourceNotesResponseSchema.parse(
+        await importPackageInterop(duplicateRequest, join(dataDir, "long-term-memory"), new AbortController().signal),
+      );
+      assert.equal(refreshedDuplicate.imported.length, 1);
+      assert.equal(refreshedDuplicate.imported[0]?.created, false);
+      const beforeConflict = refreshedDuplicate.imported[0]!.note;
+      duplicateSourceChat.metadata.summaryEntries[1]!.content = "Conflicting replacement must not refresh the note.";
+      const rejectedRefresh = ltmImportSourceNotesResponseSchema.parse(
+        await importPackageInterop(duplicateRequest, join(dataDir, "long-term-memory"), new AbortController().signal),
+      );
+      assert.equal(rejectedRefresh.counts.sourceNotesWritten, 0);
+      assert.equal(rejectedRefresh.writeFailures[0]?.error.code, "ltm_source_identity_conflict");
+      assert.deepEqual(await storage.getNote(beforeConflict.id), beforeConflict);
+
       const multiModeChatImport = await importPackageInterop(
         {
           source: "chats",
@@ -568,6 +747,47 @@ async function main() {
       assert.ok(
         importedRenamedNote?.sections?.source?.evidence?.includes("chat_name:Final Branch"),
         `imported source evidence should include chat_name:Final Branch, got: ${JSON.stringify(importedRenamedNote?.sections?.source?.evidence)}`,
+      );
+      chats.pop();
+
+      // Bounded title regression proof: chat titles exceeding 240 chars must be bounded in candidates and writeFailures
+      const longName = "Very Long Chat Title ".repeat(20);
+      const longTitleConflictingChat = {
+        ...roleplayChat,
+        id: "chat-long-title-conflict",
+        name: longName,
+        metadata: {
+          summaryEntries: [
+            { id: "conflict-entry", content: "Initial summary content." },
+            { id: "conflict-entry", content: "Conflicting summary content." },
+          ],
+        },
+      };
+      chats.push(longTitleConflictingChat);
+      const longTitleConflictImport = ltmImportSourceNotesResponseSchema.parse(
+        await importPackageInterop(
+          {
+            source: "chats",
+            chatId: longTitleConflictingChat.id,
+            sourceIds: [`${longTitleConflictingChat.id}:conflict-entry`],
+            extract: false,
+            limit: 10,
+          },
+          join(dataDir, "long-term-memory"),
+          new AbortController().signal,
+        ),
+      );
+      assert.equal(longTitleConflictImport.counts.sourceNotesWritten, 0);
+      assert.equal(longTitleConflictImport.writeFailures.length, 1);
+      const conflictFailure = longTitleConflictImport.writeFailures[0]!;
+      assert.equal(conflictFailure.error.code, "ltm_source_identity_conflict");
+      assert.ok(
+        conflictFailure.title.length <= 240,
+        `failure title must not exceed 240 chars, got length: ${conflictFailure.title.length}`,
+      );
+      assert.ok(
+        conflictFailure.error.message.includes(conflictFailure.title),
+        "error message should include the bounded title",
       );
       chats.pop();
     },

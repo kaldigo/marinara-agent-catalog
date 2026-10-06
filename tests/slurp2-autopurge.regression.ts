@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   moveSlurpAutopurgeDate,
   nextSlurpAutopurgeRunAt,
-} from "../packages/slurp2/src/engine/packages/shared/src/slurp-autopurge-time.ts";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-autopurge-time.ts";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 assert.equal(
   moveSlurpAutopurgeDate(new Date("2026-03-31T18:30:00.000Z"), 1, "months", -1).toISOString(),
@@ -32,7 +33,7 @@ const scheduler = read(
 );
 const serverEntry = read("packages/slurp2/src/engine/packages/server/src/services/slurp/server-entry.ts");
 const settings = read("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
-const client = read("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpSettings.tsx");
+const client = slurp2BackstageSource();
 const media = read("packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-media.ts");
 
 assert.match(
@@ -57,13 +58,13 @@ assert.doesNotMatch(
   /content:/u,
   "message-media purges must preserve message text",
 );
-assert.match(media, /function unlinkNoodlerMedia\([\s\S]*\): boolean/u);
+assert.match(media, /function unlinkCreatorMedia\([\s\S]*\): boolean/u);
 assert.match(
   operation,
-  /if \(unlinkNoodlerMedia\(path\)\) removedMediaPaths\.add\(path\)[\s\S]*Retain a failed path's database reference/u,
+  /if \(unlinkCreatorMedia\(path\)\) removedMediaPaths\.add\(path\)[\s\S]*Retain a failed path's database reference/u,
   "failed filesystem cleanup must remain referenced for a later retry",
 );
-assert.match(operation, /removedPostMedia: new Set\(postMedia\.filter\([\s\S]*removedMessageMedia: new Set/u);
+assert.match(operation, /removedPostMedia: new Set\([\s\S]*attachments\.map[\s\S]*removedMessageMedia: new Set/u);
 assert.match(operation, /trySlurpDataDeletion/u, "manual and scheduled purges must use the destructive-work lock");
 assert.match(scheduler, /if \(Date\.parse\(settings\.autopurgeNextRunAt\) > Date\.now\(\)\) return;/u);
 assert.match(scheduler, /void pollNow\(\);/u, "the scheduler must check for overdue work during startup");

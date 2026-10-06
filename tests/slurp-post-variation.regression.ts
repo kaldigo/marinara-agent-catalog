@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -11,20 +10,19 @@ import {
   SLURP_POST_FORMATS,
   SLURP_PROJECT_RATE,
   SLURP_STORY_RATE,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-variation.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/feed/slp-post-variation.js";
+import { slurp2Source } from "./slurp2-source";
 
-// ── Consecutive posts must differ ───────────────────────────────────────────
-// This is the whole point. A random draw can repeat; rotation cannot, and repetition of situation
-// is exactly what made an office worker post from the same desk in the same pose every time.
-for (const creator of ["creator-a", "creator-b", "creator-c"]) {
-  for (let index = 0; index < 400; index += 1) {
-    const current = slurpPostVariation(creator, index);
-    const next = slurpPostVariation(creator, index + 1);
-    assert.notEqual(current.place, next.place, `${creator} repeated a place at ${index}`);
-    assert.notEqual(current.framing, next.framing, `${creator} repeated a framing at ${index}`);
-    assert.notEqual(current.moment, next.moment, `${creator} repeated a moment at ${index}`);
-  }
-}
+// Situations are seeded weighted draws, not a rotation: repeats are allowed and results are stable.
+const variations = Array.from({ length: 300 }, (_, sequence) => slurpPostVariation("creator-a", sequence));
+assert.ok(
+  variations.some((variation, index) => variation.place === variations[index - 1]?.place),
+  "places may repeat naturally",
+);
+assert.deepEqual(
+  variations,
+  Array.from({ length: 300 }, (_, sequence) => slurpPostVariation("creator-a", sequence)),
+);
 
 // Deterministic, so the same post always carries the same angle rather than shifting on re-read.
 assert.deepEqual(slurpPostVariation("creator-a", 7), slurpPostVariation("creator-a", 7));
@@ -34,10 +32,7 @@ assert.notDeepEqual(slurpPostVariation("creator-a", 0), slurpPostVariation("crea
 // Nonsense sequence numbers must still produce a usable variation.
 for (const sequence of [-5, 0.5, Number.NaN]) {
   const variation = slurpPostVariation("creator-a", sequence);
-  assert.ok(
-    variation.place && variation.framing && variation.moment && variation.company,
-    `no variation for ${sequence}`,
-  );
+  assert.ok(variation.place && variation.moment && variation.company, `no variation for ${sequence}`);
   assert.ok(SLURP_POST_FORMATS.includes(variation.format));
 }
 
@@ -72,14 +67,17 @@ for (let step = 0; step < 60; step += 1) {
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages/server/src");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 const generation = read("services/slurp/slurp-generation.service.ts");
 // The model could not see what it had already depicted, so it reinvented the same picture.
-assert.match(generation, /post\.imagePrompt \? .*showed:.* : line/u);
+assert.match(generation, /showed\(post, length\) \? `\$\{line\}\\n  \(showed: /u);
 // "Do not reuse their exact wording" is satisfied by eight captions about one desk.
 assert.match(generation, /Do not repeat a recent post's setting, activity, framing, or wardrobe/u);
-assert.match(generation, /slurpPostVariation\(account\.id, sequence, settings\.storyRate\)/u);
+assert.match(
+  generation,
+  /slurpPostVariation\(account\.id, sequence, settings\.storyImagesEnabled \? settings\.storyRate : "off"\)/u,
+);
 
 // The automatic path pinned the format and passed a constant guide. Between them they defeated
 // every variety mechanism on the one path that generates most posts.
@@ -93,7 +91,12 @@ assert.doesNotMatch(reserve, /noodlerPostGuide:/u, "a constant guide reads as pl
 // Creator with no Conversation Schedule that is the only situational anchor available.
 const timing = read("services/slurp/slurp-post-timing.ts");
 assert.match(timing, /Place this post inside the character's own day at that hour and weekday/u);
-assert.match(timing, /A Tuesday morning and a Saturday night are different posts from the same person/u);
+assert.doesNotMatch(
+  timing,
+  /A Tuesday morning and a Saturday night/u,
+  "naming the weekday invites every post to say it",
+);
+assert.match(timing, /The time shapes the scene only: do not state the time/u, "posts must not narrate the clock");
 
 // ── Stories ────────────────────────────────────────────────────────────────
 // Automatic posting only ever produced feed posts, so the Story shelf could only be filled by hand.

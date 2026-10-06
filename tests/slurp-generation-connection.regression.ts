@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { resolveSlurpTextConnection } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-connection.js";
+import { resolveSlurpTextConnection } from "../packages/slurp2/src/engine/packages/server/src/slp/base/identity/slp-connection.js";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
 const serverRoot = join(root, "packages/slurp2/src/engine/packages/server/src");
-const read = (path: string) => readFileSync(join(serverRoot, path), "utf8");
+const read = (path: string) => slurp2Source(join(serverRoot, path));
 
 type Row = { id: string; provider: string; apiKey?: string };
 
@@ -71,7 +71,7 @@ async function main() {
   // The stage-profile draft route drives creator and persona creation and editing. It used to skip
   // the Slurp generation setting entirely and go straight to the agent default.
   const routes = read("routes/slurp.routes.ts");
-  const draftRoute = routes.slice(routes.indexOf('app.post("/noodler/stage-profile-draft"'), 900 + routes.length);
+  const draftRoute = routes.slice(routes.indexOf('app.post("/slurp/stage-profile-draft"'), 900 + routes.length);
   assert.match(draftRoute.slice(0, 900), /parsed\.data\.connectionId \?\? settings\.generationConnectionId/);
 
   console.log("slurp generation connection regression passed");

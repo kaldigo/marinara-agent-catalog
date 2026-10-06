@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   makeSlurpProject,
   readSlurpProject,
   SLURP_ARC_HISTORY_POSTS,
   SLURP_ARC_RANDOM_TWISTS,
+  slurpProjectRecord,
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-project.js";
+import {
   slurpProjectAdvance,
   slurpProjectDirect,
   slurpProjectInstruction,
-  slurpProjectRecord,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-project.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-arc-progress.js";
+import { slurp2Source } from "./slurp2-source";
 
 const at = new Date("2026-09-13T10:00:00.000Z");
 const later = (minutes: number) => new Date(at.getTime() + minutes * 60_000);
@@ -86,10 +88,7 @@ assert.match(
   slurpProjectInstruction({ title: "Move", direction: "", chapter: "one", twist: written.twist, history: [] }),
   /Twist for this post: The van breaks down/,
 );
-const storage = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts",
-  "utf8",
-);
+const storage = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
 const advanceBody = storage.slice(storage.indexOf("async advanceProject("), storage.indexOf("async directProject("));
 assert.match(advanceBody, /slurpProjectAdvance\([\s\S]*?twist: "" \}/, "advance clears the twist");
 assert.doesNotMatch(
@@ -98,8 +97,8 @@ assert.doesNotMatch(
 );
 
 // Director route is gated on the setting before anything else runs.
-const routes = readFileSync("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts", "utf8");
-const director = routes.slice(routes.indexOf('"/noodler/accounts/:id/projects/:projectId/director"'));
+const routes = slurp2Source("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts");
+const director = routes.slice(routes.indexOf('"/slurp/accounts/:id/projects/:projectId/director"'));
 assert.ok(director.length > 0);
 const gate = director.indexOf("arcDirectorMode");
 assert.ok(gate > 0 && gate < director.indexOf("directProject"), "director route checks arcDirectorMode first");
@@ -107,9 +106,12 @@ assert.match(director.slice(gate, gate + 120), /code\(403\)/);
 assert.match(storage, /arcDirectorMode: false,/, "Director mode is off by default");
 
 // The viewer timeline route never exposes suggestions, directions, or twists.
-const arcs = routes.slice(routes.indexOf('"/noodler/accounts/:id/arcs"'), routes.indexOf("A Creator's arc overrides"));
+const arcs = routes.slice(routes.indexOf('"/slurp/accounts/:id/arcs"'), routes.indexOf("A Creator's arc overrides"));
 assert.match(arcs, /status !== "suggested"/);
 assert.doesNotMatch(arcs, /direction,|twist,/);
-assert.match(arcs, /isNoodlerHiddenFromViewer/);
+// Viewer access is gone. Fix phase 1b (user, R1-073): fans see Hinted Creators' storylines too, with
+// the arc text passed through the identity protection for every Hinted Creator the viewer does not own.
+assert.doesNotMatch(arcs, /identityDisclosure \?\? "open"\) !== "open"\) return \{ arcs: \[\] \}/);
+assert.match(arcs, /title: protect\(title\),[\s\S]*chapters: chapters\.map\(protect\)/);
 
 console.log("slurp2 arc director regression passed");

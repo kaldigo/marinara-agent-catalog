@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { slurp2Source } from "./slurp2-source";
 
 // slurp-images.service.ts cannot be imported here: it pulls in the database and the LLM providers,
 // and @marinara-engine/shared is not installed in this repository. These are source assertions on
@@ -8,9 +8,9 @@ import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
 const server = "packages/slurp2/src/engine/packages/server/src";
-const images = readFileSync(join(root, server, "services/slurp/slurp-images.service.ts"), "utf8");
-const routes = readFileSync(join(root, server, "routes/slurp.routes.ts"), "utf8");
-const rewrite = readFileSync(join(root, server, "services/slurp/slurp-image-prompt-rewrite.ts"), "utf8");
+const images = slurp2Source(join(root, server, "services/slurp/slurp-images.service.ts"));
+const routes = slurp2Source(join(root, server, "routes/slurp.routes.ts"));
+const rewrite = slurp2Source(join(root, server, "services/slurp/slurp-image-prompt-rewrite.ts"));
 
 // --- the rewriter is fed the draft, not the rendered template -----------------------------------
 // NOODLE_IMAGE_POST documents itself as terminal ("no LLM pass runs after it") and emits bare
@@ -24,17 +24,19 @@ assert.match(
 
 // When no rewrite survives, the provider gets the rendered template — the only document carrying
 // appearance notes and image habits, without which fallback pictures show the wrong character. The
-// length cap in selectNoodleImageProviderPrompt is what keeps that stack bounded.
+// length cap in selectSlpImageProviderPrompt is what keeps that stack bounded.
 assert.match(
   images,
   /const rawProviderPrompt = redactIdentity\(reviewedOverride\?\.prompt \|\| compiledPrompt\.prompt\);/u,
 );
-assert.match(images, /rawPrompt: rawProviderPrompt,\s*rewriteAttempted,\s*onFallback:/u);
+assert.match(images, /rawPrompt: rawProviderPrompt,/u);
+assert.match(images, /rewriteAttempted,/u);
+assert.match(images, /onFallback:/u);
 // Garnish ad images honour the interpretation setting and share the same rewrite and fallback.
-const garnish = readFileSync(join(root, server, "services/slurp/slurp-garnish-image.service.ts"), "utf8");
+const garnish = slurp2Source(join(root, server, "services/slurp/slurp-garnish-image.service.ts"));
 assert.match(garnish, /settings\.enableImageInterpretation !== false/u);
-assert.match(garnish, /rewriteNoodleImagePrompt\(/u);
-assert.match(garnish, /selectNoodleImageProviderPrompt\(/u);
+assert.match(garnish, /rewriteSlpImagePrompt\(/u);
+assert.match(garnish, /selectSlpImageProviderPrompt\(/u);
 
 // --- a retry is built the same way the first attempt was ----------------------------------------
 // Every retry resends our own stored draft as promptOverride. The old guard read that as a
@@ -47,7 +49,13 @@ assert.match(images, /const reviewedOverride = input\.retryStoredPrompt \? null 
 assert.match(images, /input\.promptOverride && !input\.retryStoredPrompt/u);
 
 // Every path that resends a stored draft must declare itself as such.
-assert.match(routes, /retryStoredPrompt: true,/u, "manual generate-image resends a stored draft");
+assert.match(routes, /retryStoredPrompt: !asWritten,/u, "manual generate-image resends a stored draft");
+// A prompt the user edited, or kept from the last picture, is theirs and goes out as written. The
+// redraw box says so explicitly (R1-055), and the choice survives Try again.
+assert.match(
+  routes,
+  /const asWritten = parsed\.data\.asWritten === true \|\| \(wasAsWritten && imagePrompt === post\.imagePrompt\);/u,
+);
 const retryFlags = [...images.matchAll(/retryStoredPrompt: true,/gu)];
 assert.equal(retryFlags.length, 1, "retryNextFailedPostImage must declare the stored prompt too");
 // The flag has to actually exist on the service input, not just be passed and ignored.
@@ -66,7 +74,7 @@ assert.match(
   /\(imagePromptInstructions \|\| characterContext \|\| styleGuidance\) &&\s*input\.settings\.enableImageInterpretation !== false &&\s*!skipInterpretation/u,
   "interpretation must require rewrite context, enabled interpretation, and no reviewed override",
 );
-assert.match(rewrite, /getDefaultForAgents\(\)\) \?\? \(await connections\.getFallbackForAgents\(\)\)/u);
+assert.match(rewrite, /resolveSlurpTextConnection\(connections, input.connectionId\)/u);
 
 // --- no Secret tier: Open and Hinted both get source image references ----------------------------
 assert.doesNotMatch(images, /Compose so the face cannot be identified/u);
@@ -81,7 +89,7 @@ assert.doesNotMatch(
 assert.match(images, /personality: sourcePersona\.personality\?\.trim\(\) \?\? "",/u);
 
 // --- the commission path uses the same default as everything else --------------------------------
-const commission = readFileSync(join(root, server, "services/slurp/slurp-commission-image.operation.ts"), "utf8");
+const commission = slurp2Source(join(root, server, "services/slurp/slurp-commission-image.operation.ts"));
 // Open is the default everywhere, commissions included.
 assert.match(commission, /identityDisclosure \?\? "open"/u);
 assert.doesNotMatch(

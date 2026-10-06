@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   addSlurpModifier,
   SLURP_CREATOR_STATE_DEFAULT,
   SLURP_MODIFIERS,
   type SlurpCreatorState,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-creator-state.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/creators/slp-creator-state.js";
 import {
   resolveSlurpPostStance,
   slurpPostStanceInstruction,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-stance.js";
-import type { SlurpGoalProgress } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-goal.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/feed/slp-post-stance.js";
+import type { SlurpGoalProgress } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-goal.js";
+import { slurp2Source } from "./slurp2-source";
 
 const at = new Date("2026-09-09T12:00:00.000Z");
 const now = at.toISOString();
@@ -33,7 +33,7 @@ assert.deepEqual(resolve({}).instructions, []);
 assert.equal(slurpPostStanceInstruction(resolve({})), null);
 
 // Rule 1. Energy shapes effort in both directions, and never withholds the post.
-assert.match(joined({ energy: 10 }), /running low/iu);
+assert.match(joined({ energy: 10 }), /energy is low/iu);
 assert.match(joined({ energy: 90 }), /more involved/iu);
 assert.doesNotMatch(joined({ energy: 0 }), /do not post|skip/iu);
 
@@ -85,7 +85,7 @@ assert.deepEqual(
   ["energy", "exposure", "emotion", "day", "goal"],
 );
 // Precedence is the documented order, not the order the fields happen to be declared in.
-assert.ok(loaded.instructions[0]?.includes("running low"));
+assert.ok(loaded.instructions[0]?.includes("energy is low"));
 assert.ok(loaded.instructions[1]?.includes("further than you usually go"));
 
 // The block is labelled, so it cannot blur into the schedule section beneath it.
@@ -93,16 +93,12 @@ assert.match(slurpPostStanceInstruction(loaded) ?? "", /^# How you are today\n/u
 
 // It never decides how adult a post is: buildNoodlerPostMessages takes that from the editable
 // generation guidance on purpose, and a second opinion here would overrule a player's setting.
-const stance = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-stance.ts",
-  "utf8",
-);
+const stance = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-stance.ts");
 assert.doesNotMatch(stance, /adultLevel|SLURP_ADULT_LEVELS/u);
 
 // The post prompt actually receives it, and the generation path actually builds it.
-const generation = readFileSync(
+const generation = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-generation.service.ts",
-  "utf8",
 );
 assert.match(generation, /conditionInstruction\?: string/u);
 assert.match(generation, /const conditionInstruction = await describeSlurpPostCondition\(/u);
@@ -110,20 +106,16 @@ assert.match(generation, /conditionInstruction: conditionInstruction \?\? undefi
 assert.match(generation, /input\.conditionInstruction \? \[input\.conditionInstruction, ""\] : \[\]/u);
 
 // A Creator whose state cannot be read is a Creator having an ordinary day.
-const service = readFileSync(
+const service = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-condition.service.ts",
-  "utf8",
 );
 assert.match(service, /catch \{\s*return null;/u);
 
 // --- The world writes back ---------------------------------------------------------------
 // Every modifier the vocabulary defines is worth nothing until something real produces it.
-const storage = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts",
-  "utf8",
-);
+const storage = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
 // Money in: felt once it is worth feeling, and never able to fail the payment that caused it.
-assert.match(storage, /amount >= SLURP_PAID_WELL_COINS/u);
+assert.match(storage, /paidCoins >= SLURP_PAID_WELL_COINS/u);
 assert.match(storage, /addSlurpModifier\(state, "paid_well"/u);
 // Only the crossing fires, so a met goal does not re-fire on every coin after it.
 assert.match(
@@ -139,10 +131,7 @@ assert.match(
 assert.match(storage, /addSlurpModifier\(state, "just_posted"/u);
 
 // The audience reacting reaches the Creator instead of stopping at the counters.
-const world = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world.operation.ts",
-  "utf8",
-);
+const world = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world.operation.ts");
 assert.match(world, /addCreatorModifier\(creatorAccountId, "post_landed"/u);
 assert.match(world, /weight < SLURP_POST_LANDED_REACTIONS/u);
 // A follow moves the funnel where a like does not, so it is not worth the same.

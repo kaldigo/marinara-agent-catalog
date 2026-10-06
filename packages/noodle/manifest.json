@@ -1,9 +1,17 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "capabilityApi": {
+    "major": 1,
+    "minor": 35
+  },
+  "builtAgainst": {
+    "engineVersion": "2.4.6",
+    "engineCommit": "2f5c8e314f8583cc274b488cfd309a2bc2a214d3"
+  },
   "id": "noodle",
   "name": "Noodle",
-  "version": "1.2.24",
-  "description": "Explore the Noodle public timeline as an optional local social world. Install it, restart Marinara Engine when prompted, then open Home → Noodle.",
+  "version": "1.5.1",
+  "description": "A pretend social network where your characters post, share photos, and talk about your chats. Install it, restart Marinara Engine when prompted, then open Home → Noodle.",
   "localizations": {
     "de": {
       "name": "Noodle",
@@ -31,7 +39,7 @@
     }
   },
   "engine": {
-    "min": "2.4.4",
+    "min": "2.4.6",
     "maxExclusive": "4.0.0"
   },
   "kind": [
@@ -44,7 +52,8 @@
   },
   "contributions": {
     "slots": [
-      "home-browser-tab"
+      "home-browser-tab",
+      "home-widget"
     ],
     "homeBrowserTab": {
       "label": "Noodle",
@@ -52,23 +61,45 @@
       "iconPaths": [
         "noodle-klusek.png"
       ]
-    }
+    },
+    "homeWidgets": [
+      {
+        "id": "latest-posts",
+        "label": "Latest Posts",
+        "description": "The newest twenty posts on Noodle",
+        "size": "large",
+        "icon": "sparkles",
+        "accent": "cyan",
+        "surface": "soft",
+        "header": "banner"
+      },
+      {
+        "id": "latest-posts-compact",
+        "label": "Noodle Snapshot",
+        "description": "A compact view of recent Noodle posts",
+        "size": "compact",
+        "icon": "message",
+        "accent": "cyan",
+        "surface": "soft",
+        "header": "compact"
+      }
+    ]
   },
   "files": [
     {
       "path": "agents.json",
-      "sha256": "dbd9eccf6fca9b299ecdb9d0aab599e5d01fdd0260266490ca1c02a199bed923",
-      "bytes": 510
+      "sha256": "39cf1885fd4ddcaadfc8447f87b2dac254add9d24a4c59418de78f1c53eae045",
+      "bytes": 534
     },
     {
       "path": "server.mjs",
-      "sha256": "9a8c9371d2f8799251a28b90cd5fed6b855ad1eeef8123fe77c37b672e574360",
-      "bytes": 2218589
+      "sha256": "c5cf314d93209986c0ff50f2b036fd5e92beb9a69139f9a064de9c04e043be19",
+      "bytes": 2020928
     },
     {
       "path": "client.js",
-      "sha256": "621bd3fb265860feb6cb15d7b2f98f5462af2f2b7f5dbc7e7ad3441ea03aee1e",
-      "bytes": 2329165
+      "sha256": "326e884b997b6e1fc7480f0d40f336d1e619396570f8c1a518ccfb0f41479288",
+      "bytes": 2394447
     },
     {
       "path": "noodle-klusek.png",

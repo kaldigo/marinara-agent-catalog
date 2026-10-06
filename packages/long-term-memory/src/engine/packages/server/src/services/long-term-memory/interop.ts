@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   type LtmImportSourceNotesRequest,
   type LtmImportSourceNotesResponse,
@@ -325,6 +326,40 @@ function candidateVisibleInScope(candidate: Candidate, scope: LtmScope | undefin
   return matchesScope(candidate, scope);
 }
 
+function resolvePreviewCandidates(rows: Candidate[], matchExisting: (row: Candidate) => LtmNote | undefined) {
+  const resolved = new Map<string, Candidate>();
+  for (const row of rows) {
+    // ponytail: branch chat records share summary entry identity but keep
+    // distinct chat ids; keep the first identical chat-summary candidate so
+    // shared branch summaries do not repeat in the Sources preview, preferring
+    // an already-imported sibling so the row reflects imported state instead of
+    // offering a duplicate import.
+    const key =
+      row.provenance.kind === "chat_summary"
+        ? `chat_summary\0${row.provenance.entryId ?? ""}\0${row.sourceText}`
+        : row.sourceId;
+    const previous = resolved.get(key);
+    if (!previous || (!matchExisting(previous) && matchExisting(row))) resolved.set(key, row);
+  }
+  return [...resolved.values()];
+}
+
+function resolveImportCandidates(rows: Candidate[]) {
+  const resolved = new Map<string, Candidate>();
+  const conflicts = new Map<string, Candidate>();
+  for (const row of rows) {
+    if (conflicts.has(row.sourceId)) continue;
+    const previous = resolved.get(row.sourceId);
+    if (!previous) {
+      resolved.set(row.sourceId, row);
+    } else if (!isDeepStrictEqual(previous, row)) {
+      conflicts.set(row.sourceId, previous);
+      resolved.delete(row.sourceId);
+    }
+  }
+  return { rows: [...resolved.values()], conflicts: [...conflicts.values()] };
+}
+
 function matchesChatSummaryScope(candidateScope: LtmScope, scope?: LtmScope) {
   if (!scope) return true;
   const scopeGroupIds = new Set(getLtmScopeGroupIds(scope));
@@ -392,7 +427,7 @@ function normalizeLorebooks(books: Array<{ id: string; data: unknown; entries: u
         const rawEntryId = part ? `${base}:part:${part + 1}` : base,
           entryId = rawEntryId.length <= 120 ? rawEntryId : `entry_${hash(`${base}\0${part}`, 16)}`,
           sourceId = `lorebook_entry_${hash(`${book.id}\0${entryId}`)}`,
-          title = `Lorebook - ${name}: ${entryName}${part ? ` (${part + 1})` : ""}`,
+          title = `Lorebook - ${name}: ${entryName}${part ? ` (${part + 1})` : ""}`.slice(0, 240),
           provenance = {
             kind: "lorebook" as const,
             sourceId: book.id,
@@ -454,7 +489,7 @@ async function candidates(
         suffix = `${identifier(name, "character")}_${hash(row.id)}`;
       result.push({
         sourceId: row.id,
-        title: name,
+        title: name.slice(0, 240),
         sourceText,
         sourceNoteId: sourceNoteIdForProvenance(provenance),
         legacySourceNoteIds: [`source_import_character_${suffix}`, `scene_import_character_${suffix}`],
@@ -491,7 +526,7 @@ async function candidates(
             sourceId: chat.id,
             entryId: entry.id,
           },
-          title = `${chatDisplayName}, msgs ${entry.range}`,
+          title = `${chatDisplayName}, msgs ${entry.range}`.slice(0, 240),
           seed = `${chat.id}:${entry.id}`,
           legacy =
             entry.origin === "legacy"
@@ -646,10 +681,13 @@ export async function previewPackageInterop(
   root: string,
 ): Promise<LtmInteropPreviewResponse> {
   const sourceScope = requestedSourceScope(request);
-  const rows = (await candidates({ ...request, sourceScope, includeOutOfScope: sourceScope !== undefined })).filter(
-    (row) => candidateVisibleInScope(row, sourceScope),
-  );
   const matchExisting = await existingMatcher(new LongTermMemoryStorage(root));
+  const rows = resolvePreviewCandidates(
+    (await candidates({ ...request, sourceScope, includeOutOfScope: sourceScope !== undefined })).filter((row) =>
+      candidateVisibleInScope(row, sourceScope),
+    ),
+    matchExisting,
+  );
   const page = previewPage(rows, request, request.source, (row) => row.previewOrder ?? row.sourceId);
   // ponytail: host resource APIs list complete source records; only this page gets
   // rendered previews and freshness hashes. Host-side cursors can replace the scan later.
@@ -841,9 +879,26 @@ export async function importPackageInterop(
       { ...request, sourceScope, includeOutOfScope: sourceScope !== undefined },
       selected,
     ),
-    rows = candidateRows.filter((row) => candidateVisibleInScope(row, sourceScope)),
-    resolvedIds = new Set(rows.map((item) => item.sourceId)),
-    missingSourceIds = request.sourceIds.filter((id) => !resolvedIds.has(id));
+    visibleRows = candidateRows.filter((row) => candidateVisibleInScope(row, sourceScope)),
+    resolvedIds = new Set(visibleRows.map((item) => item.sourceId)),
+    missingSourceIds = request.sourceIds.filter((id) => !resolvedIds.has(id)),
+    candidateResolution = resolveImportCandidates(visibleRows),
+    rows = candidateResolution.rows,
+    writeFailures: LtmImportSourceNotesResponse["writeFailures"] = candidateResolution.conflicts.map((row) => {
+      const title = row.title.slice(0, 240);
+      return {
+        sourceId: row.sourceId,
+        title,
+        sourceWriteStatus: "failed" as const,
+        extractionStatus: "not_started" as const,
+        retryable: false,
+        error: {
+          code: "ltm_source_identity_conflict" as const,
+          message: `Source ${title} has multiple records with different content for the same source ID.`,
+        },
+      };
+    }),
+    conflictingSourceIds = new Set<string>();
   throwIfAborted(signal);
   if (!destinationScope && !chat && !legacyScopeRequest && rows.some((row) => !isGlobalLtmScope(row.scope)))
     throw new LtmServiceError(
@@ -851,7 +906,6 @@ export async function importPackageInterop(
       400,
       "ltm_destination_scope_required",
     );
-  const extractionScope = destinationScope ?? rows[0]?.scope;
   const extractionConfig = await getLtmExtractionConfig(root, request.mode);
   const useExtractionAgent = rows.some(
     (row) =>
@@ -859,10 +913,10 @@ export async function importPackageInterop(
       !row.sourceId.includes(":game-session-") ||
       extractionConfig.useExtractionAgentOnGameMode,
   );
-  let resolved = null;
+  let languageModel = null;
   if (request.extract && useExtractionAgent) {
     try {
-      resolved = await getPackageLanguageModels().resolveForRequest({
+      languageModel = await getPackageLanguageModels().resolveForRequest({
         connectionId: request.connectionId ?? extractionConfig.connectionId,
         chatConnectionId: chat?.connectionId ?? null,
         model: request.model,
@@ -876,9 +930,7 @@ export async function importPackageInterop(
     }
   }
   throwIfAborted(signal);
-  const written: ImportedSourceItem[] = [],
-    writeFailures: LtmImportSourceNotesResponse["writeFailures"] = [];
-  const conflictingSourceIds = new Set<string>();
+  const written: ImportedSourceItem[] = [];
   if (destinationScope) {
     for (const row of rows) {
       const existing = matchExisting(row);
@@ -968,12 +1020,11 @@ export async function importPackageInterop(
   const results = request.extract
       ? await processLongTermMemorySourceBatch({
           items: written,
-          languageModel: resolved,
+          languageModel,
           mode: request.mode,
           modes: request.modes,
           instruction: request.instruction,
           operationId,
-          scope: extractionScope,
           chatId: request.chatId,
           signal,
           applyLowRisk: request.applyLowRisk,
@@ -987,6 +1038,7 @@ export async function importPackageInterop(
           note: item.note,
           created: item.created,
           sourceWriteStatus: item.created ? ("created" as const) : ("refreshed" as const),
+          extractionMode: item.extractionMode,
           extractionStatus: "not_started" as const,
           extractionMethod: "none" as const,
           retryable: false as const,
@@ -994,6 +1046,7 @@ export async function importPackageInterop(
           diagnostics: [],
           outcome: {
             state: "no_suggestions_created" as const,
+            incomplete: false,
             totalCandidates: 0,
             keptUnits: 0,
             droppedUnits: 0,
@@ -1013,7 +1066,8 @@ export async function importPackageInterop(
         })),
     cancelled = results.filter((item) => item.extractionStatus === "cancelled").length,
     failed = results.filter((item) => item.extractionStatus === "failed").length,
-    succeeded = results.filter((item) => item.extractionStatus === "succeeded").length;
+    succeeded = results.filter((item) => item.extractionStatus === "succeeded").length,
+    hasIncomplete = results.some((item) => item.extractionStatus === "incomplete");
   const counts = {
       requested: request.sourceIds.length,
       sourceNotesWritten: written.length,
@@ -1025,9 +1079,9 @@ export async function importPackageInterop(
     },
     incomplete = counts.failed + counts.cancelled + counts.missing + counts.sourceWriteFailed,
     batchStatus =
-      incomplete === 0
+      incomplete === 0 && !hasIncomplete
         ? ("success" as const)
-        : counts.succeeded
+        : counts.succeeded || hasIncomplete
           ? ("partial_success" as const)
           : counts.cancelled && !counts.failed && !counts.missing && !counts.sourceWriteFailed
             ? ("cancelled" as const)

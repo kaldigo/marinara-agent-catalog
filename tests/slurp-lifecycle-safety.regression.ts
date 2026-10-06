@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 const routes = read("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts");
 const publicSupport = read("packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-public-support.ts");
 const replyOperation = read(
@@ -14,7 +15,7 @@ const imageConnections = read(
 );
 const home = read("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx");
 const storage = read("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
-const settings = read("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpSettings.tsx");
+const settings = slurp2BackstageSource();
 const settingsControls = read(
   "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpSettingsControls.tsx",
 );
@@ -33,7 +34,7 @@ const shell = read("packages/slurp2/src/engine/packages/client/src/components/sl
 const serverEntry = read("packages/slurp2/src/engine/packages/server/src/services/slurp/server-entry.ts");
 assert.match(
   settings,
-  /const section = navigation\.section \?\? "overview";[\s\S]*?useSlurpAdState\(section/u,
+  /const section = navigation\.section \?\? "overview";[\s\S]*?const target =[\s\S]*?useSlurpAdState\(target/u,
   "settings must define its section before dependent hooks run",
 );
 
@@ -46,7 +47,14 @@ assert.match(
   /if \(!write\.acquired\) \{[\s\S]*?part\.file\.resume\(\);[\s\S]*?throw new NoodlerMediaRequestError\("Slurp data cleanup is in progress\.", 409\)/u,
 );
 assert.match(multipartReader, /return await part\.toBuffer\(\);/u);
-assert.match(multipartReader, /const buffer = write\.value;[\s\S]*?isAllowedImageBuffer\(buffer, extension\)/u);
+assert.match(multipartReader, /const buffer = write\.value;[\s\S]*?isAllowedImageBuffer\(buffer, "\.avif"\)/u);
+// An image saved straight from a post URL has no extension, so a filename gate rejected valid
+// uploads with "Unsupported image file type". The header is the only evidence of the type.
+assert.doesNotMatch(
+  multipartReader,
+  /extname\(part\.filename\)/u,
+  "post media uploads must be validated by magic bytes, not by the uploaded filename",
+);
 assert.doesNotMatch(multipartReader, /return reply\./u, "the multipart helper must not return before validating media");
 // This guarded slurp-public-generation.service.ts, which had no importers and has been deleted.
 // The live Slurp equivalent is the image gate in the generation service: a run with no usable
@@ -279,9 +287,10 @@ assert.match(
 );
 assert.match(
   settings,
-  /snap-x[\s\S]*?settingsSections\.map/u,
-  "narrow settings must expose a horizontally scrollable section navigation",
+  /sticky top-0[\s\S]*?md:hidden[\s\S]*?<select[\s\S]*?settingsSections\.map/u,
+  "narrow settings must expose a compact sticky destination picker",
 );
+assert.match(settings, /max-w-none basis-full md:max-w-xl/u, "narrow settings must give search a full row");
 assert.match(settings, /aria-live="polite"/u, "settings saves must announce their state");
 assert.match(settings, /selectedCreatorId/u, "creator settings must keep an explicit master-detail selection");
 assert.match(settings, /data-slurp-settings-layout/u, "settings must expose its responsive layout boundary");
@@ -310,7 +319,11 @@ assert.match(settings, /import \{[^}]*Toggle \} from "\.\/SlurpSettingsControls"
 assert.match(settings, /<Toggle/u, "Settings must use the extracted shared toggle");
 assert.match(settingsControls, /data-slurp-setting-toggle/u);
 assert.match(settingsControls, /role="switch"/u, "polished settings toggles must retain native checkbox semantics");
-assert.match(settings, /snap-x grid-flow-col/u, "creator settings must stay browsable before master-detail fits");
+assert.match(
+  settings,
+  /type="search"[\s\S]*?max-h-\[22rem\] overflow-y-auto/u,
+  "creator settings must stay browsable before master-detail fits",
+);
 assert.match(settings, /xl:sticky xl:top-4/u, "the wide-screen Creator list must remain visible beside its detail");
 assert.match(settings, /ui\.slurp\.settings\.creators\.personaAutomationDetail/u);
 assert.match(settings, /ui\.slurp\.settings\.creators\.moreActions/u);

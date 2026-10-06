@@ -1,24 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
-const routes = readFileSync(
-  join(root, "packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts"),
-  "utf8",
-);
-const storage = readFileSync(
+const routes = slurp2Source(join(root, "packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts"));
+const storage = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts"),
-  "utf8",
 );
-const replyOperation = readFileSync(
+const replyOperation = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-creator-reply.operation.ts"),
-  "utf8",
 );
-const home = readFileSync(
-  join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx"),
-  "utf8",
-);
+const home = slurp2Source(join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx"));
 
 assert.match(
   routes,
@@ -46,8 +38,8 @@ assert.match(
   /actor\.sourceEntityId !== input\.viewerPersonaId/u,
   "Interaction mutations must bind the actor profile to the requested persona",
 );
-assert.match(storage, /eq\(noodleAccountSubscriptions\.viewerAccountId, input\.viewerPersonaId\)/u);
-assert.match(storage, /eq\(noodlePostUnlocks\.viewerAccountId, input\.viewerPersonaId\)/u);
+assert.match(storage, /eq\(slpAccountSubscriptions\.viewerAccountId, input\.viewerPersonaId\)/u);
+assert.match(storage, /eq\(slpPostUnlocks\.viewerAccountId, input\.viewerPersonaId\)/u);
 assert.match(storage, /viewerActorAccountId: string/u);
 assert.match(replyOperation, /viewerPersonaId: string;[\s\S]*?viewerActorAccountId: string/u);
 assert.match(home, /const viewerActorAccount =[\s\S]*?id: myCreatorProfile\.id/u);

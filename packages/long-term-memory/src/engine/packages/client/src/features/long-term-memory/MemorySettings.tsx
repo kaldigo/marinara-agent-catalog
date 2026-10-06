@@ -28,6 +28,8 @@ type GlobalForm = {
   longTermMemoryLexicalWeight: number;
   longTermMemoryGraphWeight: number;
   longTermMemoryKeywordWeight: number;
+  longTermMemoryStopWordsText: string;
+  longTermMemoryStopWordsFilterGenerated: boolean;
   longTermMemoryIncludeResolved: boolean;
   longTermMemoryRecallPreamble: string;
   longTermMemoryDebug: boolean;
@@ -45,6 +47,7 @@ type LanguageConnection = {
 };
 type RepairAction = "rebuild_indexes" | "quarantine_malformed_notes" | "backfill_imported_source_titles";
 type SettingsTab = "recall" | "extraction" | "maintenance" | "debug";
+type SettingsRebuildOutcome = { status: "complete" | "deferred"; error?: string };
 
 const settingsTabs: Array<{ id: SettingsTab; labelKey: string }> = [
   {
@@ -127,11 +130,29 @@ function settingsForm(settings: LtmGlobalSettings): GlobalForm {
     longTermMemoryLexicalWeight: settings.longTermMemoryLexicalWeight ?? presetWeights.lexicalWeight,
     longTermMemoryGraphWeight: settings.longTermMemoryGraphWeight ?? presetWeights.graphWeight,
     longTermMemoryKeywordWeight: settings.longTermMemoryKeywordWeight ?? presetWeights.keywordWeight,
+    longTermMemoryStopWordsText: (settings.longTermMemoryStopWords ?? []).join("\n"),
+    longTermMemoryStopWordsFilterGenerated: settings.longTermMemoryStopWordsFilterGenerated ?? true,
     longTermMemoryIncludeResolved: settings.longTermMemoryIncludeResolved ?? false,
     longTermMemoryRecallPreamble: settings.longTermMemoryRecallPreamble ?? "",
     longTermMemoryDebug: settings.longTermMemoryDebug ?? false,
     ...(settings.sourcesAvailabilityModes ? { sourcesAvailabilityModes: settings.sourcesAvailabilityModes } : {}),
   };
+}
+
+function stopWordsFromText(text: string) {
+  return Array.from(
+    new Set(
+      text
+        .split(/[\n,]+/)
+        .map((word) => word.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function globalPayload(form: GlobalForm) {
+  const { longTermMemoryStopWordsText, ...settings } = form;
+  return { ...settings, longTermMemoryStopWords: stopWordsFromText(longTermMemoryStopWordsText) };
 }
 
 function applyRecallStyle(form: GlobalForm, recallStyle: GlobalForm["longTermMemoryRecallStyle"]): GlobalForm {
@@ -178,7 +199,6 @@ function extractionForm(settings: LtmExtractionSettingsPatch): ExtractionForm {
     maxOutputTokens: resolved.maxOutputTokens ?? 4096,
     temperature: resolved.temperature ?? 0.2,
     maxSourceTokens: resolved.maxSourceTokens ?? 16000,
-    maxExistingNoteTokens: resolved.maxExistingNoteTokens ?? 8000,
     existingNoteMaxChunks: resolved.existingNoteMaxChunks ?? 20,
     existingNoteMaxTokens: resolved.existingNoteMaxTokens ?? 4000,
     promptTemplates: resolved.promptTemplates ?? [],
@@ -237,6 +257,7 @@ export default function MemorySettings({
   const memorySettingsTitleId = useId();
   const recallStyleLabelId = useId();
   const recallPreambleLabelId = useId();
+  const memoryStopWordsLabelId = useId();
   const reasoningEffortLabelId = useId();
   const verbosityLabelId = useId();
   const extractionConnectionLabelId = useId();
@@ -317,26 +338,46 @@ export default function MemorySettings({
     if (!globalDirty && !extractionDirty) return;
     setPending("global");
     setMessage("");
+    let rebuild: SettingsRebuildOutcome | null = null;
     try {
       if (globalDirty && globalForm) {
-        const saved = settingsForm(await request<LtmGlobalSettings>("/settings", "PUT", globalForm));
-        setGlobalForm(saved);
+        const submitted = globalForm;
+        const response = await request<LtmGlobalSettings & { rebuild?: SettingsRebuildOutcome | null }>(
+          "/settings",
+          "PUT",
+          globalPayload(submitted),
+        );
+        const saved = settingsForm(response);
         setSavedGlobal(saved);
-        await invalidateLtmQueries(queryClient, [queryKeys.settings, queryKeys.chatDefaults]);
+        // Saving now awaits an index rebuild, so only clear the form when no newer edit
+        // arrived while it was in flight; otherwise those edits stay dirty.
+        setGlobalForm((current) => (current && same(current, submitted) ? saved : current));
+        await invalidateLtmQueries(queryClient, [queryKeys.settings, queryKeys.chatDefaults, queryKeys.status]);
+        rebuild = response.rebuild ?? null;
       }
       if (extractionDirty && extractionFormState) {
+        const submitted = extractionFormState;
         const saved = extractionForm(
-          await request<LtmExtractionSettingsPatch>(
-            "/extraction-settings",
-            "PUT",
-            extractionPayload(extractionFormState),
-          ),
+          await request<LtmExtractionSettingsPatch>("/extraction-settings", "PUT", extractionPayload(submitted)),
         );
-        setExtractionFormState(saved);
         setSavedExtraction(saved);
+        // The global save can await a long index rebuild, so keep newer extraction edits
+        // that arrived while this request was in flight instead of overwriting them.
+        setExtractionFormState((current) => (current && same(current, submitted) ? saved : current));
         await invalidateLtmQueries(queryClient, [queryKeys.extractionSettings]);
       }
-      setMessage(localizeUi("ui.longTermMemory.memorysettings.memorySettingsSaved"));
+      if (rebuild?.status === "deferred") {
+        setMessage(
+          localizeUi("ui.longTermMemory.memorysettings.memorySettingsSavedIndexRebuildFailed", {
+            error: rebuild.error ?? "",
+          }),
+          "danger",
+        );
+      } else if (rebuild?.status === "complete") {
+        setMessage(localizeUi("ui.longTermMemory.memorysettings.memorySettingsSavedIndexRebuilt"));
+      } else {
+        setMessage(localizeUi("ui.longTermMemory.memorysettings.memorySettingsSaved"));
+      }
     } catch (error) {
       setMessage(
         errorMessage(error, localizeUi("ui.longTermMemory.memorysettings.couldNotSaveMemorySettings")),
@@ -710,7 +751,7 @@ export default function MemorySettings({
     setPending("settings-reset");
     setMessage("");
     try {
-      await request("/settings/reset", "POST");
+      const response = await request<{ rebuild?: SettingsRebuildOutcome | null }>("/settings/reset", "POST");
       setGlobalForm(null);
       setSavedGlobal(null);
       setExtractionFormState(null);
@@ -719,9 +760,19 @@ export default function MemorySettings({
         queryKeys.settings,
         queryKeys.extractionSettings,
         queryKeys.chatDefaults,
+        queryKeys.status,
       ]);
       await Promise.all([global.refetch(), extraction.refetch()]);
-      setMessage(localizeUi("ui.longTermMemory.memorysettings.memorySettingsResetToDefaults"));
+      if (response.rebuild?.status === "deferred") {
+        setMessage(
+          localizeUi("ui.longTermMemory.memorysettings.memorySettingsResetIndexRebuildFailed", {
+            error: response.rebuild.error ?? "",
+          }),
+          "danger",
+        );
+      } else {
+        setMessage(localizeUi("ui.longTermMemory.memorysettings.memorySettingsResetToDefaults"));
+      }
     } catch (error) {
       setMessage(
         errorMessage(error, localizeUi("ui.longTermMemory.memorysettings.couldNotResetMemorySettings")),
@@ -1063,6 +1114,40 @@ export default function MemorySettings({
             }
           />
         </div>
+        <div className="space-y-1 text-xs font-medium text-[var(--muted-foreground)]">
+          <span id={memoryStopWordsLabelId} className="flex items-center gap-1">
+            {localizeUi("ui.longTermMemory.memorysettings.memoryStopWords")}
+            <InfoPopover
+              label={localizeUi("ui.longTermMemory.memorysettings.memoryStopWords")}
+              content={localizeUi("ui.longTermMemory.memorysettings.wordsIgnoredDuringKeywordMatchingOnePerLine")}
+            />
+          </span>
+          <textarea
+            aria-labelledby={memoryStopWordsLabelId}
+            className={`${inputClass} min-h-20 py-2`}
+            spellCheck={false}
+            value={globalForm.longTermMemoryStopWordsText}
+            onChange={(event) =>
+              setGlobalForm({
+                ...globalForm,
+                longTermMemoryStopWordsText: event.target.value,
+              })
+            }
+          />
+        </div>
+        <Toggle
+          label={localizeUi("ui.longTermMemory.memorysettings.blockStopWordsInGeneratedKeywords")}
+          help={localizeUi(
+            "ui.longTermMemory.memorysettings.preventsListedWordsFromBecomingGeneratedKeywordsWhileStill",
+          )}
+          checked={globalForm.longTermMemoryStopWordsFilterGenerated}
+          onChange={(value) =>
+            setGlobalForm({
+              ...globalForm,
+              longTermMemoryStopWordsFilterGenerated: value,
+            })
+          }
+        />
       </section>
 
       <section
@@ -1210,20 +1295,6 @@ export default function MemorySettings({
               setExtractionFormState({
                 ...extractionFormState,
                 maxSourceTokens: value,
-              })
-            }
-          />
-          <NumberField
-            label={localizeUi("ui.longTermMemory.memorysettings.maximumExistingNoteTokens")}
-            help={localizeUi("ui.longTermMemory.memorysettings.maximumExistingMemoryContextMadeAvailableWhileTheModel")}
-            value={extractionFormState.maxExistingNoteTokens}
-            min={128}
-            max={32768}
-            step={128}
-            onChange={(value) =>
-              setExtractionFormState({
-                ...extractionFormState,
-                maxExistingNoteTokens: value,
               })
             }
           />

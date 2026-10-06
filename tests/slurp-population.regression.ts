@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -10,7 +9,8 @@ import {
   slurpMembersActiveAt,
   SLURP_POPULATION_NAME_SPACE,
   slurpReactivationStage,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-population.js";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-population.js";
+import { slurp2Source } from "./slurp2-source";
 
 const at = new Date("2026-09-05T00:00:00.000Z");
 const member = (seed: string) => generateSlurpPopulationMember(seed, at);
@@ -104,11 +104,11 @@ assert.equal(slurpReactivationStage("invalid", false), "follower");
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages/server/src");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 // The six fixed identities with placeholder handles are no longer what fan activity draws from.
 const operation = read("services/slurp/slurp-fan-activity.operation.ts");
-assert.match(operation, /populationNoodlerFanIdentityProvider\(cast, tiesByCreator\)/u);
+assert.match(operation, /populationCreatorFanIdentityProvider\(cast, tiesByCreator\)/u);
 // Regulars recur so they can be recognised; new faces arrive so the cast churns. A frozen cast of
 // thirty is the old six-account problem with thirty faces.
 assert.match(operation, /FAN_RUN_RETURNING/u);
@@ -163,7 +163,9 @@ assert.match(world, /tie\.stage === "subscriber"\) continue;/u);
 // a Creator has an audience, and it defaults to false — gating the tick on it left the whole
 // obligation layer dark on a fresh install.
 assert.match(world, /const returning = await population\.listAll\(WORLD_AUDIENCE_POOL\)/u);
-assert.match(world, /const audience = \[\.\.\.awake\.map\(\(member\) => member\.id\), \.\.\.ambient\]/u);
+// The awake population and the ambient roster both reach the audience. Invited characters are
+// appended after them: chosen by hand, so never thinned by the hourly rhythm.
+assert.match(world, /const audience = \[\s*\.\.\.awake\.map\(\(member\) => member\.id\),\s*\.\.\.ambient,/u);
 // An actor is either an ambient account row or a population member with no row at all. Resolving
 // only accounts silently dropped every population action.
 assert.match(world, /async function resolveActor/u);
@@ -174,7 +176,9 @@ assert.match(world, /createSlurpPopulationStorage\(db\)\.get\(actorAccountId\)/u
 assert.match(world, /population\.touch\(actor\.id\)/u);
 assert.match(world, /const pool = \[\s*\.\.\.new Map\(\[\.\.\.dailyNewcomers, \.\.\.returning, \.\.\.newcomers\]/u);
 const fanRun = read("services/slurp/slurp-fan-activity.operation.ts");
-assert.match(fanRun, /cast\.map\(\(member\) => population\.touch\(member\.id\)/u);
+// Only population members are touched. `lastActiveAt` lives on the population row, so touching a
+// character fan's account id would update nothing.
+assert.match(fanRun, /populationCast\.map\(\(member\) => population\.touch\(member\.id\)/u);
 
 // Fan activity is the highest-volume thing the audience does, and it fed nothing into the funnel:
 // follower counts barely moved from the very people who were most active.
@@ -234,11 +238,11 @@ assert.match(fanService, /Kept to a sentence\./u);
 
 const provider = read("services/slurp/slurp-fan-identity-provider.ts");
 assert.match(provider, /persona\?: \{/u);
-assert.match(fanRun, /populationNoodlerFanIdentityProvider\(cast, tiesByCreator\)/u);
+assert.match(fanRun, /populationCreatorFanIdentityProvider\(cast, tiesByCreator\)/u);
 // A run covers up to twelve Creators. Resolving ties once and reusing them described every fan by
 // their history with the first Creator while they commented on the seventh.
 assert.match(fanRun, /run\.creatorIds\.map\(/u);
-assert.match(provider, /resolve\(weights: NoodlerFanArchetypeWeights, creatorAccountId: string\)/u);
+assert.match(provider, /resolve\(weights: SlpCreatorFanArchetypeWeights, creatorAccountId: string\)/u);
 
 // ── Being a particular fan has to change something ──────────────────────────
 // A Creator answered a whale who had spent four hundred coins exactly as they answered a stranger:

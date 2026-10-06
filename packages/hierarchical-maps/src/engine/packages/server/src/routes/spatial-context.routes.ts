@@ -3,8 +3,6 @@ import { z } from "zod";
 import {
   generateSpatialMapDraftRequestSchema,
   pendingSpatialTransitionSchema,
-  spatialContextDefinitionSchema,
-  updateSpatialContextRequestSchema,
   type CapabilityChatRecord,
   type CapabilityDocumentRecord,
   type CapabilityResolvedLanguageModel,
@@ -81,6 +79,8 @@ import {
   type SpatialMapTemplateRecord,
   type SpatialGenerationPromptLibraries,
   type SpatialHierarchyProfile,
+  spatialMapDefinitionSchema,
+  updateSpatialMapRequestSchema,
 } from "../../../maps-shared/src/maps-model.js";
 import { resolveEffectiveSpatialState } from "../services/spatial-context/state-resolution.js";
 import {
@@ -154,7 +154,7 @@ const spatialMapTemplateInputSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(1_000).default(""),
-    definition: spatialContextDefinitionSchema,
+    definition: spatialMapDefinitionSchema,
     hierarchyProfile: spatialHierarchyProfileSchema,
   })
   .strict();
@@ -179,7 +179,7 @@ const spatialSharedWorldAttachSchema = z
 const spatialSharedWorldDraftActionSchema = z
   .object({
     expectedWorldRevision: z.number().int().positive().safe(),
-    definition: spatialContextDefinitionSchema,
+    definition: spatialMapDefinitionSchema,
     hierarchyProfile: spatialHierarchyProfileSchema,
   })
   .strict();
@@ -193,7 +193,7 @@ const spatialSharedWorldChatActionSchema = z
 const spatialMapTemplateDataSchema = z
   .object({
     version: z.literal(SPATIAL_MAP_TEMPLATE_VERSION),
-    definition: spatialContextDefinitionSchema,
+    definition: spatialMapDefinitionSchema,
     hierarchyProfile: spatialHierarchyProfileSchema,
   })
   .strict();
@@ -910,7 +910,7 @@ export async function spatialContextRoutes(app: FastifyInstance) {
     "/:chatId/spatial-context/shared-world/independent-copy",
     async (request, reply) => {
       const body = isRecord(request.body) ? request.body : {};
-      const parsed = updateSpatialContextRequestSchema.safeParse(withoutKeys(body, ["hierarchyProfile"]));
+      const parsed = updateSpatialMapRequestSchema.safeParse(withoutKeys(body, ["hierarchyProfile"]));
       const parsedHierarchyProfile =
         body.hierarchyProfile === undefined ? null : spatialHierarchyProfileSchema.safeParse(body.hierarchyProfile);
       if (!parsed.success) {
@@ -1676,7 +1676,7 @@ export async function spatialContextRoutes(app: FastifyInstance) {
 
   app.put<{ Params: ChatSpatialParams }>("/:chatId/spatial-context", async (req, reply) => {
     const body = isRecord(req.body) ? req.body : {};
-    const parsed = updateSpatialContextRequestSchema.safeParse(withoutKeys(body, ["hierarchyProfile"]));
+    const parsed = updateSpatialMapRequestSchema.safeParse(withoutKeys(body, ["hierarchyProfile"]));
     if (!parsed.success) {
       return reply.status(400).send({
         error: parsed.error.issues[0]?.message ?? "Invalid world map.",
@@ -1760,7 +1760,7 @@ export async function spatialContextRoutes(app: FastifyInstance) {
         code: "spatial_start_over_confirmation_required",
       });
     }
-    const parsed = updateSpatialContextRequestSchema.safeParse(
+    const parsed = updateSpatialMapRequestSchema.safeParse(
       withoutKeys(body, ["hierarchyProfile", "breakHistoryContinuity"]),
     );
     if (!parsed.success) {

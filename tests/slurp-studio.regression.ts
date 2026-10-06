@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   slurpFollowerMilestone,
   slurpMilestonesCrossed,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-milestones.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/world/slp-milestones.js";
 import {
   openSlurpGoal,
   readSlurpGoal,
   slurpGoalProgress,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-goal.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-goal.js";
+import { slurp2Source } from "./slurp2-source";
 
 // ── Milestones ──────────────────────────────────────────────────────────────
 // Before the first target there is nothing reached yet, but there is still something to aim at.
@@ -93,10 +93,10 @@ assert.equal(
 
 // ── Wiring ──────────────────────────────────────────────────────────────────
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 const routes = read("server/src/routes/slurp.routes.ts");
-assert.match(routes, /app\.get\("\/noodler\/studio"/u);
+assert.match(routes, /app\.get\("\/slurp\/studio"/u);
 // Only Creators this persona operates. A character-backed Creator has no operator, so it must
 // never appear in someone's studio.
 assert.match(routes, /operated = accounts\.filter\(\(account\) => creatorBelongsToViewer\(account, viewer\)\)/u);
@@ -108,7 +108,8 @@ assert.match(
 assert.match(routes, /earningsDelta: previous \? earnings\.lifetime - previous\.lifetimeEarnings : null/u);
 
 const home = read("client/src/components/slurp/SlurpHome.tsx");
-assert.match(home, /function SlurpStudioView/u);
+// W: the Studio page is the own profile's Dashboard sheet now.
+assert.match(home, /function SlpDashboardBody/u);
 assert.match(home, /useSlurpStudio/u);
 
 // Reading the studio rewrites the snapshot, so a refetch would silently zero the deltas the
@@ -118,11 +119,17 @@ const studioHook = hooks.slice(hooks.indexOf("export function useSlurpStudio"));
 assert.match(studioHook.slice(0, 700), /staleTime: Infinity/u);
 assert.match(studioHook.slice(0, 700), /refetchOnWindowFocus: false/u);
 
-assert.match(routes, /app\.put\("\/noodler\/accounts\/:id\/goal"/u);
+assert.match(routes, /app\.put\("\/slurp\/accounts\/:id\/goal"/u);
 assert.match(home, /function SlurpGoalEditor/u);
 
 const shell = read("client/src/components/slurp/SlurpShell.tsx");
-assert.match(shell, /onOpenStudio && hasOperatedCreator/u, "the studio entry needs an operated Creator");
+// W: the Dashboard opens from the own page only, so it always has an operated Creator.
+assert.match(
+  read("client/src/components/slurp/SlurpHome.tsx"),
+  /onOpenDashboard=\{viewingOwnCreator \? \(\) => setDashboardOpen\(true\) : undefined\}/u,
+  "the dashboard entry needs an operated Creator",
+);
+void shell;
 
 // Milestones were computed here, rendered here, and reported nowhere.
 assert.match(routes, /recordCreatorEvent\(creator\.id, "milestone", \{ amount: target \}\)/u);
@@ -131,13 +138,14 @@ assert.match(routes, /recordCreatorEvent\(creator\.id, "milestone", \{ amount: t
 // to be able to see it. It rides on the viewer scope beside subscriptionPrice, because the
 // audience profile projection is a strict allowlist and must stay one.
 assert.match(routes, /goal: context\.goalByAccountId\.get\(account\.id\) \?\? null/u);
-assert.match(home, /function noodlerGoalOf/u);
+assert.match(home, /function slpCreatorGoalOf/u);
 assert.match(
   home,
-  /goalForViewer && !editing && \(/u,
+  // Step 3.2: the goal moved under the tabs; the editing guard wraps the whole fan-card slot now.
+  /afterTabsContent=\{\s+editing \? null : \([\s\S]*?\{goalForViewer && \(/u,
   "The audience goal must render without taking the composer's slot",
 );
-const disclosure = readFileSync(join(root, "server/src/services/slurp/slurp-disclosure.ts"), "utf8");
+const disclosure = slurp2Source(join(root, "server/src/services/slurp/slurp-disclosure.ts"));
 assert.match(disclosure, /AUDIENCE_FIELDS\.map/u, "the audience projection must stay an allowlist");
 
 // ── Diegetic by default, optimisation behind a door ─────────────────────────
@@ -146,7 +154,9 @@ assert.match(disclosure, /AUDIENCE_FIELDS\.map/u, "the audience projection must 
 // leaving them on screen invites playing the meta instead of the character.
 assert.match(home, /const \[showPerformance, setShowPerformance\] = useState\(false\)/u);
 assert.match(home, /showPerformance && creator\.milestone\.next !== null/u);
-assert.match(home, /showPerformance && creator\.posts\.length > 0/u);
+// Step 7: recent posts (likes, comments) are part of the page; reach and unlocks stay behind the door.
+assert.match(home, /showPerformance\s*\?\s*localizeUi\("ui\.slurp\.studio\.reached"/u);
+assert.match(home, /showPerformance && post\.unlockCount !== null/u);
 // Earnings, followers, top fans, and the tip goal stay visible without asking.
 assert.doesNotMatch(home, /showPerformance && creator\.topFans/u, "who is showing up is in character");
 

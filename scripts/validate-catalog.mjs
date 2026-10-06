@@ -32,6 +32,20 @@ import {
   packageArtifactName,
   resolveContainedPortablePath,
 } from "./catalog-path-safety.mjs";
+import {
+  RULESET_ASSET_PATH,
+  assertRulesetApplies,
+  assertRulesetAssetDocument,
+  assertRulesetBattle,
+  assertRulesetCatalogs,
+  assertRulesetCombat,
+  assertRulesetCreatures,
+  assertRulesetPackageContract,
+  assertRulesetReactions,
+  assertRulesetScaled,
+  isRulesetPackage,
+  rulesetCatalogAssetPaths,
+} from "./ruleset-package-checks.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { catalog, catalogsByMajor, legacyCatalog, previewCatalogsByMajor, previewLegacyCatalog } =
@@ -192,35 +206,18 @@ for (const relativePath of hierarchicalMapsOwnedSourcePaths) {
   }
 }
 
-const slurpOwnedSourcePaths = [
-  "packages/client/src/components/slurp",
-  "packages/client/src/hooks/use-slurp.ts",
-  "packages/client/src/slurp-package-entry.tsx",
-  "packages/client/src/stores/slurp-package.store.ts",
-  "packages/server/src/db/schema/slurp.ts",
-  "packages/server/src/routes/slurp.routes.ts",
-  "packages/server/src/services/slurp",
-  "packages/server/src/services/storage/slurp.storage.ts",
-];
-// The remaster owns strictly more of the tree than the frozen legacy package does.
+// Must equal slurp2OwnedSourcePaths in the builder: the three slp roots and three permanent exceptions.
 const slurp2OwnedSourcePaths = [
-  ...slurpOwnedSourcePaths,
-  "packages/server/src/routes/slurp-messages.routes.ts",
-  "packages/server/src/services/storage/slurp-financial-queue.ts",
-  "packages/server/src/services/storage/slurp-file-errors.ts",
-  "packages/server/src/services/storage/slurp-host-tables.ts",
-  "packages/server/src/services/storage/slurp-messages.storage.ts",
-  "packages/server/src/services/storage/slurp-reply-queue.storage.ts",
+  "packages/client/src/slp",
+  "packages/server/src/slp",
+  "packages/shared/src/slp",
+  "packages/client/src/lib/api-client.ts",
+  "packages/server/src/services/garnish-ads",
+  "packages/server/src/db/schema/slurp.ts",
 ];
-for (const [packageId, ownedSourcePaths] of [
-  ["slurp", slurpOwnedSourcePaths],
-  ["slurp2", slurp2OwnedSourcePaths],
-]) {
-  for (const relativePath of ownedSourcePaths) {
-    const packageOwnedPath = join(repoRoot, `packages/${packageId}/src/engine`, relativePath);
-    if (!existsSync(packageOwnedPath)) {
-      throw new Error(`${packageId} package source is missing: ${relativePath}`);
-    }
+for (const relativePath of slurp2OwnedSourcePaths) {
+  if (!existsSync(join(repoRoot, "packages/slurp2/src/engine", relativePath))) {
+    throw new Error(`slurp2 package source is missing: ${relativePath}`);
   }
 }
 
@@ -228,7 +225,11 @@ for (const [packageId, ownedSourcePaths] of [
 // ten stale copies of package-owned files survived in sources/engine long after the split. A
 // captured copy is worse than dead weight now: the remaster's slurp2_* table names would become
 // build input for Noodle, and tests that read the snapshot would check the wrong tree.
+// api-client.ts is the one owned path that overrides a generic Engine file, so the snapshot keeps
+// the Engine's own copy of it.
+const slurp2EngineOverrides = new Set(["packages/client/src/lib/api-client.ts"]);
 for (const relativePath of ["packages/server/src/db/schema/slurp.ts", ...slurp2OwnedSourcePaths]) {
+  if (slurp2EngineOverrides.has(relativePath)) continue;
   if (existsSync(join(repoRoot, "sources/engine", relativePath))) {
     throw new Error(`Slurp source must not be captured as generic Engine material: ${relativePath}`);
   }
@@ -332,6 +333,9 @@ const agentDefinitionIds = new Set();
 const expectedCategories = new Map([
   ["card-evolution-auditor", "writer"],
   ["hierarchical-maps", "tracker"],
+  // A ruleset is neither a writer nor a tracker; it is data the Game Mode setup
+  // wizard offers, so it belongs in misc.
+  ["ruleset-5e-2014", "misc"],
 ]);
 
 function assertLocalizedField(value, maximum, label) {
@@ -494,7 +498,7 @@ for (const entry of catalog.packages) {
       }
     }
   }
-  if (manifest.id === "slurp" || manifest.id === "slurp2") {
+  if (manifest.id === "slurp2") {
     const expectedLocales = ["de", "ko", "pl"];
     const actualLocales = Object.keys(manifest.localizations ?? {}).sort();
     if (JSON.stringify(actualLocales) !== JSON.stringify(expectedLocales)) {
@@ -666,57 +670,91 @@ for (const entry of catalog.packages) {
   }
   if (manifest.kind.includes("turn-game")) await validateTurnGameRuntime(manifest, packageRoot);
 
-  if (!manifest.entrypoints.agents) throw new Error(`Missing agent definition entrypoint for ${manifest.id}`);
-  const agentDefinitions = JSON.parse(
-    await readFile(
-      await resolveContainedPortablePath(
-        packageRoot,
-        manifest.entrypoints.agents,
-        `Agent entrypoint for ${manifest.id}`,
+  // A `ruleset` package ships a validated data asset instead of an Agent, so the
+  // agent-definition contract below cannot apply to it; the ruleset contract takes
+  // its place. Everything else in this loop still applies to both shapes. The
+  // contract check itself runs for every package, because the binding between the
+  // kind and the reserved asset has to hold in both directions.
+  if (assertRulesetPackageContract(manifest)) {
+    const document = assertRulesetAssetDocument(
+      await readFile(
+        await resolveContainedPortablePath(packageRoot, RULESET_ASSET_PATH, `Ruleset asset for ${manifest.id}`),
+        "utf8",
       ),
-      "utf8",
-    ),
-  );
-  if (!Array.isArray(agentDefinitions) || agentDefinitions.length === 0) {
-    throw new Error(`Missing agent definitions for ${manifest.id}`);
-  }
-  if (!agentDefinitions.some((definition) => definition.id === manifest.id)) {
-    throw new Error(`Package ${manifest.id} does not define its matching agent id`);
-  }
-  const matchingDefinitions = agentDefinitions.filter((definition) => definition.id === manifest.id);
-  const activeAgentDescription = withoutPackageActivationGuidance(manifest.id, manifest.description);
-  if (
-    matchingDefinitions.some(
-      (definition) =>
-        definition.description !== manifest.description && definition.description !== activeAgentDescription,
-    )
-  ) {
-    throw new Error(`Package ${manifest.id} agent description does not match its manifest description`);
-  }
-  for (const definition of agentDefinitions) {
-    if (!definition?.id || agentDefinitionIds.has(definition.id)) {
-      throw new Error(`Duplicate or missing agent definition id: ${definition?.id}`);
+      manifest.id,
+    );
+    // Catalogs ship beside the ruleset file and are read by the same Engine
+    // seam, so they are checked here for the same reason: what this repository
+    // publishes has to be installable.
+    const catalogSources = new Map();
+    for (const catalogPath of rulesetCatalogAssetPaths(manifest)) {
+      const path = await resolveContainedPortablePath(packageRoot, catalogPath, `Catalog asset for ${manifest.id}`);
+      catalogSources.set(catalogPath, await readFile(path, "utf8"));
     }
-    if (!["writer", "tracker", "misc"].includes(definition.category)) {
-      throw new Error(`Invalid agent category for ${definition.id}`);
+    assertRulesetCatalogs(manifest, document, catalogSources);
+    // The battle block ships inside the same file and is gated the same way, so it is checked here
+    // for the same reason: what this repository publishes has to be installable.
+    assertRulesetBattle(manifest, document);
+    // A scaled column rides inside a catalog entry, inline or in an asset, and is gated the same way.
+    assertRulesetScaled(manifest, document, catalogSources);
+    // So does the combat block, and the bestiary whose creatures are written in its own names.
+    assertRulesetCombat(manifest, document);
+    assertRulesetCreatures(manifest, document, catalogSources);
+    assertRulesetReactions(manifest, document, catalogSources);
+    assertRulesetApplies(manifest, document, catalogSources);
+  } else {
+    if (!manifest.entrypoints.agents) throw new Error(`Missing agent definition entrypoint for ${manifest.id}`);
+    const agentDefinitions = JSON.parse(
+      await readFile(
+        await resolveContainedPortablePath(
+          packageRoot,
+          manifest.entrypoints.agents,
+          `Agent entrypoint for ${manifest.id}`,
+        ),
+        "utf8",
+      ),
+    );
+    if (!Array.isArray(agentDefinitions) || agentDefinitions.length === 0) {
+      throw new Error(`Missing agent definitions for ${manifest.id}`);
     }
-    if (typeof definition.defaultPromptTemplate !== "string") {
-      throw new Error(`Missing default prompt template for ${definition.id}`);
+    if (!agentDefinitions.some((definition) => definition.id === manifest.id)) {
+      throw new Error(`Package ${manifest.id} does not define its matching agent id`);
     }
-    agentDefinitionIds.add(definition.id);
-  }
-  if (manifest.id === "beholder") {
-    // Canonical GENERAL_PROMPT from GetBeholder/Beholder-ME at ecee80e57cb84ad54c02c9c1b3d081e8cbd2799b.
-    const prompt = matchingDefinitions[0]?.defaultPromptTemplate ?? "";
-    const promptSha256 = createHash("sha256").update(prompt).digest("hex");
+    const matchingDefinitions = agentDefinitions.filter((definition) => definition.id === manifest.id);
+    const activeAgentDescription = withoutPackageActivationGuidance(manifest.id, manifest.description);
     if (
-      prompt.length !== 3_709 ||
-      promptSha256 !== "03fd72e0569a389c9cf6241fb61ee6fd8e9ed9f26a9b1cc7ed5ef61f073c5002"
+      matchingDefinitions.some(
+        (definition) =>
+          definition.description !== manifest.description && definition.description !== activeAgentDescription,
+      )
     ) {
-      throw new Error("Beholder must ship the canonical benchmarked 3,709-character delta prompt");
+      throw new Error(`Package ${manifest.id} agent description does not match its manifest description`);
     }
-    if (compareEngineVersions(manifest.engine.min, "2.4.3") < 0) {
-      throw new Error("Beholder's delta prompt requires Engine 2.4.3 or newer");
+    for (const definition of agentDefinitions) {
+      if (!definition?.id || agentDefinitionIds.has(definition.id)) {
+        throw new Error(`Duplicate or missing agent definition id: ${definition?.id}`);
+      }
+      if (!["writer", "tracker", "misc"].includes(definition.category)) {
+        throw new Error(`Invalid agent category for ${definition.id}`);
+      }
+      if (typeof definition.defaultPromptTemplate !== "string") {
+        throw new Error(`Missing default prompt template for ${definition.id}`);
+      }
+      agentDefinitionIds.add(definition.id);
+    }
+    if (manifest.id === "beholder") {
+      // Canonical GENERAL_PROMPT from GetBeholder/Beholder-ME at ecee80e57cb84ad54c02c9c1b3d081e8cbd2799b.
+      const prompt = matchingDefinitions[0]?.defaultPromptTemplate ?? "";
+      const promptSha256 = createHash("sha256").update(prompt).digest("hex");
+      if (
+        prompt.length !== 3_709 ||
+        promptSha256 !== "03fd72e0569a389c9cf6241fb61ee6fd8e9ed9f26a9b1cc7ed5ef61f073c5002"
+      ) {
+        throw new Error("Beholder must ship the canonical benchmarked 3,709-character delta prompt");
+      }
+      if (compareEngineVersions(manifest.engine.min, "2.4.3") < 0) {
+        throw new Error("Beholder's delta prompt requires Engine 2.4.3 or newer");
+      }
     }
   }
 
@@ -867,12 +905,20 @@ if (JSON.stringify(guidanceIds) !== JSON.stringify([...ids].sort())) {
 
 // Counted over the PUBLISHED lanes — what a stable user actually receives.
 // Staging-only packages live in the preview overlay and are counted separately.
-const agentOnly = publishedCatalog.packages.filter((entry) => !entry.manifest.entrypoints.server).length;
-const features = publishedCatalog.packages.length - agentOnly;
-if (publishedCatalog.packages.length !== 38 || agentOnly !== 24 || features !== 14) {
-  throw new Error(`Expected 24 agents and 14 features, found ${agentOnly} and ${features}`);
+// A ruleset ships neither a server runtime nor an Agent, so the agent/feature
+// split does not describe it: "no server entrypoint" would silently file it under
+// agents. It gets its own count instead of being miscounted as one.
+const rulesets = publishedCatalog.packages.filter((entry) => isRulesetPackage(entry.manifest)).length;
+const agentOnly = publishedCatalog.packages.filter(
+  (entry) => !isRulesetPackage(entry.manifest) && !entry.manifest.entrypoints.server,
+).length;
+const features = publishedCatalog.packages.length - agentOnly - rulesets;
+if (publishedCatalog.packages.length !== 39 || agentOnly !== 24 || features !== 15 || rulesets !== 0) {
+  throw new Error(`Expected 24 agents, 15 features, and 0 rulesets, found ${agentOnly}, ${features}, and ${rulesets}`);
 }
-console.log(`Catalog valid: ${publishedCatalog.packages.length} packages (${agentOnly} agents, ${features} features).`);
+console.log(
+  `Catalog valid: ${publishedCatalog.packages.length} packages (${agentOnly} agents, ${features} features, ${rulesets} rulesets).`,
+);
 if (uncataloguedIntegrity.checked.length > 0) {
   const withoutArtifact = uncataloguedIntegrity.withoutArtifact;
   console.log(

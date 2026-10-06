@@ -3,7 +3,6 @@ import {
   resolveSpatialDestinations,
   SPATIAL_CONTEXT_LIMITS,
   type CapabilityPersistenceSession,
-  spatialContextDefinitionSchema,
   type SpatialContextDefinition,
   type SpatialContextSnapshot,
   type ResolvedSpatialTravel,
@@ -11,6 +10,7 @@ import {
 } from "@marinara-engine/shared";
 import { getPackagePersistence, logger, newId, newTimeSortableId, now } from "./package-runtime.js";
 import { parseSpatialMetadata } from "./metadata.js";
+import { SPATIAL_MAP_LOCATION_LIMIT, spatialMapDefinitionSchema } from "../../../../maps-shared/src/maps-model.js";
 import {
   readSpatialSharedWorldLink,
   resolveSpatialWorldSource,
@@ -168,7 +168,7 @@ function discoverLocation(
     return { definition, destinationId: reachableMatching[0]!.id };
   }
   if (matching.length === 1) return null;
-  if (matching.length > 1 || definition.locations.length >= SPATIAL_CONTEXT_LIMITS.maxLocations) return null;
+  if (matching.length > 1 || definition.locations.length >= SPATIAL_MAP_LOCATION_LIMIT) return null;
 
   const current = definition.locations.find((location) => location.id === currentLocationId);
   if (!current) return null;
@@ -215,13 +215,13 @@ function discoverLocation(
     if (!linked) return null;
     nextDefinition = linked;
   }
-  const parsed = spatialContextDefinitionSchema.safeParse(nextDefinition);
+  const parsed = spatialMapDefinitionSchema.safeParse(nextDefinition);
   return parsed.success ? { definition: parsed.data as SpatialContextDefinition, destinationId } : null;
 }
 
 export function parseStoredSpatialDefinition(rawMetadata: unknown): SpatialContextDefinition | null {
   const candidate = parseSpatialMetadata(rawMetadata).spatialContext;
-  const parsed = spatialContextDefinitionSchema.safeParse(candidate);
+  const parsed = spatialMapDefinitionSchema.safeParse(candidate);
   return parsed.success ? (parsed.data as SpatialContextDefinition) : null;
 }
 

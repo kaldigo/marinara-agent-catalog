@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 2,
+  "capabilityApi": {
+    "major": 1,
+    "minor": 14
+  },
+  "builtAgainst": {
+    "engineVersion": "2.4.4",
+    "engineCommit": "7f3286e36196ea3ce591b2b494cdef190a8f740c"
+  },
+  "id": "relationship-tracker",
+  "name": "Relationship Tracker",
+  "version": "0.6.2",
+  "description": "Tracks how the characters and your persona feel about each other. Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
+  "engine": {
+    "min": "2.4.4",
+    "maxExclusive": "4.0.0"
+  },
+  "kind": [
+    "agent"
+  ],
+  "entrypoints": {
+    "agents": "agents.json",
+    "server": "server.mjs",
+    "client": "client.js"
+  },
+  "contributions": {
+    "slots": [
+      "roleplay-tracker",
+      "tracker-panel"
+    ]
+  },
+  "files": [
+    {
+      "path": "agents.json",
+      "sha256": "3ff6d68d5177e15645a3e147a34efd8085299ec659031876c2f8f23be6ad9594",
+      "bytes": 3772
+    },
+    {
+      "path": "server.mjs",
+      "sha256": "75d852ec5787b87365598fd297debcb924b975685490814e2775cc5aabab7fe5",
+      "bytes": 12187
+    },
+    {
+      "path": "state.mjs",
+      "sha256": "597023170e26cdeb1e27ab1d5021c5f7d69d5610d42ff38691ce965ad5f21c1f",
+      "bytes": 27236
+    },
+    {
+      "path": "prompt.mjs",
+      "sha256": "41650a28aa09310fd423811d2052c99a34a5ed0d72a4ba170b9bbd863433dab1",
+      "bytes": 6984
+    },
+    {
+      "path": "tracking.mjs",
+      "sha256": "ce5249609624ca41edda8fed10e1124adb365bf432d2a0723222ec45f3efa1bd",
+      "bytes": 38234
+    },
+    {
+      "path": "activity.mjs",
+      "sha256": "a3917dedc30d510c602f86fc54f957e2fa8cf4c76e0e5458bca488d10d02122d",
+      "bytes": 3916
+    },
+    {
+      "path": "history.mjs",
+      "sha256": "eff43a4a279f159d36f7a01bdc0f5b6fb53a9db8f45dabc2c0d481f7307c4c0a",
+      "bytes": 14777
+    },
+    {
+      "path": "persona-state.mjs",
+      "sha256": "0f212da4ccef0dcd32a9ca1f79ca0176cc4ae46ff62e80ae3abc0ca95e9da1bb",
+      "bytes": 14886
+    },
+    {
+      "path": "persona-tracking.mjs",
+      "sha256": "cb36514b2de3155a6b7276b038fddd06734be5bddf2eb78be3773b36ea4b6815",
+      "bytes": 6014
+    },
+    {
+      "path": "client.js",
+      "sha256": "c009aef56c8b6ac495005570b38ba1d4047ccea5485cfb04f89ab16132960b31",
+      "bytes": 60590
+    },
+    {
+      "path": "contracts/relationship-state-v1.schema.json",
+      "sha256": "e6f4a17df057fc87f7c6e4cdedf6773ba02c1a7530fb926fae32013c6414935c",
+      "bytes": 2914
+    },
+    {
+      "path": "contracts/read-api-v1.schema.json",
+      "sha256": "5c66036eb8f1bedf7417bb25a60c367551f63b69d533b63b5aa6098dc4ae72d9",
+      "bytes": 1493
+    },
+    {
+      "path": "contracts/persona-state-v1.schema.json",
+      "sha256": "c40118e7c79f8dcd7129c982f7efae65e4b1d15b352539ecf144138d4a9ed29d",
+      "bytes": 1263
+    }
+  ],
+  "permissions": [
+    "agent-runtime",
+    "chat-read",
+    "prompt-context",
+    "routes",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": true
+}

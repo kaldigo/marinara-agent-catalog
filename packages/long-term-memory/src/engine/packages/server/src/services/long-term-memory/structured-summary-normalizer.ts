@@ -137,6 +137,8 @@ const STRUCTURED_CHARACTER_METADATA_KEYS = new Set([
   "subject",
   "character",
   "character_id",
+  "character_name",
+  "name",
   "section",
   "section_key",
   "stream",
@@ -151,12 +153,18 @@ const STRUCTURED_CHARACTER_METADATA_KEYS = new Set([
 ]);
 const EMPTY_LINK_VALUE_PATTERN = /^(?:n[_/]?a|none|null|unknown|unspecified|not_applicable)$/i;
 const CHARACTER_DEVELOPMENT_PATTERN =
-  /\b(?:almost\s+quit|once\b|learned|developed|started|began|became|stopped|quit|lost|gained|committed|decided|chose|promised|confronted|realized|recognised|recognized)\b/i;
+  /\b(?:almost\s+quit|(?:started|began)\s+(?:to\s+)?\w+|became\s+(?:a|an|the|more|less)\b|(?:stopped|quit)\s+\w+|(?:learned|developed)\s+(?:to\s+)?\w+|(?:lost|gained)\s+(?:the|a|an|their|her|his|its)\b|committed\s+to\b|decided\s+to\b|chose\s+to\b|promised\s+to\b|realized\s+(?:that|how|why|he|she|they|it)\b|recogni[sz]ed\s+(?:that|how|why|he|she|they|it)\b)\b/i;
 const STRUCTURED_RELATIONSHIP_METADATA_KEYS = new Set([
   "id",
   "subject",
   "relationship",
   "relationship_id",
+  "characters",
+  "character",
+  "participants",
+  "participant",
+  "names",
+  "name",
   "section",
   "section_key",
   "stream",
@@ -201,6 +209,7 @@ export function normalizeStructuredSummaryEvidenceUnits({
   modes,
   addStructuredUnits = true,
   relationshipIdentityKey,
+  characterIdentityKey,
 }: {
   units: LtmEvidenceUnit[];
   sourceText: string;
@@ -212,6 +221,7 @@ export function normalizeStructuredSummaryEvidenceUnits({
   modes?: readonly LtmMode[];
   addStructuredUnits?: boolean;
   relationshipIdentityKey?: LtmRelationshipIdentityKey;
+  characterIdentityKey?: (unit: LtmEvidenceUnit) => string;
 }): StructuredSummaryNormalizationResult {
   const sections = parseStructuredSections(sourceText);
   if (sections.length === 0) {
@@ -257,6 +267,7 @@ export function normalizeStructuredSummaryEvidenceUnits({
     sourceHash,
     hints,
     deriveTimelineLinks: isRoleplayMode(mode, modes),
+    characterIdentityKey,
   });
   const withTone = maybeAddToneUnit({
     units: withStructuredCharacters,
@@ -306,12 +317,18 @@ function normalizeSourceEventGraph(units: LtmEvidenceUnit[], sourceNote: LtmNote
 }
 
 function normalizeTargetShapeUnit(unit: LtmEvidenceUnit): LtmEvidenceUnit {
+  if (unit.bucket === "timeline_event") {
+    return { ...unit, sectionKey: "event" };
+  }
+
   if (unit.bucket === "character_fact") {
-    const normalized = normalizeSubjectSectionSuffix({
-      subjectId: stripUnitSubjectPrefix(unit.bucket, unit.subjectId),
-      sectionKey: unit.sectionKey,
-      suffixes: CHARACTER_SUBJECT_SECTION_SUFFIXES,
-    });
+    const normalized = unit.subjects?.length
+      ? { subjectId: stripUnitSubjectPrefix(unit.bucket, unit.subjectId), sectionKey: unit.sectionKey }
+      : normalizeSubjectSectionSuffix({
+          subjectId: stripUnitSubjectPrefix(unit.bucket, unit.subjectId),
+          sectionKey: unit.sectionKey,
+          suffixes: CHARACTER_SUBJECT_SECTION_SUFFIXES,
+        });
     return {
       ...unit,
       subjectId: normalized.subjectId,
@@ -382,6 +399,13 @@ function parseStructuredSections(sourceText: string) {
       current = { bucket, lines: [] };
       continue;
     }
+    // An unrecognized heading must not leave the previous section open, or its
+    // following fields are misattributed to the last known bucket.
+    if (HEADING_PATTERN.test(line)) {
+      if (current) sections.push(sectionFromLines(current.bucket, current.lines));
+      current = null;
+      continue;
+    }
     if (current) current.lines.push(line);
   }
 
@@ -392,8 +416,14 @@ function parseStructuredSections(sourceText: string) {
 function structuredBucketFromHeading(line: string) {
   const match = line.match(HEADING_PATTERN);
   if (!match?.[1]) return null;
-  const bucket = normalizeFieldKey(match[1]);
-  return STRUCTURED_BUCKETS.has(bucket as LtmEvidenceUnit["bucket"]) ? (bucket as LtmEvidenceUnit["bucket"]) : null;
+  const key = normalizeFieldKey(match[1]);
+  if (STRUCTURED_BUCKETS.has(key as LtmEvidenceUnit["bucket"])) return key as LtmEvidenceUnit["bucket"];
+  if (key === "relationships" || key === "relationship") return "relationship_state";
+  if (key === "character_facts" || key === "characters" || key === "character") return "character_fact";
+  if (key === "timeline_events" || key === "timeline" || key === "events") return "timeline_event";
+  if (key === "world_facts" || key === "world") return "world_fact";
+  if (key === "threads") return "thread";
+  return null;
 }
 
 function sectionFromLines(bucket: LtmEvidenceUnit["bucket"], lines: string[]): StructuredSection {
@@ -530,11 +560,13 @@ function normalizeUnit(
   }
 
   if (unit.bucket === "character_fact") {
-    const normalized = normalizeSubjectSectionSuffix({
-      subjectId: stripUnitSubjectPrefix(unit.bucket, unit.subjectId),
-      sectionKey: unit.sectionKey,
-      suffixes: CHARACTER_SUBJECT_SECTION_SUFFIXES,
-    });
+    const normalized = unit.subjects?.length
+      ? { subjectId: stripUnitSubjectPrefix(unit.bucket, unit.subjectId), sectionKey: unit.sectionKey }
+      : normalizeSubjectSectionSuffix({
+          subjectId: stripUnitSubjectPrefix(unit.bucket, unit.subjectId),
+          sectionKey: unit.sectionKey,
+          suffixes: CHARACTER_SUBJECT_SECTION_SUFFIXES,
+        });
     return {
       ...unit,
       subjectId: normalized.subjectId,
@@ -587,7 +619,7 @@ function normalizeSubjectSectionSuffix({
   sectionKey: string;
   suffixes: Set<string>;
 }) {
-  const currentSection = normalizeSectionKey(sectionKey, sectionKey);
+  const currentSection = normalizeSectionKey(sectionKey ?? "facts", sectionKey ?? "facts");
   const suffix = matchingSectionSuffix(subjectId, suffixes);
   if (!suffix) return { subjectId, sectionKey: currentSection };
 
@@ -714,6 +746,8 @@ function parseStructuredRelationshipLine(
 
   const importanceResult = extractStructuredImportance(cleaned);
   let subjectId = "";
+  let explicitSubjectId = false;
+  const subjectNames: string[] = [];
   let importance = importanceResult.importance;
   let confidence = 0.9;
   let salience = 0.75;
@@ -745,6 +779,17 @@ function parseStructuredRelationshipLine(
 
     if (["id", "subject", "relationship", "relationship_id"].includes(key)) {
       subjectId = stripUnitSubjectPrefix("relationship_state", normalizeIdentifier(value, subjectId));
+      explicitSubjectId = true;
+      continue;
+    }
+    if (["characters", "character", "participants", "participant", "names", "name"].includes(key)) {
+      const parsedNames = value
+        .split(/[,;\n]|\s+and\s+/i)
+        .map((name) => name.trim())
+        .filter(Boolean);
+      if (parsedNames.length > 0) {
+        subjectNames.push(...parsedNames);
+      }
       continue;
     }
     if (["section", "section_key", "stream"].includes(key)) {
@@ -792,6 +837,13 @@ function parseStructuredRelationshipLine(
     }
   }
 
+  const uniqueSubjectNames = uniqueStrings(subjectNames);
+  if (!explicitSubjectId && uniqueSubjectNames.length > 0) {
+    subjectId = uniqueSubjectNames
+      .map((name) => normalizeIdentifier(name, ""))
+      .filter(Boolean)
+      .join("_");
+  }
   const normalizedSubject = stripUnitSubjectPrefix("relationship_state", normalizeIdentifier(subjectId, ""));
   const text = textParts.join(" | ").replace(/\s+/g, " ").trim();
   if (!normalizedSubject || !text) return null;
@@ -811,6 +863,7 @@ function parseStructuredRelationshipLine(
     status: "active",
     links: uniqueLinks(links),
     sourceHash,
+    ...(uniqueSubjectNames.length > 0 ? { subjectNames: uniqueSubjectNames } : {}),
     ...(dimensions && Object.keys(dimensions).length > 0 ? { dimensions } : {}),
     ...(dimensionChanges && Object.keys(dimensionChanges).length > 0 ? { dimensionChanges } : {}),
   };
@@ -1081,6 +1134,7 @@ function maybeAddStructuredCharacterUnits({
   sourceHash,
   hints,
   deriveTimelineLinks,
+  characterIdentityKey,
 }: {
   units: LtmEvidenceUnit[];
   sections: StructuredSection[];
@@ -1089,11 +1143,16 @@ function maybeAddStructuredCharacterUnits({
   sourceHash: string;
   hints: StructuredSummaryHints;
   deriveTimelineLinks: boolean;
+  characterIdentityKey?: (unit: LtmEvidenceUnit) => string;
 }) {
   if (!allowed.has("character_fact") || !sourceNote) return units;
 
   const next = [...units];
-  const seen = new Set(next.filter((unit) => unit.bucket === "character_fact").map(characterUnitIdentity));
+  // Coverage is compared against the pre-backfill units only: two structured lines
+  // can describe the same subject with one text contained in the other, and a
+  // candidate must not be treated as covered by a sibling backfill unit.
+  const providerCharacters = next.filter((unit) => unit.bucket === "character_fact");
+  const seen = new Set(providerCharacters.map((unit) => characterUnitIdentity(unit, characterIdentityKey)));
 
   for (const section of sections) {
     if (section.bucket !== "character_fact") continue;
@@ -1103,8 +1162,13 @@ function maybeAddStructuredCharacterUnits({
         deriveTimelineLinks,
       });
       if (!unit) continue;
-      const identity = characterUnitIdentity(unit);
+      const identity = characterUnitIdentity(unit, characterIdentityKey);
       if (seen.has(identity)) continue;
+      // The provider may already have returned this fact with only its `text:`
+      // field, while the structured shorthand also folds a leading description
+      // into the parsed text. Treat a same-subject, same-section near-match as
+      // already-covered instead of appending a duplicate.
+      if (providerCharacters.some((existing) => characterFactCovers(existing, unit, characterIdentityKey))) continue;
       seen.add(identity);
       next.push(unit);
     }
@@ -1124,6 +1188,7 @@ function parseStructuredCharacterLine(
 
   const importanceResult = extractStructuredImportance(cleaned);
   let subjectId = "";
+  let subjectNames: string[] | undefined;
   let sectionKey = "";
   let importance = importanceResult.importance;
   let confidence = 0.9;
@@ -1157,8 +1222,13 @@ function parseStructuredCharacterLine(
     const value = stripInlineMarkup(parsed.value);
     if (!value) continue;
 
-    if (["id", "subject", "character", "character_id"].includes(key)) {
+    if (["id", "subject", "character", "character_id", "character_name", "name"].includes(key)) {
       subjectId = normalizeIdentifier(value, subjectId);
+      const isIdentifierOnly =
+        ["id", "character_id"].includes(key) || NOTE_ID_PREFIX_PATTERN.test(subjectId) || value.includes("_");
+      if (!isIdentifierOnly && value.trim()) {
+        subjectNames = [value.trim()];
+      }
       continue;
     }
     if (["section", "section_key", "stream"].includes(key)) {
@@ -1251,15 +1321,44 @@ function parseStructuredCharacterLine(
     status: "active",
     links: uniqueLinks(normalizedLinks),
     sourceHash,
+    ...(subjectNames && subjectNames.length > 0 ? { subjectNames } : {}),
   };
 }
 
-function characterUnitIdentity(unit: LtmEvidenceUnit) {
+function characterUnitIdentity(unit: LtmEvidenceUnit, characterIdentityKey?: (unit: LtmEvidenceUnit) => string) {
   return [
-    stripUnitSubjectPrefix("character_fact", unit.subjectId),
+    characterUnitSubjectKey(unit, characterIdentityKey),
     normalizeSectionKey(unit.sectionKey, "facts"),
     normalizeComparableText(unit.text),
   ].join("|");
+}
+
+function characterUnitSubjectKey(unit: LtmEvidenceUnit, characterIdentityKey?: (unit: LtmEvidenceUnit) => string) {
+  return characterIdentityKey ? characterIdentityKey(unit) : stripUnitSubjectPrefix("character_fact", unit.subjectId);
+}
+
+// The structured shorthand can fold a leading description into the parsed text,
+// so an otherwise-covered fact can differ from the provider's `text:` value.
+function characterFactCovers(
+  existing: LtmEvidenceUnit,
+  candidate: LtmEvidenceUnit,
+  characterIdentityKey?: (unit: LtmEvidenceUnit) => string,
+) {
+  if (
+    characterUnitSubjectKey(existing, characterIdentityKey) !== characterUnitSubjectKey(candidate, characterIdentityKey)
+  ) {
+    return false;
+  }
+  if (normalizeSectionKey(existing.sectionKey, "facts") !== normalizeSectionKey(candidate.sectionKey, "facts")) {
+    return false;
+  }
+  // Coverage must hold in both directions: requiring only that the candidate
+  // covers the existing text would treat any richer candidate as already
+  // covered and drop the extra detail the provider does not hold.
+  return (
+    relationshipTextOverlap(candidate.text, existing.text) >= 0.8 &&
+    relationshipTextOverlap(existing.text, candidate.text) >= 0.8
+  );
 }
 
 function normalizeComparableText(text: string) {

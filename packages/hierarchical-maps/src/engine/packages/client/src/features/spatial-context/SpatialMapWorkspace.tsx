@@ -30,7 +30,6 @@ import {
   getSpatialDescendantIds,
   resolveSpatialLocationDepth,
   resolveSpatialBreadcrumb,
-  spatialContextDefinitionSchema,
   validateSpatialArchive,
   type GameMap,
   type GenerateSpatialMapDraftResponse,
@@ -135,6 +134,7 @@ import {
   type SpatialHierarchyProfile,
   type SpatialMapTemplateRecord,
   type SpatialSharedWorldRecord,
+  spatialMapDefinitionSchema,
 } from "../../../../maps-shared/src/maps-model";
 
 type MobilePane = "hierarchy" | "local" | "details";
@@ -1644,7 +1644,7 @@ export function SpatialMapWorkspace({
         const rawRecord =
           raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
         const candidate = rawRecord && "definition" in rawRecord ? rawRecord.definition : raw;
-        const parsed = spatialContextDefinitionSchema.safeParse(candidate);
+        const parsed = spatialMapDefinitionSchema.safeParse(candidate);
         if (!parsed.success) {
           throw new Error(parsed.error.issues[0]?.message ?? "This file is not a valid world map.");
         }
@@ -2190,7 +2190,7 @@ export function SpatialMapWorkspace({
     (session: SpatialMapAiBuilderSession) => {
       if (!draft) return;
       const generated = session.result.definition;
-      const parsedGenerated = spatialContextDefinitionSchema.safeParse(generated);
+      const parsedGenerated = spatialMapDefinitionSchema.safeParse(generated);
       if (!parsedGenerated.success) {
         toast.error(parsedGenerated.error.issues[0]?.message ?? "The AI draft was not a valid world map.");
         return;

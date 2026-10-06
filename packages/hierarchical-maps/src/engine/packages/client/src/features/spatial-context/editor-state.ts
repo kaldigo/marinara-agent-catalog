@@ -2,8 +2,6 @@ import {
   buildSpatialLocationIndex,
   compareSpatialLocations,
   getSpatialDescendantIds,
-  spatialContextDefinitionSchema,
-  validateSpatialContextDefinition,
   wouldCreateSpatialCycle,
   type SpatialChildPresentation,
   type SpatialContextDefinition,
@@ -12,6 +10,7 @@ import {
   type SpatialLocationKind,
   type SpatialOwnerMode,
 } from "@marinara-engine/shared";
+import { spatialMapDefinitionSchema, validateSpatialMapDefinition } from "../../../../maps-shared/src/maps-model";
 
 export interface SpatialDefinitionDifference {
   added: string[];
@@ -401,8 +400,8 @@ export function removeSpatialSubtree(
 }
 
 export function spatialDefinitionIssues(definition: SpatialContextDefinition): SpatialDefinitionIssue[] {
-  const issues = [...validateSpatialContextDefinition(definition).issues];
-  const parsed = spatialContextDefinitionSchema.safeParse(definition);
+  const issues = [...validateSpatialMapDefinition(definition).issues];
+  const parsed = spatialMapDefinitionSchema.safeParse(definition);
   if (!parsed.success) {
     for (const schemaIssue of parsed.error.issues) {
       const path = schemaIssue.path.filter(

@@ -1,5 +1,4 @@
 import {
-  DEFAULT_LTM_EXTRACTION_MAX_EXISTING_NOTE_TOKENS,
   DEFAULT_LTM_EXTRACTION_MAX_TOKENS,
   DEFAULT_LTM_EXTRACTION_REASONING_EFFORT,
   DEFAULT_LTM_EXTRACTION_VERBOSITY,
@@ -23,7 +22,7 @@ import {
   type LtmNote,
   type LtmScope,
 } from "../../../../shared/src/features/agents/long-term-memory/index.js";
-import type { PackageLanguageModel } from "./package-runtime.js";
+import type { PackageLanguageModel, PackageLanguageModelError } from "./package-runtime.js";
 import { logger } from "./package-runtime.js";
 import { isPackageDebugAgentsEnabled } from "./package-runtime.js";
 import { countBy, safeSnippet } from "./ltm-utils.js";
@@ -38,11 +37,7 @@ import { compileLtmEvidenceUnits } from "./evidence-unit-compiler.js";
 import { noteIdForEvidenceUnit, validateLtmEvidenceUnits } from "./evidence-unit-validation.js";
 import { normalizeStructuredSummaryEvidenceUnits } from "./structured-summary-normalizer.js";
 import { isLocalCharacterSubject } from "./chat-scope.js";
-import {
-  filterDominatedLtmSubjectNotesForPrompt,
-  trustedLtmSubjectPromptCatalog,
-  type TrustedLtmSubjectCatalog,
-} from "./subject-identity.js";
+import { trustedLtmSubjectPromptCatalog, type TrustedLtmSubjectCatalog } from "./subject-identity.js";
 
 const LTM_EXTRACTION_BUCKET_SCAN_ORDER = [
   "timeline_event",
@@ -71,6 +66,8 @@ const LTM_EXTRACTION_LINK_RELATIONS = [
 ] as const;
 const LTM_EXTRACTION_LINK_RELATION_SET = new Set<string>(LTM_EXTRACTION_LINK_RELATIONS);
 const LTM_EXTRACTION_NOTE_ID_PREFIX_PATTERN = /^(?:timeline|thread|world|tone|rel|char)_/;
+const MIN_LTM_EXTRACTION_OUTPUT_TOKENS = 256;
+const MAX_LTM_EXTRACTION_DIAGNOSTICS = 500;
 const LTM_EXTRACTION_TIMELINE_LINK_RELATIONS = new Set<string>([
   "occurred_in",
   "triggered_by",
@@ -83,7 +80,7 @@ const LTM_EXTRACTION_TIMELINE_LINK_RELATIONS = new Set<string>([
 
 function serverEnforcedLinkRules(allowedBuckets: readonly LtmEvidenceUnit["bucket"][]) {
   return [
-    "Every link target must resolve to sourceNote.id, an exact existingTypedNotes id, or a target note derived from a unit in the same response.",
+    "Every link target must resolve to sourceNote.id or a target note derived from a unit in the same response.",
     'Every non-timeline unit with claimKind "change" must link to a timeline_event associated with this source. Static units do not require timeline links. Every timeline_event must link to sourceNote.id with extracted_from.',
     ...(allowedBuckets.includes("relationship_state")
       ? [
@@ -100,7 +97,6 @@ function serverEnforcedLinkPrompt(rules: readonly string[]) {
 export interface RunLongTermMemoryEvidenceUnitExtractionOptions {
   sourceNote: LtmNote;
   sourceText: string;
-  existingNotes: LtmNote[];
   languageModel: PackageLanguageModel;
   root?: string;
   scope: LtmScope;
@@ -112,7 +108,6 @@ export interface RunLongTermMemoryEvidenceUnitExtractionOptions {
   verbosity?: "none" | "low" | "medium" | "high";
   maxOutputTokens?: number;
   temperature?: number;
-  maxExistingNoteTokens?: number;
   signal?: AbortSignal;
   operationId?: string;
   allowedBuckets?: LtmEvidenceUnit["bucket"][];
@@ -126,8 +121,26 @@ export interface CompileEvidenceUnitExtractionResult {
   unitResponse: LtmEvidenceUnitExtractionResponse;
   compiledResponse: LtmExtractionResponse;
   diagnostics: LtmExtractionDiagnostic[];
+  /** True when full (pre-truncation) diagnostics require human review before auto-apply. */
+  requiresReview: boolean;
   outcome: LtmExtractionOutcome;
   accounting: LtmExtractionAccounting;
+}
+
+/** Diagnostic codes that must block low-risk auto-apply even if later truncated from the retained list. */
+export function diagnosticsRequireExtractionReview(diagnostics: readonly LtmExtractionDiagnostic[]) {
+  return diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "candidate_reconciliation_ambiguous" ||
+      diagnostic.code === "candidate_reconciliation_incomplete" ||
+      diagnostic.code === "ambiguous_subject_identity" ||
+      diagnostic.code === "event_shaped_character_fact",
+  );
+}
+
+export function boundLtmExtractionDiagnostics(diagnostics: readonly LtmExtractionDiagnostic[]) {
+  if (diagnostics.length <= MAX_LTM_EXTRACTION_DIAGNOSTICS) return [...diagnostics];
+  return [...diagnostics.slice(0, MAX_LTM_EXTRACTION_DIAGNOSTICS - 1), diagnostics[diagnostics.length - 1]!];
 }
 
 type ParsedEvidenceUnitPayload = {
@@ -137,21 +150,28 @@ type ParsedEvidenceUnitPayload = {
   droppedCandidates: LtmExtractionDroppedCandidate[];
 };
 
+const ltmProviderEvidenceUnitSchema = ltmEvidenceUnitSchema
+  .omit({ id: true, sourceHash: true })
+  .extend({ evidence: ltmEvidenceUnitSchema.shape.evidence.optional() });
+
 type LanguageModelMessage = Parameters<PackageLanguageModel["chatComplete"]>[0][number];
 type LanguageModelChatOptions = NonNullable<Parameters<PackageLanguageModel["chatComplete"]>[1]>;
 type LtmEvidenceUnitChatOptions = LanguageModelChatOptions & {
   reasoningEffort?: NonNullable<LanguageModelChatOptions["reasoningEffort"]>;
 };
 type LtmEvidenceUnitLinkRelation = LtmEvidenceUnit["links"][number]["relation"];
+type RawSubjectTargets = Map<string, string | null>;
 
 type RawEvidenceUnitTargetHints = {
   targetNoteIds: Set<string>;
-  timelineSubjects: Map<string, string>;
-  threadSubjects: Map<string, string>;
-  characterSubjects: Map<string, string>;
-  relationshipSubjects: Map<string, string>;
-  worldSubjects: Map<string, string>;
-  toneSubjects: Map<string, string>;
+  remappedNoteIds: Map<string, string | null>;
+  remappedSubjectTargets: Map<string, Set<string>>;
+  timelineSubjects: RawSubjectTargets;
+  threadSubjects: RawSubjectTargets;
+  characterSubjects: RawSubjectTargets;
+  relationshipSubjects: RawSubjectTargets;
+  worldSubjects: RawSubjectTargets;
+  toneSubjects: RawSubjectTargets;
   subjectTargets: Map<string, Set<string>>;
 };
 
@@ -170,13 +190,192 @@ function extractJsonObject(text: string) {
   return start >= 0 && end > start ? trimmed.slice(start, end + 1) : trimmed;
 }
 
+function recoverTruncatedEvidenceUnitPayload(text: string) {
+  let inString = false;
+  let escaped = false;
+  const firstObject = (() => {
+    inString = false;
+    escaped = false;
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') inString = false;
+      } else if (character === '"') inString = true;
+      else if (character === "{") return index;
+    }
+    return -1;
+  })();
+  if (firstObject < 0) return null;
+  const skipValue = (start: number) => {
+    const first = text[start];
+    if (first === '"') {
+      let escaped = false;
+      for (let index = start + 1; index < text.length; index += 1) {
+        const character = text[index];
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') return index + 1;
+      }
+      return text.length;
+    }
+    if (first !== "{" && first !== "[") {
+      const delimiter = text.slice(start).search(/[,}]/u);
+      return delimiter < 0 ? text.length : start + delimiter;
+    }
+    const stack = [first];
+    let inString = false;
+    let escaped = false;
+    for (let index = start + 1; index < text.length; index += 1) {
+      const character = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') inString = true;
+      else if (character === "{" || character === "[") stack.push(character);
+      else if (character === "}" || character === "]") {
+        stack.pop();
+        if (!stack.length) return index + 1;
+      }
+    }
+    return text.length;
+  };
+  let index = firstObject + 1;
+  let unitsStart = -1;
+  while (index < text.length) {
+    while (/\s|,/u.test(text[index] ?? "")) index += 1;
+    if (text[index] !== '"') break;
+    const keyStart = index;
+    const keyEnd = skipValue(index);
+    let key: unknown;
+    try {
+      key = JSON.parse(text.slice(keyStart, keyEnd));
+    } catch {
+      return null;
+    }
+    index = keyEnd;
+    while (/\s/u.test(text[index] ?? "")) index += 1;
+    if (text[index] !== ":") return null;
+    index += 1;
+    while (/\s/u.test(text[index] ?? "")) index += 1;
+    if (key === "units" && text[index] === "[") {
+      unitsStart = index;
+      break;
+    }
+    index = skipValue(index);
+  }
+  if (unitsStart < 0) return null;
+  const arrayStart = unitsStart;
+  if (arrayStart < 0) return null;
+  const units: unknown[] = [];
+  let objectStart = -1;
+  let depth = 0;
+  inString = false;
+  escaped = false;
+  for (let index = arrayStart + 1; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === "]" && depth === 0) {
+      break;
+    }
+    if (character === "{" && depth === 0) {
+      objectStart = index;
+    }
+    if (character === "{" || character === "[") {
+      depth += 1;
+    } else if (character === "}" || character === "]") {
+      depth = Math.max(0, depth - 1);
+    }
+    if (character === "}" && depth === 0 && objectStart >= 0) {
+      try {
+        units.push(JSON.parse(text.slice(objectStart, index + 1)));
+      } catch {
+        return null;
+      }
+      objectStart = -1;
+    }
+  }
+  if (!units.length) return null;
+  const summary = text.match(/"summary"\s*:\s*"((?:\\.|[^"\\])*)"/u)?.[1];
+  return { summary: summary ? JSON.parse(`"${summary}"`) : "", units };
+}
+
 function isEvidenceUnitResponseObject(value: unknown): value is Record<string, unknown> {
   return Boolean(
     value && typeof value === "object" && !Array.isArray(value) && "units" in value && Array.isArray(value.units),
   );
 }
 
+function structuredProviderError(error: unknown) {
+  if (!error || typeof error !== "object") return null;
+  const value = error as PackageLanguageModelError;
+  return {
+    status: typeof value.status === "number" ? value.status : undefined,
+    code: typeof value.code === "string" ? value.code.toLowerCase() : "",
+    parameter:
+      typeof value.param === "string"
+        ? value.param.toLowerCase()
+        : typeof value.parameter === "string"
+          ? value.parameter.toLowerCase()
+          : "",
+  };
+}
+
+function hasProviderCompatibilityCode(code: string, identifiers: string[]) {
+  const tokens = code.split(/[^a-z0-9]+/u).filter(Boolean);
+  const markers = new Set(["unsupported", "unrecognized", "invalid"]);
+  return identifiers.some((identifier) => {
+    const identifierTokens = identifier.split("_");
+    return (
+      tokens.length === identifierTokens.length + 1 &&
+      tokens.some((token, index) => {
+        if (!markers.has(token)) return false;
+        const remaining = tokens.filter((_, tokenIndex) => tokenIndex !== index);
+        return identifierTokens.every((identifierToken, tokenIndex) => remaining[tokenIndex] === identifierToken);
+      })
+    );
+  });
+}
+
+function isProviderCompatibilityError(error: unknown) {
+  const structured = structuredProviderError(error);
+  if (
+    structured?.code &&
+    /(?:auth|forbidden|quota|rate[_-]?limit|timeout|overload|unavailable)/u.test(structured.code)
+  ) {
+    return false;
+  }
+  if (structured?.status && [401, 403, 408, 409, 413, 429, 500, 502, 503, 504, 529].includes(structured.status)) {
+    return false;
+  }
+  return true;
+}
+
 function isReasoningNoneUnsupportedError(error: unknown) {
+  if (!isProviderCompatibilityError(error)) return false;
+  const structured = structuredProviderError(error);
+  if (["reasoning", "reasoning_effort", "thinking", "enable_thinking"].includes(structured?.parameter ?? "")) {
+    return true;
+  }
+  if (
+    structured?.code &&
+    hasProviderCompatibilityCode(structured.code, ["reasoning", "reasoning_effort", "thinking", "enable_thinking"])
+  ) {
+    return true;
+  }
   const message = error instanceof Error ? error.message : String(error);
   return (
     /\b(?:reasoning|reasoning_effort|effort|thinking|enable_thinking)\b/i.test(message) &&
@@ -185,6 +384,17 @@ function isReasoningNoneUnsupportedError(error: unknown) {
 }
 
 function isResponseFormatUnsupportedError(error: unknown) {
+  if (!isProviderCompatibilityError(error)) return false;
+  const structured = structuredProviderError(error);
+  if (["response_format", "json_schema", "structured_output", "schema"].includes(structured?.parameter ?? "")) {
+    return true;
+  }
+  if (
+    structured?.code &&
+    hasProviderCompatibilityCode(structured.code, ["response_format", "json_schema", "structured_output"])
+  ) {
+    return true;
+  }
   const message = error instanceof Error ? error.message : String(error);
   return (
     (/\b(?:response_format|response format|json_schema|json schema|structured output|schema)\b/i.test(message) &&
@@ -227,23 +437,19 @@ export function evidenceUnitResponseFormat(options: {
               type: "object",
               additionalProperties: false,
               required: [
-                "id",
                 "bucket",
                 "subjectId",
                 "sectionKey",
                 "text",
                 "claimKind",
                 "importance",
-                "evidence",
                 "confidence",
                 "salience",
                 "status",
                 "links",
-                "sourceHash",
                 ...(resolveSubjectNames ? ["subjectNames"] : []),
               ],
               properties: {
-                id: { type: "string", format: "uuid" },
                 bucket: { type: "string", enum: options.allowedBuckets },
                 subjectId: { type: "string", pattern: "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$", maxLength: 120 },
                 sectionKey: { type: "string", pattern: "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$", maxLength: 80 },
@@ -268,7 +474,7 @@ export function evidenceUnitResponseFormat(options: {
                 links: {
                   type: "array",
                   description:
-                    "Every link target must resolve to the source note, an existing note, or a target note derived from a unit in the same response.",
+                    "Every link target must resolve to the source note or a target note derived from a unit in the same response.",
                   maxItems: 50,
                   items: {
                     type: "object",
@@ -279,53 +485,26 @@ export function evidenceUnitResponseFormat(options: {
                         type: "string",
                         pattern: "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
                         maxLength: 120,
-                        description:
-                          "Exact existing note id or target note id derived from a unit in the same response.",
+                        description: "Target note id derived from a unit in the same response, or the source note id.",
                       },
                       relation: { type: "string", enum: LTM_EXTRACTION_LINK_RELATIONS },
                       aspect: { type: "string", maxLength: 50 },
                     },
                   },
                 },
-                sourceHash: { type: "string", enum: [options.sourceHash] },
                 subjectNames: {
                   type: "array",
-                  uniqueItems: true,
                   maxItems: 2,
                   items: { type: "string", minLength: 1, maxLength: 240 },
                 },
                 subjectKeys: {
                   type: "array",
-                  uniqueItems: true,
                   maxItems: 3,
                   items: { type: "string", minLength: 1, maxLength: 240 },
                 },
                 dimensions: relationshipDimensionSchema(0, 100),
                 dimensionChanges: relationshipDimensionSchema(-100, 100),
               },
-              ...(resolveSubjectNames
-                ? {
-                    allOf: [
-                      {
-                        if: { properties: { bucket: { const: "character_fact" } }, required: ["bucket"] },
-                        then: { properties: { subjectNames: { minItems: 1, maxItems: 1 } } },
-                      },
-                      {
-                        if: { properties: { bucket: { const: "relationship_state" } }, required: ["bucket"] },
-                        then: { properties: { subjectNames: { minItems: 2, maxItems: 2 } } },
-                      },
-                      {
-                        if: {
-                          properties: {
-                            bucket: { not: { enum: ["character_fact", "relationship_state"] } },
-                          },
-                          required: ["bucket"],
-                        },
-                        then: { properties: { subjectNames: { maxItems: 0 } } },
-                      },
-                    ],
-                  }
-                : {}),
             },
           },
         },
@@ -338,17 +517,19 @@ async function chatCompleteWithReasoningFallback({
   messages,
   chatOptions,
   extractionOptions,
-  fallbackUsed = false,
+  responseFormatFallbackUsed = false,
+  reasoningFallbackUsed = false,
 }: {
   messages: LanguageModelMessage[];
   chatOptions: LtmEvidenceUnitChatOptions;
   extractionOptions: RunLongTermMemoryEvidenceUnitExtractionOptions;
-  fallbackUsed?: boolean;
+  responseFormatFallbackUsed?: boolean;
+  reasoningFallbackUsed?: boolean;
 }) {
   try {
     return await extractionOptions.languageModel.chatComplete(messages, chatOptions);
   } catch (err) {
-    if (fallbackUsed) {
+    if (responseFormatFallbackUsed && reasoningFallbackUsed) {
       logger.warn(err, "[ltm] LLM compatibility fallback failed for evidence unit extraction");
       throw err;
     }
@@ -374,7 +555,8 @@ async function chatCompleteWithReasoningFallback({
         messages,
         chatOptions: fallbackChatOptions,
         extractionOptions,
-        fallbackUsed: true,
+        responseFormatFallbackUsed: true,
+        reasoningFallbackUsed,
       });
     }
 
@@ -393,18 +575,18 @@ async function chatCompleteWithReasoningFallback({
       model: extractionOptions.languageModel.model,
       error: err,
       details: {
-        requestedReasoningEffort: "none",
-        appliedReasoningEffort: DEFAULT_LTM_EXTRACTION_REASONING_EFFORT,
+        requestedReasoningEffort: chatOptions.reasoningEffort,
+        appliedReasoningEffort: "none",
       },
     });
+    const fallbackChatOptions = { ...chatOptions };
+    delete fallbackChatOptions.reasoningEffort;
     return chatCompleteWithReasoningFallback({
       messages,
-      chatOptions: {
-        ...chatOptions,
-        reasoningEffort: DEFAULT_LTM_EXTRACTION_REASONING_EFFORT,
-      },
+      chatOptions: fallbackChatOptions,
       extractionOptions,
-      fallbackUsed: true,
+      responseFormatFallbackUsed,
+      reasoningFallbackUsed: true,
     });
   }
 }
@@ -418,22 +600,77 @@ function deterministicEvidenceUnitId(record: Record<string, unknown>, expectedSo
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-function normalizedEvidenceUnitRecord(unit: unknown, expectedSourceHash: string): unknown {
+function normalizedEvidenceUnitRecord(unit: unknown, expectedSourceHash: string, trustedEvidence: string[]): unknown {
   if (!unit || typeof unit !== "object" || Array.isArray(unit)) return unit;
   const record = unit as Record<string, unknown>;
+  const names = Array.isArray(record.subjectNames) ? record.subjectNames : [];
+  const expectedNames = record.bucket === "character_fact" ? 1 : record.bucket === "relationship_state" ? 2 : 0;
+  const recoverableNames =
+    names.length === expectedNames && names.every((name) => typeof name === "string" && name.trim());
+  const prefixes: Record<string, string> = {
+    timeline_event: "timeline",
+    relationship_state: "rel",
+    character_fact: "char",
+    thread: "thread",
+    world_fact: "world",
+    tone: "tone",
+  };
+  const prefix =
+    record.bucket === "anchor"
+      ? typeof record.sectionKey === "string" && record.sectionKey.startsWith("tone")
+        ? "tone"
+        : "world"
+      : typeof record.bucket === "string"
+        ? (prefixes[record.bucket] ?? null)
+        : null;
+  const subjectId =
+    expectedNames && recoverableNames && !ltmEvidenceUnitSchema.shape.subjectId.safeParse(record.subjectId).success
+      ? normalizeRawIdentifier(names.join("_"), "subject")
+      : record.subjectId;
+  const rawSubject = normalizeRawIdentifier(subjectId, "");
+  const maxSubjectLength = prefix
+    ? 120 - (rawSubject.startsWith(`${prefix}_`) ? 0 : prefix.length + 1) - (prefix === "timeline" ? 11 : 0)
+    : 120;
+  const boundedSubject =
+    rawSubject.length > maxSubjectLength
+      ? `${rawSubject.slice(0, maxSubjectLength - 11).replace(/_+$/g, "")}_${stableJsonHash(rawSubject).slice(0, 10)}`
+      : subjectId;
   return {
     ...record,
+    ...(boundedSubject !== record.subjectId ? { subjectId: boundedSubject } : {}),
     id: deterministicEvidenceUnitId(record, expectedSourceHash),
     sourceHash: expectedSourceHash,
+    ...(record.evidence === undefined && trustedEvidence.length ? { evidence: trustedEvidence } : {}),
   };
 }
 
-function normalizeEvidenceUnitResponse(raw: unknown, expectedSourceHash: string): unknown {
+function normalizeEvidenceUnitResponse(raw: unknown, expectedSourceHash: string, trustedEvidence: string[]): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const parsed = raw as Record<string, unknown>;
   const units = Array.isArray(parsed.units) ? parsed.units : [];
-  const normalizedUnits = units.map((unit) => normalizedEvidenceUnitRecord(unit, expectedSourceHash));
+  const normalizedUnits = units.map((unit) => normalizedEvidenceUnitRecord(unit, expectedSourceHash, trustedEvidence));
   const targetHints = rawEvidenceUnitTargetHints(normalizedUnits);
+  for (const [index, original] of units.entries()) {
+    if (!original || typeof original !== "object" || Array.isArray(original)) continue;
+    const old = original as Record<string, unknown>;
+    const next = normalizedUnits[index] as Record<string, unknown> | undefined;
+    if (typeof old.bucket !== "string" || typeof old.subjectId !== "string" || typeof next?.subjectId !== "string")
+      continue;
+    const sectionKey = typeof old.sectionKey === "string" ? normalizeRawIdentifier(old.sectionKey, "") : "";
+    const before = noteIdForRawEvidenceUnit(old.bucket, normalizeRawIdentifier(old.subjectId, ""), sectionKey);
+    const after = noteIdForRawEvidenceUnit(old.bucket, next.subjectId, sectionKey);
+    if (before && after && before !== after) {
+      addRemappedNoteId(targetHints.remappedNoteIds, before, after);
+      addSubjectTarget(targetHints.remappedSubjectTargets, normalizeRawIdentifier(old.subjectId, ""), after);
+      addRemappedSubjectHint(
+        targetHints,
+        old.bucket,
+        normalizeRawIdentifier(old.subjectId, ""),
+        next.subjectId,
+        typeof old.sectionKey === "string" ? normalizeRawIdentifier(old.sectionKey, "") : "",
+      );
+    }
+  }
   return {
     ...parsed,
     units: normalizedUnits.map((unit) => normalizedEvidenceUnitLinks(unit, targetHints)),
@@ -443,6 +680,8 @@ function normalizeEvidenceUnitResponse(raw: unknown, expectedSourceHash: string)
 function rawEvidenceUnitTargetHints(units: unknown[]): RawEvidenceUnitTargetHints {
   const hints: RawEvidenceUnitTargetHints = {
     targetNoteIds: new Set(),
+    remappedNoteIds: new Map(),
+    remappedSubjectTargets: new Map(),
     timelineSubjects: new Map(),
     threadSubjects: new Map(),
     characterSubjects: new Map(),
@@ -467,23 +706,23 @@ function rawEvidenceUnitTargetHints(units: unknown[]): RawEvidenceUnitTargetHint
     addSubjectTarget(hints.subjectTargets, stripRawNotePrefix(subjectId), noteId);
 
     if (bucket === "timeline_event") {
-      hints.timelineSubjects.set(stripRawNotePrefix(subjectId, "timeline"), noteId);
+      addSubjectHint(hints.timelineSubjects, stripRawNotePrefix(subjectId, "timeline"), noteId);
     } else if (bucket === "thread") {
-      hints.threadSubjects.set(stripRawNotePrefix(subjectId, "thread"), noteId);
+      addSubjectHint(hints.threadSubjects, stripRawNotePrefix(subjectId, "thread"), noteId);
     } else if (bucket === "character_fact") {
-      hints.characterSubjects.set(stripRawNotePrefix(subjectId, "char"), noteId);
+      addSubjectHint(hints.characterSubjects, stripRawNotePrefix(subjectId, "char"), noteId);
     } else if (bucket === "relationship_state") {
-      hints.relationshipSubjects.set(stripRawNotePrefix(subjectId, "rel"), noteId);
+      addSubjectHint(hints.relationshipSubjects, stripRawNotePrefix(subjectId, "rel"), noteId);
     } else if (bucket === "world_fact") {
-      hints.worldSubjects.set(stripRawNotePrefix(subjectId, "world"), noteId);
+      addSubjectHint(hints.worldSubjects, stripRawNotePrefix(subjectId, "world"), noteId);
     } else if (bucket === "tone") {
-      hints.toneSubjects.set(stripRawNotePrefix(subjectId, "tone"), noteId);
+      addSubjectHint(hints.toneSubjects, stripRawNotePrefix(subjectId, "tone"), noteId);
     } else if (bucket === "anchor") {
       const subject = stripRawNotePrefix(subjectId, sectionKey.startsWith("tone") ? "tone" : "world");
       if (sectionKey.startsWith("tone")) {
-        hints.toneSubjects.set(subject, noteId);
+        addSubjectHint(hints.toneSubjects, subject, noteId);
       } else {
-        hints.worldSubjects.set(subject, noteId);
+        addSubjectHint(hints.worldSubjects, subject, noteId);
       }
     }
   }
@@ -496,6 +735,66 @@ function addSubjectTarget(targets: Map<string, Set<string>>, subjectId: string, 
   const current = targets.get(subjectId) ?? new Set<string>();
   current.add(noteId);
   targets.set(subjectId, current);
+}
+
+function addRemappedNoteId(remapped: Map<string, string | null>, before: string, after: string) {
+  const existing = remapped.get(before);
+  remapped.set(before, existing === undefined || existing === after ? after : null);
+}
+
+function addSubjectHint(targets: RawSubjectTargets, subjectId: string, noteId: string) {
+  if (!subjectId) return;
+  const existing = targets.get(subjectId);
+  targets.set(subjectId, existing === undefined || existing === noteId ? noteId : null);
+}
+
+function addRemappedSubjectHint(
+  hints: RawEvidenceUnitTargetHints,
+  bucket: string,
+  oldSubject: string,
+  newSubject: string,
+  sectionKey: string,
+) {
+  const target = noteIdForRawEvidenceUnit(bucket, newSubject, sectionKey);
+  if (!target || !oldSubject) return;
+  const prefix =
+    bucket === "timeline_event"
+      ? "timeline"
+      : bucket === "thread"
+        ? "thread"
+        : bucket === "character_fact"
+          ? "char"
+          : bucket === "relationship_state"
+            ? "rel"
+            : bucket === "world_fact"
+              ? "world"
+              : bucket === "tone" || (bucket === "anchor" && sectionKey.startsWith("tone"))
+                ? "tone"
+                : bucket === "anchor"
+                  ? "world"
+                  : null;
+  if (!prefix) return;
+  const subject = stripRawNotePrefix(oldSubject, prefix);
+  switch (prefix) {
+    case "timeline":
+      addSubjectHint(hints.timelineSubjects, subject, target);
+      break;
+    case "thread":
+      addSubjectHint(hints.threadSubjects, subject, target);
+      break;
+    case "char":
+      addSubjectHint(hints.characterSubjects, subject, target);
+      break;
+    case "rel":
+      addSubjectHint(hints.relationshipSubjects, subject, target);
+      break;
+    case "world":
+      addSubjectHint(hints.worldSubjects, subject, target);
+      break;
+    case "tone":
+      addSubjectHint(hints.toneSubjects, subject, target);
+      break;
+  }
 }
 
 function noteIdForRawEvidenceUnit(bucket: string, subjectId: string, sectionKey: string) {
@@ -558,12 +857,13 @@ function normalizeRawLinkTarget(
   const identifier = normalizeRawIdentifier(sourceNoteMatch?.[1] ?? value, "");
   if (!identifier) return null;
   if (sourceNoteMatch) return identifier;
+  if (hints.remappedNoteIds.has(identifier)) return hints.remappedNoteIds.get(identifier) ?? null;
   const rawWasIdentifier = rawText === identifier;
   if (hints.targetNoteIds.has(identifier)) return identifier;
 
   const unprefixed = stripRawNotePrefix(identifier);
   const sameBatchTarget = targetForRelation(identifier, unprefixed, relation, hints);
-  if (sameBatchTarget) return sameBatchTarget;
+  if (sameBatchTarget !== undefined) return sameBatchTarget;
   if (LTM_EXTRACTION_NOTE_ID_PREFIX_PATTERN.test(identifier)) return identifier;
 
   if (LTM_EXTRACTION_TIMELINE_LINK_RELATIONS.has(relation)) return prefixedRawNoteId("timeline", identifier);
@@ -583,28 +883,48 @@ function targetForRelation(
   unprefixed: string,
   relation: LtmEvidenceUnitLinkRelation,
   hints: RawEvidenceUnitTargetHints,
-) {
+): string | null | undefined {
   if (LTM_EXTRACTION_TIMELINE_LINK_RELATIONS.has(relation)) {
-    return hints.timelineSubjects.get(unprefixed) ?? hints.timelineSubjects.get(identifier);
+    return subjectHint(hints.timelineSubjects, unprefixed, identifier);
   }
   if (relation === "blocks") {
-    return hints.threadSubjects.get(unprefixed) ?? hints.threadSubjects.get(identifier);
+    return subjectHint(hints.threadSubjects, unprefixed, identifier);
   }
   if (relation === "affects_character") {
-    return hints.characterSubjects.get(unprefixed) ?? hints.characterSubjects.get(identifier);
+    return subjectHint(hints.characterSubjects, unprefixed, identifier);
   }
   if (relation === "affects_relationship") {
-    return hints.relationshipSubjects.get(unprefixed) ?? hints.relationshipSubjects.get(identifier);
+    return subjectHint(hints.relationshipSubjects, unprefixed, identifier);
   }
-  return (
-    hints.timelineSubjects.get(unprefixed) ??
-    hints.threadSubjects.get(unprefixed) ??
-    hints.characterSubjects.get(unprefixed) ??
-    hints.relationshipSubjects.get(unprefixed) ??
-    hints.worldSubjects.get(unprefixed) ??
-    hints.toneSubjects.get(unprefixed) ??
-    null
-  );
+  return genericSubjectHint(identifier, unprefixed, hints);
+}
+
+function subjectHint(targets: RawSubjectTargets, ...keys: string[]): string | null | undefined {
+  for (const key of keys) {
+    if (targets.has(key)) return targets.get(key);
+  }
+  return undefined;
+}
+
+function genericSubjectHint(identifier: string, unprefixed: string, hints: RawEvidenceUnitTargetHints) {
+  const candidates = new Set<string>();
+  for (const key of new Set([unprefixed, identifier])) {
+    for (const target of hints.remappedSubjectTargets.get(key) ?? []) candidates.add(target);
+  }
+  for (const targets of [
+    hints.timelineSubjects,
+    hints.threadSubjects,
+    hints.characterSubjects,
+    hints.relationshipSubjects,
+    hints.worldSubjects,
+    hints.toneSubjects,
+  ]) {
+    const target = subjectHint(targets, unprefixed, identifier);
+    if (target === null) return null;
+    if (target !== undefined) candidates.add(target);
+  }
+  if (candidates.size > 1) return null;
+  return candidates.size === 1 ? [...candidates][0]! : undefined;
 }
 
 function normalizeRawIdentifier(value: unknown, fallback: string) {
@@ -638,14 +958,15 @@ function formatZodIssue(issue: { path: Array<string | number>; message: string }
   return `${path}: ${issue.message}`;
 }
 
-export function parseEvidenceUnitPayload(raw: unknown, expectedSourceHash: string): ParsedEvidenceUnitPayload {
+export function parseEvidenceUnitPayload(
+  raw: unknown,
+  expectedSourceHash: string,
+  trustedEvidence: string[] = [],
+): ParsedEvidenceUnitPayload {
   const input = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const inputUnits = Array.isArray(input.units) ? input.units : [];
-  if (inputUnits.length > LTM_EXTRACTION_MAX_CANDIDATES) {
-    throw new Error(
-      `Extraction response contains ${inputUnits.length} candidates; the maximum is ${LTM_EXTRACTION_MAX_CANDIDATES}.`,
-    );
-  }
+  const allInputUnits = Array.isArray(input.units) ? input.units : [];
+  const inputUnits = allInputUnits.slice(0, LTM_EXTRACTION_MAX_CANDIDATES);
+  const overflowCount = Math.max(0, allInputUnits.length - inputUnits.length);
   const normalized = normalizeEvidenceUnitResponse(
     {
       ...input,
@@ -653,6 +974,7 @@ export function parseEvidenceUnitPayload(raw: unknown, expectedSourceHash: strin
       units: inputUnits,
     },
     expectedSourceHash,
+    trustedEvidence,
   );
   const record =
     normalized && typeof normalized === "object" && !Array.isArray(normalized)
@@ -662,17 +984,30 @@ export function parseEvidenceUnitPayload(raw: unknown, expectedSourceHash: strin
   const rawUnits = Array.isArray(record.units) ? record.units : [];
   const units: LtmEvidenceUnit[] = [];
   const droppedCandidates: LtmExtractionDroppedCandidate[] = [];
+  const rejectionDetailLimit =
+    overflowCount > 0 ? LTM_EXTRACTION_MAX_REJECTION_DETAILS - 1 : LTM_EXTRACTION_MAX_REJECTION_DETAILS;
 
   for (const [index, candidate] of rawUnits.entries()) {
-    const parsed = ltmEvidenceUnitSchema.safeParse(candidate);
+    const parsed = ltmProviderEvidenceUnitSchema.safeParse(candidate);
     if (parsed.success) {
-      units.push({
+      const normalizedUnit = ltmEvidenceUnitSchema.safeParse({
         ...parsed.data,
         id: deterministicEvidenceUnitId(parsed.data as unknown as Record<string, unknown>, expectedSourceHash),
+        sourceHash: expectedSourceHash,
       });
+      if (normalizedUnit.success) units.push(normalizedUnit.data);
+      else if (droppedCandidates.length < rejectionDetailLimit)
+        droppedCandidates.push({
+          index,
+          reason: "invalid_format",
+          validatorCode: "invalid_evidence_unit_format",
+          message: "Dropped a malformed candidate.",
+          ...(extractCandidateSnippet(candidate) ? { snippet: extractCandidateSnippet(candidate) } : {}),
+          issues: normalizedUnit.error.issues.map(formatZodIssue).slice(0, 8),
+        });
       continue;
     }
-    if (droppedCandidates.length < LTM_EXTRACTION_MAX_REJECTION_DETAILS)
+    if (droppedCandidates.length < rejectionDetailLimit)
       droppedCandidates.push({
         index,
         reason: "invalid_format",
@@ -683,39 +1018,29 @@ export function parseEvidenceUnitPayload(raw: unknown, expectedSourceHash: strin
       });
   }
 
+  if (overflowCount > 0 && droppedCandidates.length < LTM_EXTRACTION_MAX_REJECTION_DETAILS) {
+    droppedCandidates.push({
+      index: LTM_EXTRACTION_MAX_CANDIDATES,
+      reason: "candidate_overflow",
+      validatorCode: "candidate_overflow",
+      message: `Dropped ${overflowCount} candidate(s) exceeding the extraction processing limit.`,
+    });
+  }
+
   return {
-    response: ltmEvidenceUnitExtractionResponseSchema.parse({ summary, units }),
-    totalCandidates: rawUnits.length,
-    parserRejections: rawUnits.length - units.length,
+    response: ltmEvidenceUnitExtractionResponseSchema.parse({
+      summary,
+      units,
+      incomplete: input.incomplete === true,
+    }),
+    totalCandidates: allInputUnits.length,
+    parserRejections: allInputUnits.length - units.length,
     droppedCandidates,
   };
 }
 
 function estimateLtmPromptTokens(text: string) {
   return Math.max(1, Math.ceil(text.length / 4));
-}
-
-function formatExistingNotes(notes: LtmNote[], maxTokens = DEFAULT_LTM_EXTRACTION_MAX_EXISTING_NOTE_TOKENS) {
-  let usedTokens = 0;
-  const blocks: string[] = [];
-  for (const note of notes) {
-    const sections = Object.entries(note.sections)
-      .map(([key, section]) => `${key}: ${section.text}`)
-      .join("\n");
-    const block = [
-      `id: ${note.id}`,
-      `type: ${note.type}`,
-      `status: ${note.status}`,
-      `tags: ${note.tags.join(", ") || "(none)"}`,
-      `subjects: ${note.subjects?.map((subject) => subject.key).join(", ") || "(unbound)"}`,
-      `sections:\n${sections}`,
-    ].join("\n");
-    const blockTokens = estimateLtmPromptTokens(block);
-    if (usedTokens + blockTokens > maxTokens) break;
-    usedTokens += blockTokens;
-    blocks.push(block);
-  }
-  return blocks.length ? blocks.join("\n\n---\n\n") : "(no relevant memory streams)";
 }
 
 async function preflightExtractionPromptContext({
@@ -728,12 +1053,45 @@ async function preflightExtractionPromptContext({
   extractionOptions: RunLongTermMemoryEvidenceUnitExtractionOptions;
 }): Promise<number | undefined> {
   const providerMaxContext = extractionOptions.languageModel.maxContext ?? undefined;
-  if (!providerMaxContext) return;
-
-  const fit = extractionOptions.languageModel.fitContext(messages, { maxTokens: chatOptions.maxTokens });
-  const requestedMaxTokens = chatOptions.maxTokens;
+  const requestedMaxTokens = extractionOptions.maxOutputTokens ?? chatOptions.maxTokens;
+  const providerCappedMaxTokens = chatOptions.maxTokens;
+  const fit = providerMaxContext
+    ? extractionOptions.languageModel.fitContext(messages, { maxTokens: providerCappedMaxTokens })
+    : undefined;
   const reducedOutputBudget =
-    typeof requestedMaxTokens === "number" && typeof fit.maxTokens === "number" && fit.maxTokens < requestedMaxTokens;
+    typeof providerCappedMaxTokens === "number" &&
+    typeof fit?.maxTokens === "number" &&
+    fit.maxTokens < providerCappedMaxTokens;
+  const fittedOutputTokens = fit?.maxTokens ?? providerCappedMaxTokens;
+  if (typeof fittedOutputTokens === "number" && fittedOutputTokens < MIN_LTM_EXTRACTION_OUTPUT_TOKENS) {
+    await recordLtmDebugEvent({
+      operationId: extractionOptions.operationId,
+      root: extractionOptions.root,
+      phase: "llm",
+      action: "evidence_unit_context_preflight",
+      status: "error",
+      sourceNoteId: extractionOptions.sourceNote.id,
+      provider: extractionOptions.languageModel.name,
+      model: extractionOptions.languageModel.model,
+      counts: {
+        ...(providerMaxContext != null ? { maxContext: providerMaxContext } : {}),
+        requestedOutputTokens: requestedMaxTokens ?? 0,
+        providerCappedOutputTokens: providerCappedMaxTokens ?? 0,
+        fittedOutputTokens,
+        minimumOutputTokens: MIN_LTM_EXTRACTION_OUTPUT_TOKENS,
+        ...(fit
+          ? { estimatedPromptTokens: fit.estimatedTokensBefore, fittedPromptTokens: fit.estimatedTokensAfter }
+          : {}),
+      },
+      details: { reason: "output_budget_below_viability_floor" },
+    });
+    throw new LtmServiceError(
+      `Long-term memory extraction model cannot provide a viable response budget (requested=${requestedMaxTokens}, providerCapped=${providerCappedMaxTokens}, fitted=${fittedOutputTokens}, minimum=${MIN_LTM_EXTRACTION_OUTPUT_TOKENS}). Choose a larger-context model or reduce the extraction input.`,
+      400,
+      "ltm_model_output_budget_unviable",
+    );
+  }
+  if (!providerMaxContext || !fit) return;
   if (!fit.trimmed && !reducedOutputBudget) return;
 
   await recordLtmDebugEvent({
@@ -752,7 +1110,6 @@ async function preflightExtractionPromptContext({
       estimatedPromptTokens: fit.estimatedTokensBefore,
       fittedPromptTokens: fit.estimatedTokensAfter,
       sourceChars: extractionOptions.sourceText.length,
-      existingNotes: extractionOptions.existingNotes.length,
     },
     details: {
       reason: fit.trimmed ? "prompt_trim_required" : "output_budget_reduced",
@@ -830,7 +1187,6 @@ export function evidenceUnitMessages(options: RunLongTermMemoryEvidenceUnitExtra
           units: "array of evidence unit objects, bounded by the completion token budget",
         },
         unitFields: {
-          id: "uuid",
           bucket: "one allowed stream value from allowedStreams",
           subjectId: resolveSubjectNames
             ? "real lowercase_snake_case source label; the server replaces character and relationship labels with canonical targets"
@@ -847,17 +1203,16 @@ export function evidenceUnitMessages(options: RunLongTermMemoryEvidenceUnitExtra
           claimKind: '"static" for an enduring fact/state; "change" for an event or event-caused outcome',
           importance: "one of critical, major, moderate, minor",
           ...(options.aiKeywordExtraction ? { keywords: "array of 3..5 concise keyword strings" } : {}),
-          evidence: "array containing supplied source_note evidence",
+          evidence: "optional array containing supplied source_note evidence; defaults to the source note",
           confidence: "0..1",
           salience: "0..1",
           status: "one allowedStatuses value",
           links:
-            "real links only, otherwise []; targets must be derived from units in the same response or copied exactly from sourceNote.id or existingTypedNotes",
+            "real links only, otherwise []; targets must be derived from units in the same response or copied exactly from sourceNote.id",
           dimensions:
             "relationship_state only: optional object with allowedRelationshipDimensions keys and 0..100 integer values",
           dimensionChanges:
             "relationship_state only: optional object with allowedRelationshipDimensions keys and -100..100 integer deltas",
-          sourceHash: options.sourceHash,
         },
         allowedStreams: allowedBuckets,
         allowedStatuses: ["active", "resolved"],
@@ -873,6 +1228,8 @@ export function evidenceUnitMessages(options: RunLongTermMemoryEvidenceUnitExtra
           "resolved_in",
           "evidenced_by",
           "caused_by",
+          "planted_in",
+          "paid_off_in",
           "affects_relationship",
           "affects_character",
         ],
@@ -896,7 +1253,7 @@ export function evidenceUnitMessages(options: RunLongTermMemoryEvidenceUnitExtra
             : "Preserve the character_fact and relationship_state subjectId values from the supplied candidate units.",
           "For other streams, the compiler derives the target note id from bucket + subjectId: timeline_event -> timeline_<subjectId>, world_fact or anchor -> world_<subjectId> unless anchor sectionKey starts with tone, thread -> thread_<subjectId>, tone -> tone_<subjectId>.",
           "For timeline_event, subjectId must name the specific event or beat, not just a person, character, place, or broad entity. Use damo_arrival or lisa_minimizing_damo instead of damo_korvak.",
-          "Do not intentionally target an existing note id unless that exact note appears in existingTypedNotes. If a broad note is not listed, use a source-specific subjectId for a new in-scope note.",
+          "Use a source-specific subjectId derived from the source text; never target or invent an existing note id. The server resolves subject and link hints against the vault after extraction.",
           ...validationRules,
           "relationship_state dimension keys must come only from allowedRelationshipDimensions. Put professional curiosity, reputation, gossip, or attention as text/thread/world/timeline facts, not dimensions.",
           ...(resolveSubjectNames
@@ -914,13 +1271,6 @@ export function evidenceUnitMessages(options: RunLongTermMemoryEvidenceUnitExtra
                 "For each unit, include 3-5 concise keywords or short phrases in keywords. Prefer concrete recall terms and multi-word entities when relevant.",
             }
           : {}),
-        existingTypedNotes: formatExistingNotes(
-          filterDominatedLtmSubjectNotesForPrompt(
-            options.existingNotes ?? [],
-            promptCatalog ?? { entries: [], notes: [] },
-          ),
-          options.maxExistingNoteTokens,
-        ),
         sourceText: options.sourceText,
       }),
     },
@@ -966,10 +1316,8 @@ export async function runLongTermMemoryEvidenceUnitExtraction(
     counts: {
       messages: messages.length,
       promptChars,
-      promptTokens: estimateLtmPromptTokens(messages.map((message) => message.content).join("\n")),
+      estimatedPromptTokens: estimateLtmPromptTokens(messages.map((message) => message.content).join("\n")),
       sourceChars: options.sourceText.length,
-      existingNotes: options.existingNotes.length,
-      maxExistingNoteTokens: options.maxExistingNoteTokens ?? DEFAULT_LTM_EXTRACTION_MAX_EXISTING_NOTE_TOKENS,
     },
     details: {
       reasoningEffort: requestedReasoningEffort,
@@ -996,35 +1344,31 @@ export async function runLongTermMemoryEvidenceUnitExtraction(
     });
 
     const content = result.content?.trim() ?? "";
+    const incomplete = ["length", "max_tokens", "token_limit"].includes(result.finishReason.toLowerCase());
     await recordLtmDebugEvent({
       operationId: options.operationId,
       root: options.root,
       phase: "llm",
       action: "evidence_unit_response",
-      status: content ? "ok" : "error",
+      status: content ? (incomplete ? "warning" : "ok") : "error",
       sourceNoteId: options.sourceNote.id,
       provider: options.languageModel.name,
       model: options.languageModel.model,
       durationMs: Date.now() - started,
-      counts: {
-        responseChars: content.length,
-        promptTokens: result.usage?.promptTokens ?? 0,
-        completionTokens: result.usage?.completionTokens ?? 0,
-        completionReasoningTokens: result.usage?.completionReasoningTokens ?? 0,
-        totalTokens: result.usage?.totalTokens ?? 0,
-      },
+      counts: Object.fromEntries(
+        Object.entries({
+          responseChars: content.length,
+          promptTokens: result.usage?.promptTokens,
+          completionTokens: result.usage?.completionTokens,
+          completionReasoningTokens: result.usage?.completionReasoningTokens,
+          totalTokens: result.usage?.totalTokens,
+        }).filter(([, count]) => count != null),
+      ),
       details: {
         finishReason: result.finishReason,
         responseSnippet: content.slice(0, 1_500),
       },
     });
-    if (["length", "max_tokens", "token_limit"].includes(result.finishReason.toLowerCase())) {
-      throw new LtmServiceError(
-        "truncated_output: extraction response reached the model output limit",
-        400,
-        "ltm_model_output_truncated",
-      );
-    }
     if (!content) {
       throw new LtmServiceError(
         "empty_output: extraction model returned no content; the source remains retryable",
@@ -1033,15 +1377,47 @@ export async function runLongTermMemoryEvidenceUnitExtraction(
       );
     }
     try {
-      const rawPayload = JSON.parse(extractJsonObject(content));
+      let rawPayload: unknown;
+      try {
+        rawPayload = JSON.parse(extractJsonObject(content));
+      } catch (error) {
+        if (!incomplete) throw error;
+        rawPayload = recoverTruncatedEvidenceUnitPayload(content);
+        if (!rawPayload) {
+          throw new LtmServiceError(
+            "truncated_output: extraction response reached the model output limit",
+            400,
+            "ltm_model_output_truncated",
+          );
+        }
+      }
       if (!isEvidenceUnitResponseObject(rawPayload)) {
+        if (incomplete) {
+          throw new LtmServiceError(
+            "truncated_output: extraction response reached the model output limit",
+            400,
+            "ltm_model_output_truncated",
+          );
+        }
         throw new LtmServiceError(
           "unusable_output: extraction model returned no evidence-unit response object; the source remains retryable",
           400,
           "ltm_model_output_unusable",
         );
       }
-      const parsed = parseEvidenceUnitPayload(rawPayload, options.sourceHash);
+      const parsed = parseEvidenceUnitPayload(
+        rawPayload,
+        options.sourceHash,
+        evidenceFromSourceNote(options.sourceNote),
+      );
+      if (incomplete && parsed.response.units.length === 0) {
+        throw new LtmServiceError(
+          "truncated_output: extraction response reached the model output limit",
+          400,
+          "ltm_model_output_truncated",
+        );
+      }
+      parsed.response.incomplete = incomplete;
       await recordLtmDebugEvent({
         operationId: options.operationId,
         root: options.root,
@@ -1103,17 +1479,20 @@ export function compileEvidenceUnitExtraction(options: {
   totalCandidates?: number;
   providerCandidates?: number;
   parserRejectionCount?: number;
+  userSkippedUnits?: number;
   normalizedAdditions?: number;
   parserDroppedCandidates?: LtmExtractionDroppedCandidate[];
   preValidationDroppedCandidates?: LtmExtractionDroppedCandidate[];
   sourceText: string;
   sourceNote: LtmNote;
   existingNotes: LtmNote[];
+  aliasChoices?: ReadonlyMap<string, { title: string; canonicalName: string }>;
   scope: LtmScope;
   modes: LtmMode[];
   mode?: LtmMode;
   sourceHash: string;
   allowedBuckets?: readonly LtmEvidenceUnit["bucket"][];
+  eventSubjectIdentityKeys?: ReadonlySet<string>;
   skipStructuredBackfill?: boolean;
 }): CompileEvidenceUnitExtractionResult {
   const normalized = normalizeStructuredSummaryEvidenceUnits({
@@ -1137,29 +1516,24 @@ export function compileEvidenceUnitExtraction(options: {
     expectedSourceHash: options.sourceHash,
     allowedBuckets:
       options.allowedBuckets ?? DEFAULT_LTM_ALLOWED_STREAMS_BY_MODE[options.mode ?? options.modes[0] ?? "roleplay"],
+    eventSubjectIdentityKeys: options.eventSubjectIdentityKeys,
   });
   const keptUnits = validated.keptUnits;
-  const dedupResult = deduplicateUnits(keptUnits, options.existingNotes);
-  const closed = closeSourceEventGraph(dedupResult.deduplicated, options.sourceNote, options.existingNotes);
+  const dedupResult = deduplicateUnits(keptUnits, options.existingNotes, options.scope);
+  const roleplayOnly = dropLocalCharactersOutsideRoleplay(
+    dedupResult.deduplicated,
+    options.modes,
+    options.existingNotes,
+  );
+  const closed = closeSourceEventGraph(roleplayOnly.units, options.sourceNote, options.existingNotes);
   const parserDroppedCandidates = options.parserDroppedCandidates ?? [];
   const parserRejectionCount = options.parserRejectionCount ?? parserDroppedCandidates.length;
   const preValidationDroppedCandidates = options.preValidationDroppedCandidates ?? [];
-  const allDroppedCandidates = [
-    ...parserDroppedCandidates,
-    ...preValidationDroppedCandidates,
-    ...validated.droppedCandidates,
-    ...closed.droppedCandidates,
-  ];
-  const droppedCandidates = allDroppedCandidates.slice(0, LTM_EXTRACTION_MAX_REJECTION_DETAILS);
-  const droppedCandidateCount =
-    parserRejectionCount +
-    preValidationDroppedCandidates.length +
-    validated.droppedCandidates.length +
-    closed.droppedCandidates.length;
   const compiled = closed.units.length
     ? compileLtmEvidenceUnits({
         units: closed.units,
         existingNotes: options.existingNotes,
+        aliasChoices: options.aliasChoices,
         scope: options.scope,
         modes: options.modes,
         mode: options.mode,
@@ -1169,38 +1543,157 @@ export function compileEvidenceUnitExtraction(options: {
         summary: options.unitResponse.summary,
         mutations: [],
       };
-  const compiledResponse = compiled;
-  const diagnostics = [...validated.diagnostics, ...dedupResult.diagnostics, ...closed.diagnostics];
+  const duplicateAliasUnits = keptUnits.filter(
+    (unit) => options.aliasChoices?.has(unit.id) && !dedupResult.deduplicated.includes(unit),
+  );
+  const duplicateAliasClosure = closeSourceEventGraph(
+    duplicateAliasUnits,
+    options.sourceNote,
+    options.existingNotes,
+    closed.units,
+  );
+  const rejectedAliasIds = new Set(duplicateAliasClosure.diagnostics.map((diagnostic) => diagnostic.mutationId));
+  const allDroppedCandidates = [
+    ...parserDroppedCandidates,
+    ...preValidationDroppedCandidates,
+    ...validated.droppedCandidates,
+    ...roleplayOnly.droppedCandidates,
+    ...closed.droppedCandidates,
+    ...duplicateAliasClosure.droppedCandidates,
+  ];
+  const droppedCandidates = allDroppedCandidates.slice(0, LTM_EXTRACTION_MAX_REJECTION_DETAILS);
+  const droppedCandidateCount =
+    parserRejectionCount +
+    preValidationDroppedCandidates.length +
+    validated.droppedCandidates.length +
+    roleplayOnly.droppedCandidates.length +
+    closed.droppedCandidates.length +
+    duplicateAliasClosure.droppedCandidates.length;
+  const duplicateTitles = duplicateAliasClosure.units.length
+    ? compileLtmEvidenceUnits({
+        units: duplicateAliasClosure.units,
+        existingNotes: options.existingNotes,
+        aliasChoices: options.aliasChoices,
+        scope: options.scope,
+        modes: options.modes,
+        mode: options.mode,
+      }).mutations.filter(
+        (mutation) =>
+          mutation.kind === "set_title" &&
+          !compiled.mutations.some((existing) => existing.kind === "set_title" && existing.noteId === mutation.noteId),
+      )
+    : [];
+  const compiledResponse = { ...compiled, mutations: [...compiled.mutations, ...duplicateTitles] };
+  const diagnostics = [
+    ...validated.diagnostics,
+    ...dedupResult.diagnostics.filter((diagnostic) => !rejectedAliasIds.has(diagnostic.mutationId)),
+    ...roleplayOnly.diagnostics,
+    ...closed.diagnostics,
+    ...duplicateAliasClosure.diagnostics,
+    // The compiler narrows a new local character note to Roleplay when other modes were also selected.
+    ...compiled.mutations.flatMap((mutation): LtmExtractionDiagnostic[] =>
+      mutation.kind === "create_note" && mutation.note.modes.length < options.modes.length
+        ? [
+            {
+              severity: "warning",
+              code: "local_character_restricted_to_roleplay",
+              mutationId: mutation.id,
+              noteId: mutation.note.id,
+              message:
+                "Local character memories are available only in Roleplay mode, so this memory was restricted to Roleplay.",
+            },
+          ]
+        : [],
+    ),
+  ];
+  if (options.unitResponse.incomplete) {
+    diagnostics.push({
+      severity: "warning",
+      code: "ltm_model_output_incomplete",
+      message: "Extraction output was cut off by the model limit; the source remains retryable.",
+    });
+  }
+  // Review gating must see every diagnostic, including ones dropped by the retained-list bound below.
+  const requiresReview = diagnosticsRequireExtractionReview(diagnostics);
+  const boundedDiagnostics = boundLtmExtractionDiagnostics(diagnostics);
   const accounting = ltmExtractionAccountingSchema.parse({
     providerCandidates:
       options.providerCandidates ??
       options.totalCandidates ??
-      options.unitResponse.units.length + parserDroppedCandidates.length + preValidationDroppedCandidates.length,
+      options.unitResponse.units.length +
+        parserDroppedCandidates.length +
+        preValidationDroppedCandidates.length +
+        (options.userSkippedUnits ?? 0),
     normalizedAdditions: (options.normalizedAdditions ?? 0) + normalized.addedUnits,
     parserRejections: parserRejectionCount,
     validationRejections:
-      preValidationDroppedCandidates.length + validated.droppedCandidates.length + closed.droppedCandidates.length,
-    deduplications: validated.keptUnits.length - dedupResult.deduplicated.length,
+      preValidationDroppedCandidates.length +
+      validated.droppedCandidates.length +
+      roleplayOnly.droppedCandidates.length +
+      closed.droppedCandidates.length +
+      duplicateAliasClosure.droppedCandidates.length,
+    deduplications:
+      validated.keptUnits.length - dedupResult.deduplicated.length - duplicateAliasClosure.droppedCandidates.length,
     keptUnits: closed.units.length,
+    ...(options.userSkippedUnits ? { userSkips: options.userSkippedUnits } : {}),
   });
   const totalCandidates = accounting.providerCandidates + accounting.normalizedAdditions;
   const outcome = summarizeExtractionOutcome({
     totalCandidates,
     keptUnits: closed.units.length,
+    mutations: compiledResponse.mutations.length,
     droppedCandidates,
     droppedCandidateCount,
     deduplications: accounting.deduplications,
+    incomplete: options.unitResponse.incomplete,
   });
   return {
     unitResponse: { ...options.unitResponse, units: normalizedUnits },
     compiledResponse,
-    diagnostics,
+    diagnostics: boundedDiagnostics,
+    requiresReview,
     outcome,
     accounting,
   };
 }
 
-function closeSourceEventGraph(units: LtmEvidenceUnit[], sourceNote: LtmNote, existingNotes: LtmNote[]) {
+// A new local character note must be Roleplay-only, so without Roleplay it cannot be created at all.
+function dropLocalCharactersOutsideRoleplay(units: LtmEvidenceUnit[], modes: LtmMode[], existingNotes: LtmNote[]) {
+  const droppedCandidates: LtmExtractionDroppedCandidate[] = [];
+  const diagnostics: LtmExtractionDiagnostic[] = [];
+  if (modes.includes("roleplay")) return { units, droppedCandidates, diagnostics };
+  const existingIds = new Set(existingNotes.map((note) => note.id));
+  const message = "Local character memories are available only in Roleplay mode; select Roleplay to keep this memory.";
+  const kept = units.filter((unit, index) => {
+    const noteId = noteIdForEvidenceUnit(unit);
+    if (existingIds.has(noteId) || !unit.subjects?.some(isLocalCharacterSubject)) return true;
+    droppedCandidates.push({
+      index,
+      reason: "target_note_outside_scope",
+      validatorCode: "local_character_requires_roleplay",
+      message,
+      snippet: safeSnippet(unit.text),
+      recoveryCandidate: unit,
+    });
+    diagnostics.push({
+      severity: "error",
+      code: "local_character_requires_roleplay",
+      candidateIndex: index,
+      mutationId: unit.id,
+      noteId,
+      message,
+    });
+    return false;
+  });
+  return { units: kept, droppedCandidates, diagnostics };
+}
+
+function closeSourceEventGraph(
+  units: LtmEvidenceUnit[],
+  sourceNote: LtmNote,
+  existingNotes: LtmNote[],
+  supportUnits: readonly LtmEvidenceUnit[] = [],
+) {
   let kept = [...units];
   const droppedCandidates: LtmExtractionDroppedCandidate[] = [];
   const diagnostics: LtmExtractionDiagnostic[] = [];
@@ -1214,7 +1707,7 @@ function closeSourceEventGraph(units: LtmEvidenceUnit[], sourceNote: LtmNote, ex
           ? [note.id]
           : [],
       ),
-      ...kept
+      ...[...supportUnits, ...kept]
         .filter(
           (unit) =>
             unit.bucket === "timeline_event" &&
@@ -1283,6 +1776,8 @@ function summarizeExtractionOutcome(input: {
   droppedCandidates: LtmExtractionDroppedCandidate[];
   droppedCandidateCount: number;
   deduplications: number;
+  incomplete: boolean;
+  mutations: number;
 }): LtmExtractionOutcome {
   const droppedUnits = input.droppedCandidateCount;
   const state =
@@ -1290,9 +1785,14 @@ function summarizeExtractionOutcome(input: {
       ? droppedUnits > 0 || input.deduplications > 0
         ? "partial_success"
         : "success"
-      : "no_suggestions_created";
+      : input.mutations > 0
+        ? droppedUnits > 0
+          ? "partial_success"
+          : "success"
+        : "no_suggestions_created";
   return {
     state,
+    incomplete: input.incomplete === true,
     totalCandidates: input.totalCandidates,
     keptUnits: input.keptUnits,
     droppedUnits,

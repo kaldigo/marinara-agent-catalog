@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   SLURP_DEFAULT_CREATOR_MESSAGING,
   readSlurpCreatorMessaging,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-messaging.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/messages/slp-messaging.js";
+import { slurp2Source } from "./slurp2-source";
 
-const read = (path: string) => readFileSync(path, "utf8");
+const read = (path: string) => slurp2Source(path);
 const server = "packages/slurp2/src/engine/packages/server/src/";
 
 // 6.1 — every payment gets a reaction, and only automatic Creators react.
@@ -32,10 +32,10 @@ assert.match(
   "the guided post must send its post type",
 );
 
-// 6.3 — posts may draw on long-term notes without leaking them.
+// 6.3 — a fan's direct-message notes never reach a public post. Posts read only approved
+// continuity, whose scopes keep fan-private records out (see slp-continuity-prompt.ts).
 const generation = read(server + "services/slurp/slurp-generation.service.ts");
-assert.match(generation, /fanMemory/u);
-assert.match(generation, /never name the person, quote them, or repeat a private detail in public/u);
+assert.doesNotMatch(generation, /fanMemory|tier === "longterm"/u);
 
 // 6.4 — the per-Creator proactive switch defaults on, round-trips, and stops follow-ups.
 assert.equal(SLURP_DEFAULT_CREATOR_MESSAGING.proactiveMessages, true);
@@ -43,7 +43,8 @@ assert.equal(readSlurpCreatorMessaging({ proactiveMessages: false }).proactiveMe
 assert.equal(readSlurpCreatorMessaging({}).proactiveMessages, true);
 assert.match(
   read(server + "services/slurp/slurp-follow-up-scheduler.service.ts"),
-  /if \(!messaging\.proactiveMessages\) \{[\s\S]{0,200}?cancelScheduledFollowUp/u,
+  // Pulse + E decision (changed on purpose): the switch drops openers only; promises still go out.
+  /if \(!messaging\.proactiveMessages && followUp\.type === "opener"\) \{[\s\S]{0,200}?cancelScheduledFollowUp/u,
 );
 
 console.log("slurp roleplay loop regression: ok");

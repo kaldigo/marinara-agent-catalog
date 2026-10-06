@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { slurp2Source } from "./slurp2-source";
 
 // The format rules live in the Engine's compiled shared schema, which imports zod,
 // and in the generation service, which imports the Engine's storage and provider
@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 // noodler-disclosure-contract.
 
 const schemaPath = "sources/engine/packages/shared/dist/schemas/noodle.schema.js";
-const schema = readFileSync(schemaPath, "utf8");
+const schema = slurp2Source(schemaPath);
 assert.match(schema, /noodlerContentFormatSchema = z\.enum\(\["caption", "teaser", "announcement", "long_form"\]\)/u);
 assert.match(schema, /DEFAULT_NOODLER_CONTENT_FORMAT = "caption"/u);
 assert.match(schema, /caption: \{ title: "optional", targetMin: 40, targetMax: 500 \}/u);
@@ -21,23 +21,19 @@ assert.match(schema, /Teaser posts must be public/u);
 assert.match(schema, /Teaser posts require a locked follow-up/u);
 assert.match(schema, /Only teaser posts can link a locked follow-up/u);
 
-const generation = readFileSync(
+const generation = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-generation.service.ts",
-  "utf8",
 );
-const operations = readFileSync(
+const operations = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post.operation.ts",
-  "utf8",
 );
-const reserve = readFileSync(
+const reserve = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-reserve.operation.ts",
-  "utf8",
 );
-const responseFormat = readFileSync(
+const responseFormat = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-response-format.ts",
-  "utf8",
 );
-const composer = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx", "utf8");
+const composer = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx");
 
 assert.match(generation, /NOODLER_FORMAT_PROMPTS\[format\]/u);
 // Every generated NoodleR post carries a title, whatever the format.
@@ -47,21 +43,19 @@ assert.match(generation, /Every post needs a title/u);
 assert.match(generation, /imagePrompt is required/u);
 assert.match(responseFormat, /minLength: 1, maxLength: NOODLER_TITLE_HARD_MAX_LENGTH/u);
 assert.match(responseFormat, /Math\.min\(contentMaxLength, NOODLE_POST_HARD_MAX_LENGTH\)/u);
-assert.match(generation, /Hard limit 300 characters/u);
-// The caps moved to a leaf module so the storage layer can hold an edit to the post's own format
-// without importing the generation service (which imports storage back).
-const contentFormat = readFileSync(
+// Formats are targets, not cuts: a caption that runs long is kept up to the player's ceiling.
+assert.doesNotMatch(generation, /Hard limit \d+ characters/u);
+assert.match(generation, /Never exceed \$\{input\.postMaxLength \?\? NOODLER_CONTENT_HARD_MAX_LENGTH\} characters/u);
+// The hard cap lives in a leaf module so the storage layer can hold an edit to it without importing
+// the generation service (which imports storage back).
+const contentFormat = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-content-format.ts",
-  "utf8",
 );
-const storage = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts",
-  "utf8",
-);
-assert.match(contentFormat, /caption: 300,/u);
-assert.match(storage, /slice\(0, noodlerContentLimitFor\(nextMetadata\)\)/u, "edits honour the post's own cap");
+const storage = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
+assert.doesNotMatch(contentFormat, /caption: 300,/u, "no per-format hard cut");
+assert.match(storage, /slice\(0, NOODLER_CONTENT_HARD_MAX_LENGTH\)/u, "edits honour the shared cap");
 assert.doesNotMatch(storage, /trim\(\)\.slice\(0, 4000\)/u, "no flat 4000-character truncation");
-assert.match(generation, /NOODLER_FORMAT_MAX_LENGTH\[format\]/u);
+assert.match(generation, /contentMaxLength: settings\.postMaxLength/u);
 assert.match(generation, /const format = input\.request\.format \?\? variation\?\.format \?\? "caption"/u);
 assert.match(generation, /noodlerContentFormat: format,/u, "stored posts retain the selected variation format");
 assert.match(operations, /format: "caption",\s+access: "locked"/u);

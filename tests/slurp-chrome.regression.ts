@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { slurp2Source } from "./slurp2-source";
 
-const shell = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpShell.tsx", "utf8");
+const shell = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpShell.tsx");
 
 // The drawer already overlaid the page; the flicker came from the panel sitting at x:100% during
 // its slide-in and widening the page. `clip`, not `hidden` — `hidden` would make this a scroll
@@ -18,10 +19,7 @@ const drawer = shell.slice(shell.indexOf("NoodleView.MobileDrawer"), shell.index
 assert.match(drawer, /<details className="group mt-3">/u, "the drawer's persona list must be collapsed by default");
 assert.match(drawer, /group-open:rotate-180/u);
 
-const surface = readFileSync(
-  "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpProfileSurface.tsx",
-  "utf8",
-);
+const surface = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpProfileSurface.tsx");
 // Editing happens in place now: there is exactly one identity block, not a display one and a
 // separate stacked form.
 assert.match(surface, /const inPlaceFieldClass/u);
@@ -31,12 +29,13 @@ for (const field of ["editor.onNameChange", "editor.onHandleChange", "editor.onB
 }
 // The avatar overlaps the banner rather than sitting flush under it. The hero owns the single
 // negative margin; the avatar row only stacks above the banner fade.
-assert.match(surface, /hasBanner \? "-mt-8 @min-\[680px\]:-mt-10 @min-\[1040px\]:-mt-11" : "mt-5"/u);
-assert.match(surface, /hasBanner \? "relative z-10 pt-0" : "pt-5"/u);
+// Step 3 redesign: the hero avatar rides half over the banner's pink fade.
+assert.match(surface, /banner \? "-mt-16" : "pt-5"/u);
+assert.match(surface, /"relative z-10 px-4 /u);
 
 // A persona that runs a Creator is known to the feed by the Creator's name and face, so the
 // switcher card leads with that and keeps the persona as a small circle beside it.
-assert.match(shell, /creatorIdentity\?: NoodleAccount \| null;/u);
+assert.match(shell, /creatorIdentity\?: SlpAccount \| null;/u);
 assert.match(shell, /account=\{creatorIdentity \?\? personaAccount\}/u);
 assert.match(shell, /personaBadge=\{creatorIdentity \? personaAccount : null\}/u);
 assert.match(shell, /ui\.slurp\.account\.asPersona/u);
@@ -50,7 +49,7 @@ assert.match(
 );
 assert.match(shell, /linkedNoodleAccountIds\?\.has\(personaAccount\.id\)/u);
 
-const home = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx", "utf8");
+const home = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx");
 assert.match(home, /creatorIdentity: viewerActorAccount,/u);
 assert.match(home, /personaAccount: shellPersonaAccount,/u, "the persona account must stay the persona's own");
 

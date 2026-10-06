@@ -4,7 +4,6 @@ import {
   resolveSpatialLocationDepth,
   resolveSpatialBreadcrumb,
   spatialRadialPlacement,
-  spatialContextDefinitionSchema,
   wouldCreateSpatialCycle,
   type SpatialChildPresentation,
   type SpatialContextDefinition,
@@ -27,6 +26,8 @@ import {
   type SpatialHierarchyProfile,
   type SpatialHierarchyType,
   type SpatialGenerationPromptTemplates,
+  SPATIAL_MAP_LOCATION_LIMIT,
+  spatialMapDefinitionSchema,
 } from "../../../../maps-shared/src/maps-model.js";
 
 interface SpatialDraftSizeSpec {
@@ -515,10 +516,7 @@ export function normalizeSpatialMapPlan(
   options: NormalizeSpatialMapPlanOptions,
 ): SpatialContextDefinition {
   const size = resolveSpatialDraftSizeSpec(options.size, options.targetLocations);
-  const locationLimit = Math.max(
-    0,
-    Math.min(options.maxLocations ?? size.maxLocations, SPATIAL_CONTEXT_LIMITS.maxLocations),
-  );
+  const locationLimit = Math.max(0, Math.min(options.maxLocations ?? size.maxLocations, SPATIAL_MAP_LOCATION_LIMIT));
   const rawLocations = readPlanLocations(value).slice(0, locationLimit);
   if (rawLocations.length === 0) {
     throw new Error("The model did not return any locations.");
@@ -633,7 +631,7 @@ export function normalizeSpatialMapPlan(
         locations: [...options.externalDefinition.locations, ...locations],
       }
     : definition;
-  const parsed = spatialContextDefinitionSchema.safeParse(validationDefinition);
+  const parsed = spatialMapDefinitionSchema.safeParse(validationDefinition);
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? "The generated map is invalid.");
   }
@@ -656,7 +654,7 @@ export function normalizeSpatialMapExpansionPlan(
     throw new Error("Choose an active location to expand.");
   }
 
-  const remainingLocationCapacity = SPATIAL_CONTEXT_LIMITS.maxLocations - options.definition.locations.length;
+  const remainingLocationCapacity = SPATIAL_MAP_LOCATION_LIMIT - options.definition.locations.length;
   if (remainingLocationCapacity < 1) {
     throw new Error("This map already contains the maximum number of locations.");
   }
@@ -775,7 +773,7 @@ export function normalizeSpatialMapExpansionPlan(
     ...options.definition,
     locations: [...options.definition.locations, ...addedLocations],
   };
-  const parsed = spatialContextDefinitionSchema.safeParse(definition);
+  const parsed = spatialMapDefinitionSchema.safeParse(definition);
   if (!parsed.success) {
     throw new Error(parsed.error.issues[0]?.message ?? "The generated expansion is invalid.");
   }
@@ -841,7 +839,7 @@ export function buildSpatialMapExpansionPrompt(options: BuildSpatialMapExpansion
   if (!target || target.status !== "active") {
     throw new Error("Choose an active location to expand.");
   }
-  const remainingLocationCapacity = SPATIAL_CONTEXT_LIMITS.maxLocations - options.definition.locations.length;
+  const remainingLocationCapacity = SPATIAL_MAP_LOCATION_LIMIT - options.definition.locations.length;
   if (remainingLocationCapacity < 1) {
     throw new Error("This map already contains the maximum number of locations.");
   }

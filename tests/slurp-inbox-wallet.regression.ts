@@ -1,24 +1,17 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { slurp2Source } from "./slurp2-source";
 
-const home = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx", "utf8");
-const shell = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpShell.tsx", "utf8");
-const english = readFileSync("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json", "utf8");
-const store = readFileSync("packages/slurp2/src/engine/packages/client/src/stores/slurp-package.store.ts", "utf8");
-const hooks = readFileSync("packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts", "utf8");
-const messages = readFileSync(
-  "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpMessages.tsx",
-  "utf8",
-);
-const messageStorage = readFileSync(
+const home = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx");
+const shell = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpShell.tsx");
+const english = slurp2Source("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json");
+const store = slurp2Source("packages/slurp2/src/engine/packages/client/src/stores/slurp-package.store.ts");
+const hooks = slurp2Source("packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts");
+const messages = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpMessages.tsx");
+const messageStorage = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/storage/slurp-messages.storage.ts",
-  "utf8",
 );
-const routes = readFileSync("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts", "utf8");
-const messageRoutes = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/routes/slurp-messages.routes.ts",
-  "utf8",
-);
+const routes = slurp2Source("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts");
+const messageRoutes = slurp2Source("packages/slurp2/src/engine/packages/server/src/routes/slurp-messages.routes.ts");
 
 assert.match(english, /"ui\.slurp\.navigation\.messages": "Inbox"/u);
 assert.match(home, /function SlurpInboxHub/u);
@@ -29,7 +22,7 @@ const inbox = home.slice(home.indexOf("function SlurpInboxHub("), home.indexOf("
 assert.doesNotMatch(inbox, /role="tablist"|role="tab"/u);
 assert.doesNotMatch(inbox, /return \(\) => markSeen\(personaId\)/u, "opening Inbox must not mark Activity seen");
 assert.match(inbox, /onClick=\{\(\) => markSeen\(personaId\)\}/u, "Activity keeps an explicit read action");
-assert.match(store, /state\.navigation\.view === "notifications"[\s\S]*?view: "notifications"/u);
+assert.match(store, /navigation\.view === "notifications"[\s\S]*?view: "notifications"/u);
 assert.match(home, /initialActivity/u, "legacy Notifications navigation must focus Activity");
 assert.match(home, /notificationsQuery\.data\?\.unseenCount[\s\S]*?inboxThreadsQuery\.data\?\.unread/u);
 assert.match(inbox, /<MessageCircle[\s\S]*?<Avatar[\s\S]*?thread\.creatorDisplayName/u);
@@ -74,7 +67,7 @@ assert.match(home, /creatorByHandle\.get\(normalized\)/u, "known Creator handles
 assert.match(home, /kind === "unlock" \|\| kind === "ppv"[\s\S]*?return null/u, "opaque post IDs must not render");
 assert.match(home, /aria-controls="slurp-wallet-history-panel"/u);
 assert.match(home, /aria-labelledby=\{`slurp-wallet-history-\$\{ledgerMode\}-tab`\}/u);
-assert.match(hooks, /invalidateQueries\(\{ queryKey: \[\.\.\.noodleKeys\.noodlerRoot\(\), "wallet"\] \}\)/u);
+assert.match(hooks, /invalidateQueries\(\{ queryKey: \[\.\.\.slpKeys\.noodlerRoot\(\), "wallet"\] \}\)/u);
 assert.doesNotMatch(home, /recipientPersonaId|withdrawalRecipient/u);
 
 console.log("slurp Inbox and Wallet regression passed");

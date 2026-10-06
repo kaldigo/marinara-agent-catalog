@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
 const server = join(root, "packages/slurp2/src/engine/packages/server/src");
 const client = join(root, "packages/slurp2/src/engine/packages/client/src");
-const read = (path: string) => readFileSync(path, "utf8");
+const read = (path: string) => slurp2Source(path);
 
 // ── Money ────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ const messagesView = read(join(client, "components/slurp/SlurpMessages.tsx"));
 // A failed unlock used to re-enable the button and say nothing at all.
 assert.match(messagesView, /\{unlock\.isError && \(/u);
 
-const settings = read(join(client, "components/slurp/SlurpSettings.tsx"));
+const settings = slurp2BackstageSource();
 assert.match(settings, /\.download\("\/slurp2\/noodler\/ads\/export"[\s\S]{0,120}?\.catch\(/u);
 
 const shell = read(join(client, "components/slurp/SlurpShell.tsx"));
@@ -167,10 +168,8 @@ assert.match(
   /if \(!hasMedia\) delete preparedMetadata\.noodlerPostType;/u,
   "publishing a prepared post without an image must drop the story flag",
 );
-assert.match(
-  generation,
-  /\.\.\.\(storyVariation \? \{ width: settings\.storyImageWidth, height: settings\.storyImageHeight \} : \{\}\)/u,
-);
+// The Story size is chosen in the shared image run from this flag (R1-052), so every path uses it.
+assert.match(generation, /negativePromptAdditions: negativePrompt,\s*story: storyVariation,/u);
 
 const cropEditor = read(join(client, "components/slurp/PostImageCropEditor.tsx"));
 // An uploaded Story is cropped to the same ratio an automatic one is drawn at, whatever the player
@@ -274,7 +273,7 @@ assert.match(slurpStorage, /storyRate: SLURP_DEFAULT_STORY_RATE/u);
 // The shipped default stays 4:5, so an install that never opens Settings is unchanged.
 assert.match(slurpStorage, /storyImageWidth: 1024,\s*storyImageHeight: 1280,/u);
 
-const settingsUi = read(join(client, "components/slurp/SlurpSettings.tsx"));
+const settingsUi = slurp2BackstageSource();
 for (const key of [
   "ui.slurp.settings.storyRate",
   "ui.slurp.settings.images.storyWidth",
@@ -363,9 +362,9 @@ assert.match(messagesView2, /message\.metadata\.commissionId !== "string"/u);
 assert.match(messagesView2, /deliveryMessage: commission\.deliveryMessageId/u);
 assert.match(messagesView2, /const deliveryImage = useSlurpMediaSrc\(/u);
 assert.match(messagesView2, /commission\.state === "delivered" && deliveryMessage/u);
-assert.match(messagesView2, /const commissionTimeline = commissions\.map/u);
+assert.match(messagesView2, /const commissionTimeline = useMemo\(\s*\(\) =>\s*commissions\.map/u);
 assert.match(messagesView2, /const at = latestMessage[\s\S]{0,180}?commission\.updatedAt/u);
-assert.match(messagesView2, /const timeline = \[/u);
+assert.match(messagesView2, /const timeline = useMemo\(/u);
 assert.match(messagesView2, /commissionTimelineKey/u);
 assert.match(messagesView2, /\[commissionTimelineKey, messages\.length, typing, pending\]/u);
 assert.doesNotMatch(messagesView2, /commissions\.map\(\(commission\) => \(\s*<CommissionRow/u);
@@ -420,7 +419,7 @@ assert.match(messagesView2, /if \(!ownsCreator\) setTyping\(true\)/u);
 assert.match(messagesView2, /holdTyping\(result\.reply \? \(result\.typingMs \?\? 0\) : 0, result\.reply\?\.id\)/u);
 assert.match(messagesView2, /pending && !messages\.some\(\(message\) => message\.id === pending\.id\)/u);
 
-const slurpHooks = readFileSync("packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts", "utf8");
+const slurpHooks = slurp2Source("packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts");
 // A chat opened from a profile polls like one opened from the inbox, or the queued off-hours
 // reply never arrives on that screen.
 assert.match(

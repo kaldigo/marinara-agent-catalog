@@ -5,26 +5,26 @@
  * off, a reply that was written and never displayed, a relationship score fed by the wrong table.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   slurpCommissionChancePerDay,
   slurpMessageChancePerDay,
   slurpQuestionChancePerDay,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world.js";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-world.js";
 import {
   scoreSlurpRapport,
   emptySlurpRapportFacts,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-rapport.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/messages/slp-rapport.js";
 import {
   slurpCreatorReplyChance,
   slurpCreatorOpenerKind,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world.js";
-import { slurpAudienceReaction } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world-copy.js";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-world.js";
+import { slurpAudienceReaction } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/world/slp-world-copy.js";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 const messagesRoutes = read("server/src/routes/slurp-messages.routes.ts");
 
 // ── The world must not be silent for a Creator nobody has grown yet ──────────
@@ -159,8 +159,9 @@ assert.match(
   /slurpFanTypeCommissionBudget\(slurpResolveFanType\(settings\.fanTypes, member\), member\.id\)/u,
   "the member’s configured Fan Type must decide their commission budget",
 );
-// Never the instant the price is named.
-assert.match(worldOperation, /quotedFor < 1/u);
+// Never the instant the price is named, unless the player sets "Time before fans answer a quote" to 0.
+assert.match(worldOperation, /quotedForMinutes < settings\.messagesQuoteAnswerMinutes/u);
+assert.match(read("server/src/slp/modules/settings/slp-settings.ts"), /messagesQuoteAnswerMinutes: 1440,/u);
 
 // ── Creators answer their audience, and who they answer means something ──────
 // A creator answered only the player, and only when the player ticked a box. Everyone else wrote

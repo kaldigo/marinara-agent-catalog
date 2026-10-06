@@ -1,36 +1,49 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
+import { makeSlurpProject } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-project.js";
 import {
-  makeSlurpProject,
   resolveSlurpArcConfig,
   SLURP_ARC_LIBRARY_SEED,
-  slurpArcLifeLine,
   slurpArcTypeFromProject,
   slurpAutoArcPick,
   slurpGeneratedArcProject,
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-arc-library.js";
+import {
+  slurpArcLifeLine,
   slurpProjectInstruction,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-project.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-arc-progress.js";
+import { slurp2Source } from "./slurp2-source";
 
 const at = new Date("2026-09-09T10:00:00.000Z");
 
-const generationSource = readFileSync(
+const generationSource = slurp2Source(
   new URL(
     "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-arc-generation.service.ts",
     import.meta.url,
   ),
-  "utf8",
 );
 assert.match(generationSource, /input\.brief\.trim\(\)\.slice\(0, 2_000\)/u, "the AI builder sends the player's brief");
-const routesSource = readFileSync(
+const routesSource = slurp2Source(
   new URL("../packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts", import.meta.url),
-  "utf8",
 );
 assert.match(routesSource, /arc-library\/generate/u, "the AI builder has a dedicated draft route");
 assert.match(
   routesSource,
   /slurpArcTypeFromProject\(project, draftId\)/u,
   "the draft route returns a library type without storing a project",
+);
+assert.match(routesSource, /Generation already in progress/u, "busy generation has a clear response");
+assert.match(routesSource, /rawResponse: error\.rawResponse/u, "foreground failures expose bounded model output");
+assert.match(generationSource, /SlurpArcGenerationFailure/u, "unusable model output keeps a diagnostic reason");
+assert.match(
+  slurp2Source(
+    new URL(
+      "../packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpBackstageWorkflow.tsx",
+      import.meta.url,
+    ),
+  ),
+  /Export.*Import Arc|importArc[\s\S]*exportArc/u,
+  "the Arc Library supports sharing individual arcs",
 );
 
 // arcSource: global default reaches the resolved config, a Creator override wins.
@@ -111,16 +124,27 @@ assert.deepEqual(
     name: arc.title,
     description: "Learning to bake bread",
     chapters: [
-      { label: "the starter", minDays: 5, maxDays: 5 },
-      { label: "the first loaf", minDays: 0, maxDays: 0 },
+      { label: "the starter", minDays: 5, maxDays: 5, storyTags: [], influences: [], outcomes: [], opportunities: [] },
+      {
+        label: "the first loaf",
+        minDays: 0,
+        maxDays: 0,
+        storyTags: [],
+        influences: [],
+        outcomes: [],
+        opportunities: [],
+      },
     ],
     tags: [],
+    storyTags: [],
     tone: "cozy",
     durationDays: 14,
     enabled: true,
     builtin: false,
     hidden: false,
+    automation: "inherit",
   },
+  "saving an AI draft fills the story-engine fields with empty defaults, not undefined",
 );
 
 // Tone reaches the post and DM arc lines; no tone adds nothing.

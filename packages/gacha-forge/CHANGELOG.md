@@ -1,3 +1,49 @@
+## 1.8.12 — 2026-10-02
+- Fixed: Character Stories can be merged too. In Settings > Continuity a compressed Character Story takes a tick like a chapter, and merges with the chapters next to it or with other Character Stories; the merged entry names each one, and the story never sends a merged one twice.
+- Only chapters played to the end can be merged, and a merge that cannot happen says why.
+
+## 1.8.11 — 2026-10-01
+- Fixed: a Tower boss that heals no longer gets back a quarter of its health with every Ultimate — it heals about as much as one of its escorts would, and the floor 40 boss is fitted to its floor again. In Water months, bosses no longer heal 8% of their health per Ultimate.
+- Fixed: on a slow image connection, art is painted once: a chapter's backgrounds and enemies, banner art, portraits, key images, Bond backgrounds and outfits.
+- Fixed: an outfit rotation keeps every outfit it already painted, even if the rest fails, and a Bond outfit you already have but that never counted as claimed is handed over instead of painted again.
+
+## 1.8.9 — 2026-09-30
+- Fixed: the story now calls each character the man or woman they are. With a vague description it could narrate someone drawn as a woman as “he”, or the other way around.
+- Every character has a sex whether the world has art or not: new ones are created with it, and the ones you already have are filled in once, the first time the story is told.
+
+## 1.8.8 — 2026-09-29
+- Fixed: with a Character Story open, the chapters you already cleared open again — their map, their scenes, and their Hard and Very Hard fights. Only the next chapter of the main story waits for the Character Story to end.
+
+## 1.8.7 — 2026-09-25
+- Fixed: world creation lists your whole character card library. It stopped at 100 cards, so a library larger than that died around the letter M and the cards past it showed in your cast as “No longer in your library”.
+- Fixed: loading a preset no longer leaves out cards it could not see — it reads the whole library before deciding what the Engine still has.
+
+## 1.8.6 — 2026-09-23
+- Fixed: on a phone held upright, the Landscape only notice no longer covers the rest of Marinara. Characters, lorebooks and anything else you open over the game are reachable again.
+
+## 1.8.5 — 2026-09-21
+- The opening story is optional. Forge this world asks if you are sure, then whether to write it now or later; later, the world opens as soon as its cast is ready, with Summon unlocked, and Modes > Story writes it when you ask. If it fails while the world is being created, Skip the story for now keeps the world.
+- World creation keeps what you write and brings it back on any device, and has presets: save, load, rename, replace or delete a whole setup, from the wizard or from a world you already created.
+- Models that think a lot before answering (GLM, DeepSeek) no longer lose the first try of nearly every call to the output limit.
+- Fixed: a card, lorebook, connection or persona you create or change in Marinara shows up in the game as soon as you come back to it.
+- Fixed: a character made from a card or a Cast lorebook entry reads the World lorebook entries that name them.
+
+## 1.8.2 — 2026-09-17
+- Buffs and debuffs name their stat: a buff can raise ATK, DEF, SPD or crit chance, a debuff can drop DEF, ATK or SPD. Characters you already have fight exactly as before.
+- Newly minted characters and enemies stop piling up on ATK up, DEF down and shields: each new one is asked for what the cast still lacks.
+- Fixed: an outfit rotation whose theme came from your Theme library was painted, lost when it was saved and minted again on every visit. It now saves, and a rotation that fails twice in a row stops retrying.
+- Fixed: a scene keeps your line when the browser reloads the tab.
+- Fixed: when the connection lists cannot be read, the setup and Settings say why instead of opening an empty list.
+- Importing a theme set refuses oversized files and cleans control characters out of titles; creating a world no longer spends a retry on two malformed answers.
+
+## 1.8.1 — 2026-09-15
+- Writing a chapter ahead keeps going on its own: switching tabs, closing Gacha Forge or changing worlds no longer stops it.
+- Coming back to the Gacha Forge tab no longer drops you on "Generating story" or inside a scene you had not reached, and a scene you were reading stays on its line.
+- The character cards you pick can be moved up and down; the game takes them in that order. The Cast lorebook list can be expanded like World lorebooks.
+- The card counter in world creation also counts the two cards each featured banner takes.
+- Characters written in your world's language keep their accents and their ñ.
+- Fixed: in Firefox the top bar no longer runs past the game at large text sizes; the creator's scrollbars keep their distance; the expanded lorebook list in Settings draws its rows again.
+
 ## 1.8.0 — 2026-09-14
 - Combat is manual: on each turn you choose what a unit does and who it hits. Auto still plays the fight for you.
 - The Tower opens at Rank 20: a hundred floors, Tower Coin and a Tower shelf in the Shop, monthly floors built from your own story.

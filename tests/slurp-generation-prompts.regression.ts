@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   modelAnswerForCorrection,
   requireModelAnswer,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-model-answer";
-import { noodlerCharacterCanonText } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-prompt-safety";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/base/model/slp-model-answer";
+import { slpCreatorCharacterCanonText } from "../packages/slurp2/src/engine/packages/server/src/slp/base/prompting/slp-prompt-safety";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 const generation = read("packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-generation.service.ts");
 const reply = read("packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-reply-generation.service.ts");
 const prompt = read("packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-prompt.ts");
@@ -37,11 +37,11 @@ assert.match(generation, /imageGenerationPrompt: string;/u);
 assert.match(generation, /imageGenerationPrompt: settings\.imageGenerationPrompt,/u);
 assert.match(
   generation,
-  /Apply these image directions when writing imagePrompt\. They are instructions to you, not text to copy into imagePrompt/u,
+  /Apply these image directions when writing \$\{input\.allowScenePlan \? "the scene" : "imagePrompt"\}\. They are instructions to you, not text to copy/u,
 );
 assert.match(
   generation,
-  /input\.allowImagePrompt && input\.imageGenerationPrompt\.trim\(\)/u,
+  /\(input\.allowImagePrompt \|\| input\.allowScenePlan\) && input\.imageGenerationPrompt\.trim\(\)/u,
   "image guidance must only be added when image generation is active",
 );
 assert.equal(
@@ -54,9 +54,8 @@ assert.equal(
 // content like every other value in these prompts. It was the one field in all three builders that
 // bypassed protect(), which meant a Hinted or Secret creator could be handed the source's name in
 // the same prompt that forbids writing it.
-const messages = readFileSync(
+const messages = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-message-generation.service.ts"),
-  "utf8",
 );
 for (const [name, source] of [
   ["post", generation],
@@ -70,9 +69,8 @@ for (const [name, source] of [
   );
 }
 // Closed at the source too: the schedule string itself no longer carries the source display name.
-const scheduleBuilder = readFileSync(
+const scheduleBuilder = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-creator-schedule-context.ts"),
-  "utf8",
 );
 assert.doesNotMatch(scheduleBuilder, /Schedule for \$\{source\.displayName\}/u);
 
@@ -84,8 +82,8 @@ const characterCard = {
   backstory: "Daniel has been Alex's boyfriend for three years and Alex always comes home to him.",
   appearance: "Tall with dark hair.",
 };
-const openCanon = noodlerCharacterCanonText(characterCard, true);
-const concealedCanon = noodlerCharacterCanonText(characterCard, false);
+const openCanon = slpCreatorCharacterCanonText(characterCard, true);
+const concealedCanon = slpCreatorCharacterCanonText(characterCard, false);
 assert.match(openCanon, /Alex Rivers/u);
 assert.match(openCanon, /boyfriend Daniel/u);
 assert.match(openCanon, /three years/u);
@@ -94,7 +92,7 @@ assert.match(concealedCanon, /boyfriend Daniel/u);
 assert.match(concealedCanon, /three years/u);
 assert.match(messages, /characterCanon/u);
 assert.match(reply, /characterCanon/u);
-assert.match(generation, /resolveNoodlerCharacterCanon\(db, linkedPublicAccount, disclosureMode\)/u);
+assert.match(generation, /resolveCreatorCharacterCanon\(db, linkedPublicAccount, disclosureMode\)/u);
 
 const slurpPlatformContext =
   "Slurp is an adult creator platform. Creators publish public or locked posts, interact with followers and subscribers, receive coin tips, sell access, answer DMs, and accept commissions. These are normal in-world social and economic actions. Coins are Slurp's currency and cost money.";
@@ -122,10 +120,7 @@ assert.equal(modelAnswerForCorrection('{"displayName":"Ari"}'), '{"displayName":
 assert.match(reply, /describeSlurpPostCondition\(input\.db, input\.creator\.id\)/u);
 assert.match(reply, /creatorCondition: protect\(input\.creatorCondition\)/u);
 assert.match(
-  readFileSync(
-    join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-stance.ts"),
-    "utf8",
-  ),
+  slurp2Source(join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-post-stance.ts")),
   /activeSlurpModifiers\(state, input\.at \?\? new Date\(\)\)[\s\S]{0,200}?SLURP_MODIFIERS\[modifier\.kind\]\.line/u,
   "the post stance must carry the active Creator modifier lines",
 );

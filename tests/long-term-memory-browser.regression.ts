@@ -106,6 +106,9 @@ async function main() {
   let browserServer: ReturnType<typeof createServer> | null = null;
   let releaseReextraction: (() => void) | null = null;
   const reextractionRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const identityResolutionRequests: Array<{ id: string; choices: unknown }> = [];
+  const resolvedIdentitySuggestionIds = new Set<string>();
+  let identityResolutionFailures = 1;
   let markReextractionStarted: () => void = () => undefined;
   const reextractionStarted = new Promise<void>((resolve) => {
     markReextractionStarted = resolve;
@@ -163,6 +166,8 @@ async function main() {
       const rejectedSuggestionId = "2a1b5c7d-9e0f-4a1b-8c2d-3e4f5a6b7c8d";
       const otherRejectedSuggestionId = "3b2c6d8e-0f1a-4b2c-9d3e-4f5a6b7c8d9e";
       const thirdRejectedSuggestionId = "4c3d7e9f-1a2b-4c3d-8e4f-5a6b7c8d9e0f";
+      const identityRejectedSuggestionId = "5d4e8f0a-2b3c-4d5e-9f60-7a8b9c0d1e2f";
+      const skipIdentitySuggestionId = "6e5f901b-3c4d-5e6f-a071-8b9c0d1e2f3a";
       let savedNote: Record<string, unknown> | null = null;
       const noteTimestamp = "2026-07-30T00:00:00.000Z";
       let legacyGlobalNote = {
@@ -547,6 +552,12 @@ async function main() {
       let reviewPreflightBlocked = false;
       let confirmReviewDiscard = false;
       let lastReviewDiscardMessage = "";
+      let confirmDelete = false;
+      let lastDeleteConfirmation: { title: string; message: string; confirmLabel?: string } | null = null;
+      let notifyDeleteConfirmation: (() => void) | undefined;
+      const permanentDeleteCalls: string[][] = [];
+      let holdDeleteTargetLookup = false;
+      let releaseDeleteTargetLookup: (() => void) | null = null;
       let reviewQueueEmpty = false;
       let reviewFingerprintRevision = 0;
       let lastInjectionRequests = 0;
@@ -810,7 +821,7 @@ async function main() {
               scope: {},
               tags: [],
               keywords: [],
-              links: [],
+              links: [{ target: "world_outside_current_chat", relation: "involves" }],
               sections: {
                 facts: {
                   text: "Second mobile review memory text.",
@@ -930,6 +941,12 @@ async function main() {
           if (url.searchParams.has("ids")) {
             reviewContextQueries.push(url.search);
             if (failReviewContext) return send(503, { error: "review context temporarily unavailable" });
+            if (holdDeleteTargetLookup) {
+              holdDeleteTargetLookup = false;
+              await new Promise<void>((resolveHold) => {
+                releaseDeleteTargetLookup = resolveHold;
+              });
+            }
             const requestedIds = new Set(url.searchParams.get("ids")?.split(",") ?? []);
             return send(
               200,
@@ -942,7 +959,9 @@ async function main() {
               ? notes.filter((note) => note.id === "world_second_mobile")
               : url.searchParams.get("scopeChatIds") === "desktop-chat"
                 ? notes.filter((note) => note.id !== "world_outside_current_chat")
-                : notes,
+                : url.searchParams.get("scopePersonaId") === "persona-b"
+                  ? []
+                  : notes,
           );
         }
         if (request.method === "GET" && url.pathname.endsWith("/notes/world_second_mobile"))
@@ -955,7 +974,7 @@ async function main() {
             scope: {},
             tags: [],
             keywords: [],
-            links: [],
+            links: [{ target: "world_outside_current_chat", relation: "involves" }],
             sections: {
               facts: {
                 text: "Second mobile review memory text.",
@@ -1187,9 +1206,9 @@ async function main() {
                   candidate: {
                     index: 1,
                     reason: "unsupported_bucket",
-                    validatorCode: "event_shaped_character_fact",
-                    message: "Character facts cannot capture ordinary scene actions.",
-                    snippet: "Rowan entered the observatory.",
+                    validatorCode: "scene_only_tone_or_anchor",
+                    message: "Tone and anchor candidates must describe durable atmosphere, motifs, or callbacks.",
+                    snippet: "The observatory felt tense tonight.",
                   },
                   createdAt: "2026-07-30T00:00:00.000Z",
                   lastSeenAt: "2026-07-30T00:00:00.000Z",
@@ -1210,12 +1229,94 @@ async function main() {
                   createdAt: "2026-07-30T00:00:00.000Z",
                   lastSeenAt: "2026-07-30T00:00:00.000Z",
                 },
+                {
+                  id: identityRejectedSuggestionId,
+                  fingerprint: "d".repeat(64),
+                  source: { sourceNoteId: "source_mobile_recovery" },
+                  scope: { characterIds: ["character-a"] },
+                  modes: ["roleplay"],
+                  candidate: {
+                    index: 3,
+                    reason: "ambiguous_subject",
+                    message: "An extracted relationship with two participants.",
+                    snippet: "Ari trusts Mira.",
+                    identityReview: [
+                      {
+                        name: "Ari",
+                        candidates: [
+                          {
+                            name: "Ari",
+                            subject: { key: "character:character-a", ref: { kind: "character", id: "character-a" } },
+                          },
+                          {
+                            name: "Ari",
+                            subject: { key: "persona:persona-a", ref: { kind: "persona", id: "persona-a" } },
+                          },
+                        ],
+                        allowDifferent: false,
+                      },
+                      {
+                        name: "Mira",
+                        candidates: [
+                          {
+                            name: "Mira",
+                            subject: { key: "character:character-b", ref: { kind: "character", id: "character-b" } },
+                          },
+                        ],
+                        allowDifferent: true,
+                      },
+                    ],
+                  },
+                  createdAt: "2026-07-30T00:00:00.000Z",
+                  lastSeenAt: "2026-07-30T00:00:00.000Z",
+                },
+                {
+                  id: skipIdentitySuggestionId,
+                  fingerprint: "e".repeat(64),
+                  source: { sourceNoteId: "source_mobile_recovery" },
+                  scope: { characterIds: ["character-a"] },
+                  modes: ["roleplay"],
+                  candidate: {
+                    index: 4,
+                    reason: "ambiguous_subject",
+                    message: "An extracted fact for one participant.",
+                    snippet: "Nox lives nearby.",
+                    identityReview: [
+                      {
+                        name: "Nox",
+                        candidates: [
+                          {
+                            name: "Nox",
+                            subject: { key: "character:character-a", ref: { kind: "character", id: "character-a" } },
+                          },
+                        ],
+                        allowDifferent: true,
+                      },
+                    ],
+                  },
+                  createdAt: "2026-07-30T00:00:00.000Z",
+                  lastSeenAt: "2026-07-30T00:00:00.000Z",
+                },
               ].filter(
                 (suggestion) =>
                   !clearedRejectedSourceIds.has(suggestion.source.sourceNoteId) &&
-                  suggestion.id !== deletedSuggestionId,
+                  suggestion.id !== deletedSuggestionId &&
+                  !resolvedIdentitySuggestionIds.has(suggestion.id),
               );
           return send(200, { suggestions, total: suggestions.length });
+        }
+        if (request.method === "POST" && url.pathname.endsWith("/resolve-identity")) {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const id = decodeURIComponent(url.pathname.split("/").at(-2)!);
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { choices?: unknown };
+          identityResolutionRequests.push({ id, choices: body.choices });
+          if (identityResolutionFailures > 0) {
+            identityResolutionFailures -= 1;
+            return send(500, { error: "Identity choice fixture failed" });
+          }
+          resolvedIdentitySuggestionIds.add(id);
+          return send(200, { resolved: true, suggestionId: id, draft: null });
         }
         if (request.method === "POST" && url.pathname.endsWith("/notes")) {
           const chunks: Buffer[] = [];
@@ -1229,6 +1330,14 @@ async function main() {
               version: 1,
             },
           });
+        }
+        if (request.method === "POST" && url.pathname.endsWith("/notes/permanent-delete")) {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as { ids?: string[] };
+          const ids = body.ids ?? [];
+          permanentDeleteCalls.push(ids);
+          return send(200, { deletedIds: ids });
         }
         if (request.method === "POST" && url.pathname.endsWith("/import/source-notes")) {
           const chunks: Buffer[] = [];
@@ -1517,6 +1626,14 @@ async function main() {
         lastReviewDiscardMessage = options.message ?? "";
         return confirmReviewDiscard;
       });
+      await page.exposeFunction(
+        "captureDeleteConfirmation",
+        (options: { title: string; message: string; confirmLabel?: string }) => {
+          lastDeleteConfirmation = options;
+          notifyDeleteConfirmation?.();
+          return confirmDelete;
+        },
+      );
       await page.addInitScript(() => {
         Object.defineProperty(Crypto.prototype, "randomUUID", {
           configurable: true,
@@ -1536,6 +1653,15 @@ async function main() {
           chatName: "desktop chat",
           chatMode: "conversation",
           enabledForChat: true,
+          confirmAction: (
+            window as Window & {
+              captureDeleteConfirmation: (options: {
+                title: string;
+                message: string;
+                confirmLabel?: string;
+              }) => boolean;
+            }
+          ).captureDeleteConfirmation,
           onEnabledForChatChange: (
             window as Window & {
               onDesktopActivationChange: () => void;
@@ -1678,6 +1804,7 @@ async function main() {
       await memoryScope.locator('[data-ltm-vault-scope-tab="branch"]').click();
       assert.equal(await memoryScope.locator('[data-ltm-vault-scope-presence="with-memories"]').count(), 1);
       assert.equal(await memoryScope.locator('[data-ltm-vault-scope-presence="no-memories"]').count(), 1);
+      await memoryScope.locator('[data-ltm-vault-scope-presence="no-memories"]:not([open])').waitFor();
       assert.equal(
         await memoryScope.locator('[data-ltm-vault-scope-presence="no-memories"]').getAttribute("open"),
         null,
@@ -1732,6 +1859,77 @@ async function main() {
       await page.locator('[data-ltm-memory-group="world"] > summary').click();
       await page.getByText("Memory outside current chat").waitFor();
       assert.ok(noteQueries.some((query) => !query.includes("scopeChatIds")));
+      const secondaryScope = page.locator("[data-ltm-memory-scope-secondary]");
+      // Repair proof: a secondary place must stay literal. Inheriting the primary
+      // place's character turns "A AND (B OR A)" back into A, so memories the second
+      // place does not hold would still reach the list and bulk selection.
+      await memoryScope.locator('[data-ltm-vault-scope-tab="character"]').click();
+      await memoryScope.locator('[data-ltm-vault-scope-target="character:character-a"]').click();
+      await memoryScope.locator('[data-ltm-vault-scope-target="character:character-a"][aria-checked="true"]').waitFor();
+      const secondaryPlaceRequestPromise = page.waitForRequest(
+        (request) => request.method() === "GET" && request.url().includes("scopeGroupId=conversation-a"),
+      );
+      await secondaryScope.locator(":scope > summary").click();
+      await secondaryScope.locator('[data-ltm-vault-scope-tab="chat"]').click();
+      await secondaryScope.locator('[data-ltm-vault-scope-target="group:conversation-a"]').click();
+      await secondaryScope
+        .locator('[data-ltm-vault-scope-target="group:conversation-a"][aria-checked="true"]')
+        .waitFor();
+      const secondaryPlaceRequest = await secondaryPlaceRequestPromise;
+      assert.doesNotMatch(
+        secondaryPlaceRequest.url(),
+        /scopeCharacterIds/u,
+        `the second place must not inherit the primary character: ${secondaryPlaceRequest.url()}`,
+      );
+      await secondaryScope.locator('[data-ltm-vault-scope-target="all"]').click();
+      await secondaryScope.locator(":scope > summary").click();
+      await memoryScope.locator('[data-ltm-vault-scope-tab="all"]').click();
+      await memoryScope.locator('[data-ltm-vault-scope-target="all"]').click();
+      const worldGroupSummary = page.locator('[data-ltm-memory-group="world"] > summary');
+      if (!(await page.locator('[data-ltm-memory-group="world"][open]').count())) await worldGroupSummary.click();
+      await page.getByText("Memory outside current chat").waitFor();
+      const secondaryCharacterRequestPromise = page.waitForRequest(
+        (request) => request.method() === "GET" && request.url().includes("scopeCharacterIds=character-a"),
+      );
+      await secondaryScope.locator(":scope > summary").click();
+      await secondaryScope.locator('[data-ltm-vault-scope-tab="character"]').click();
+      await secondaryScope.locator('[data-ltm-vault-scope-target="character:character-a"]').click();
+      await secondaryScope
+        .locator('[data-ltm-vault-scope-target="character:character-a"][aria-checked="true"]')
+        .waitFor();
+      const secondaryCharacterRequest = await secondaryCharacterRequestPromise;
+      assert.match(
+        secondaryCharacterRequest.url(),
+        /scopeCharacterIds=character-a/u,
+        "the second place must issue its own scope query",
+      );
+      if (!(await page.locator('[data-ltm-memory-group="world"][open]').count())) await worldGroupSummary.click();
+      await page.getByText("Second mobile review memory", { exact: true }).waitFor();
+      assert.equal(
+        await page.getByText("Memory outside current chat").count(),
+        0,
+        "AND intersection must drop memories unavailable in the second place",
+      );
+      // Repair proof: the AND view keeps the primary place's notes as link context,
+      // so a memory linked to a note outside the intersection still resolves by its
+      // title instead of dropping out of linked-title search.
+      const secondaryContextSearch = page.getByLabel("Search memories");
+      await secondaryContextSearch.fill("Memory outside current chat");
+      await page.getByText("Second mobile review memory", { exact: true }).waitFor();
+      await secondaryContextSearch.fill("");
+      // Repair proof: an empty AND intersection still names the combined scope
+      // instead of falling back to the generic "no memories" copy.
+      if (!(await page.locator("[data-ltm-memory-scope-secondary][open]").count())) {
+        await secondaryScope.locator(":scope > summary").click();
+      }
+      await secondaryScope.locator('[data-ltm-vault-scope-tab="persona"]').click();
+      await secondaryScope.locator('[data-ltm-vault-scope-presence="no-memories"] > summary').click();
+      await secondaryScope.locator('[data-ltm-vault-scope-target="persona:persona-b"]').click();
+      await secondaryScope.locator('[data-ltm-vault-scope-target="persona:persona-b"][aria-checked="true"]').waitFor();
+      await page.getByText(/No memories are available in .*AND/u).waitFor();
+      await secondaryScope.locator('[data-ltm-vault-scope-target="all"]').click();
+      assert.match((await secondaryScope.locator(":scope > summary").textContent()) ?? "", /No second place/u);
+      await secondaryScope.locator(":scope > summary").click();
       const setupGuide = page.getByRole("button", { name: "Show setup guide" });
       await setupGuide.click();
       const onboardingTitle = page.locator("#ltm-onboarding-title");
@@ -2192,6 +2390,119 @@ async function main() {
       );
       assert.deepEqual(desktopExtractionLayout.selectHeights, [44, 44]);
       assert.equal(desktopExtractionLayout.infoSize, 14);
+      const debugEvent = (operationId: string, action: string, status: string, fields = {}) => ({
+        id: `${operationId}-${action}-${status}`,
+        operationId,
+        ts: noteTimestamp,
+        phase: "llm",
+        action,
+        status,
+        sourceNoteId: legacyGlobalNote.id,
+        ...fields,
+      });
+      const debugEvents = [
+        debugEvent("estimated", "extract_source_note", "started"),
+        debugEvent("estimated", "evidence_unit_request", "started", {
+          model: "fixture-model",
+          counts: { estimatedPromptTokens: 123 },
+        }),
+        debugEvent("estimated", "evidence_unit_response", "ok", {
+          durationMs: 450,
+          details: { finishReason: "stop", responseSnippet: "private response snippet" },
+        }),
+        debugEvent("estimated", "extract_source_note", "ok", { durationMs: 500 }),
+        debugEvent("reported", "evidence_unit_request", "started", { counts: { estimatedPromptTokens: 123 } }),
+        debugEvent("reported", "evidence_unit_response", "ok", {
+          counts: { promptTokens: 40, completionTokens: 12, completionReasoningTokens: 8, totalTokens: 60 },
+        }),
+        debugEvent("zero", "evidence_unit_request", "started", { counts: { inputTokens: 123 } }),
+        debugEvent("zero", "evidence_unit_response", "ok", { counts: { promptTokens: 0 } }),
+        debugEvent("truncated", "extract_source_note", "started"),
+        debugEvent("truncated", "evidence_unit_response", "warning", {
+          details: { finishReason: "length", responseSnippet: "private response snippet" },
+        }),
+        debugEvent("truncated", "extract_source_note", "ok"),
+        debugEvent("context", "evidence_unit_request", "started"),
+        debugEvent("context", "evidence_unit_context_preflight", "error", {
+          details: { reason: "prompt_trim_required" },
+        }),
+        debugEvent("budget", "evidence_unit_request", "started"),
+        debugEvent("budget", "evidence_unit_context_preflight", "error", {
+          details: { reason: "output_budget_below_viability_floor" },
+        }),
+        debugEvent("partial", "import_sources", "started"),
+        debugEvent("partial", "extract_source_note", "error", { error: { message: "One source failed." } }),
+        debugEvent("partial", "import_sources", "ok"),
+        debugEvent("noduration", "recall_explanation", "ok"),
+      ];
+      const assertDebugActivity = async (activityPage: typeof page) => {
+        await activityPage.locator("#settings-tab-debug").click();
+        const activity = activityPage.locator('[data-ltm-surface="activity"]');
+        const operation = (id: string) =>
+          activity
+            .locator(":scope > ol > li > details > summary")
+            .nth(
+              ["estimated", "reported", "zero", "truncated", "context", "budget", "partial", "noduration"].indexOf(id),
+            );
+        await operation("estimated").waitFor();
+        const estimated = await operation("estimated").innerText();
+        assert.match(estimated, /AI extraction/u);
+        assert.match(estimated, /fixture-model/u);
+        assert.match(estimated, /500 ms/u);
+        assert.match(estimated, /Estimated input: 123 tokens/u);
+        assert.doesNotMatch(estimated, /Input \(provider-reported\)|Output:|Total:/u);
+        const reported = await operation("reported").innerText();
+        assert.match(reported, /Completed/u, "a standalone request/response pair must not stay Running");
+        assert.match(reported, /Input \(provider-reported\): 40 tokens/u);
+        assert.match(reported, /Reasoning: 8 tokens/u);
+        assert.match(reported, /Output: 12 tokens/u);
+        assert.match(reported, /Total: 60 tokens/u);
+        assert.match(await operation("zero").innerText(), /Estimated input: 123 tokens/u);
+        assert.match(await operation("zero").innerText(), /Input \(provider-reported\): 0 tokens/u);
+        assert.match(await operation("truncated").innerText(), /Completed with warnings/u);
+        assert.match(await operation("truncated").innerText(), /output limit.*length/iu);
+        assert.match(await operation("context").innerText(), /Failed/u);
+        assert.match(await operation("context").innerText(), /too large.*context/iu);
+        assert.match(await operation("budget").innerText(), /Failed/u);
+        assert.match(await operation("budget").innerText(), /too small.*response/iu);
+        assert.match(await operation("partial").innerText(), /Completed with warnings/u);
+        assert.match(await operation("partial").innerText(), /One source failed\./u);
+        assert.doesNotMatch(
+          await operation("noduration").innerText(),
+          / ms/u,
+          "an operation without a recorded duration must not display a fabricated one",
+        );
+        assert.doesNotMatch(await activity.innerText(), /private response snippet/u);
+        assert.equal(
+          await activityPage.evaluate(
+            () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          ),
+          true,
+        );
+      };
+      const openDebugActivity = async (context: typeof browserContext, navigation: "desktop" | "mobile") => {
+        const debugPage = await context.newPage();
+        await debugPage.route("**/api/long-term-memory/debug-log?*", (route) =>
+          route.fulfill({ json: { events: debugEvents } }),
+        );
+        await debugPage.goto(`http://127.0.0.1:${address.port}/`);
+        await debugPage.evaluate(() => customElements.whenDefined("marinara-capability-long-term-memory"));
+        await debugPage.evaluate(() => {
+          const element = document.createElement("marinara-capability-long-term-memory");
+          element.setAttribute("view", "detail");
+          document.body.append(element);
+        });
+        await debugPage.locator(`[data-ltm-navigation="${navigation}"] [data-ltm-destination="settings"]`).click();
+        await assertDebugActivity(debugPage);
+        return debugPage;
+      };
+      const desktopDebugPage = await openDebugActivity(browserContext, "desktop");
+      const estimatedOperation = desktopDebugPage.locator('[data-ltm-surface="activity"] > ol > li > details').first();
+      await estimatedOperation.locator(":scope > summary").click();
+      const responseEvent = estimatedOperation.locator(":scope > ol > li").filter({ hasText: "450 ms" });
+      await responseEvent.getByText("Technical details", { exact: true }).click();
+      assert.match(await responseEvent.locator("pre").innerText(), /private response snippet/u);
+      await desktopDebugPage.close();
       await page.locator('[data-ltm-navigation="desktop"] [data-ltm-destination="vault"]').click();
       await page.evaluate((version) => {
         const element = document.createElement("marinara-capability-long-term-memory") as HTMLElement & {
@@ -2274,7 +2585,8 @@ async function main() {
       assert.ok(reviewQueries.length > 0);
       assert.ok(reviewQueries.every((query) => query === "?includeInvalidated=true"));
       assert.ok(rejectedSuggestionQueries.length > 0);
-      assert.ok(rejectedSuggestionQueries.every((query) => query === ""));
+      assert.ok(rejectedSuggestionQueries.every((query) => query === "" || query === "?includeResolved=true"));
+      assert.ok(rejectedSuggestionQueries.some((query) => query === "?includeResolved=true"));
       assert.ok(reviewContextQueries.length > 0);
       assert.ok(reviewContextQueries.every((query) => query.startsWith("?ids=")));
       assert.ok(reviewContextQueries.some((query) => query.includes("world_merge_target_mobile")));
@@ -2884,7 +3196,129 @@ async function main() {
               Node.DOCUMENT_POSITION_FOLLOWING,
           ),
       );
-      await page.locator("[data-ltm-rejected-suggestions] > summary").click();
+      const recoveryReviewSource = page.locator('[data-ltm-review-source-select="source_mobile_recovery"]');
+      if ((await recoveryReviewSource.getAttribute("aria-expanded")) !== "true") await recoveryReviewSource.click();
+      const rejectedSuggestions = page.locator("[data-ltm-rejected-suggestions]");
+      await rejectedSuggestions.waitFor({ state: "attached" });
+      if (!(await rejectedSuggestions.evaluate((element) => (element as HTMLDetailsElement).open)))
+        await rejectedSuggestions.locator(":scope > summary").click();
+      const recoveryRejectedArticle = page.locator('article[data-ltm-rejected-source="source_mobile_recovery"]');
+      await recoveryRejectedArticle.waitFor();
+      const identityReview = page.locator(`[data-ltm-identity-review="${identityRejectedSuggestionId}"]`);
+      await identityReview.waitFor();
+      if (visualOutputDir) {
+        await identityReview.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: join(visualOutputDir, "long-term-memory-identity-desktop.png"), fullPage: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await showWorkspacePane("workbench");
+        await identityReview.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: join(visualOutputDir, "long-term-memory-identity-mobile.png"), fullPage: true });
+        await page.setViewportSize({ width: 1280, height: 900 });
+      }
+      const identitySelects = identityReview.getByRole("combobox");
+      assert.equal(await identitySelects.nth(0).inputValue(), "", "identity candidates must not be preselected");
+      assert.equal(await identitySelects.nth(1).inputValue(), "", "each participant starts without a binding");
+      assert.equal(
+        await identityReview.getByRole("button", { name: "Save choices and review memory" }).isDisabled(),
+        true,
+      );
+      const identityArticle = identityReview.locator("xpath=ancestor::article[@data-ltm-rejected-suggestion]");
+      assert.equal(
+        await identityArticle.getByRole("button", { name: /^Delete suggestion:/ }).count(),
+        1,
+        "identity rows must keep a per-suggestion delete action",
+      );
+      assert.equal(
+        await identityArticle.getByRole("button", { name: /^Recover suggestion:/ }).count(),
+        1,
+        "identity rows must keep the manual recovery action",
+      );
+      assert.deepEqual(
+        await identitySelects
+          .nth(0)
+          .locator("option")
+          .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).textContent)),
+        [
+          "Choose identity",
+          "Ari (character: character-a) · character:character-a",
+          "Ari (persona: persona-a) · persona:persona-a",
+          "Skip this participant",
+        ],
+      );
+      assert.ok(
+        await identitySelects.evaluateAll((selects) =>
+          selects.every((select) => select.getBoundingClientRect().height >= 44),
+        ),
+        "desktop identity controls retain 44px touch targets",
+      );
+      await identitySelects.nth(0).focus();
+      await identitySelects.nth(0).press("ArrowDown");
+      await identitySelects.nth(0).press("Enter");
+      assert.equal(await identitySelects.nth(0).inputValue(), "character:character-a");
+      await identitySelects.nth(1).selectOption("different");
+      assert.equal(
+        await page.locator('[data-ltm-review-source-select="source_mobile_single"]').isDisabled(),
+        true,
+        "changing source cannot silently discard unsaved identity decisions",
+      );
+      await identityReview.getByRole("button", { name: "Discard identity choices" }).click();
+      assert.equal(await identitySelects.nth(0).inputValue(), "");
+      assert.equal(await identitySelects.nth(1).inputValue(), "");
+      assert.equal(await page.locator('[data-ltm-review-source-select="source_mobile_single"]').isEnabled(), true);
+      await identitySelects.nth(0).selectOption("character:character-a");
+      await identitySelects.nth(1).selectOption("different");
+      const saveIdentityChoices = identityReview.getByRole("button", { name: "Save choices and review memory" });
+      const failedIdentitySave = page.waitForResponse(
+        (response) => response.request().method() === "POST" && response.url().endsWith("/resolve-identity"),
+      );
+      await saveIdentityChoices.click();
+      assert.equal((await failedIdentitySave).status(), 500);
+      await identityReview.getByRole("alert").getByText("Identity choice fixture failed").waitFor();
+      assert.equal(await identitySelects.nth(0).inputValue(), "character:character-a");
+      assert.equal(await identitySelects.nth(1).inputValue(), "different");
+      const retriedIdentitySave = page.waitForResponse(
+        (response) => response.request().method() === "POST" && response.url().endsWith("/resolve-identity"),
+      );
+      await saveIdentityChoices.click();
+      assert.equal((await retriedIdentitySave).status(), 200);
+      assert.deepEqual(identityResolutionRequests.at(-1), {
+        id: identityRejectedSuggestionId,
+        choices: [
+          { name: "Ari", action: "bind", subjectKey: "character:character-a" },
+          { name: "Mira", action: "different" },
+        ],
+      });
+      await page.getByText("Identity choices saved. Review the pending memory draft before applying it.").waitFor();
+      await page.locator(`[data-ltm-identity-review="${identityRejectedSuggestionId}"]`).waitFor({ state: "detached" });
+
+      const skipIdentityReview = page.locator(`[data-ltm-identity-review="${skipIdentitySuggestionId}"]`);
+      await skipIdentityReview.waitFor();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await showWorkspacePane("workbench");
+      const skipIdentitySelect = skipIdentityReview.getByRole("combobox");
+      assert.ok(
+        (await skipIdentitySelect.boundingBox())!.height >= 44,
+        "mobile identity control retains a 44px touch target",
+      );
+      await skipIdentitySelect.focus();
+      await skipIdentitySelect.press("End");
+      assert.equal(await skipIdentitySelect.inputValue(), "skip");
+      const skipIdentityResponse = page.waitForResponse(
+        (response) => response.request().method() === "POST" && response.url().endsWith("/resolve-identity"),
+      );
+      await skipIdentityReview.getByRole("button", { name: "Save skip choice" }).click();
+      assert.equal((await skipIdentityResponse).status(), 200);
+      assert.deepEqual(identityResolutionRequests.at(-1), {
+        id: skipIdentitySuggestionId,
+        choices: [{ name: "Nox", action: "skip" }],
+      });
+      await page.getByText("Skip choice saved. The whole fact or relationship was skipped.").waitFor();
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await showWorkspacePane("workbench");
+
+      if ((await recoveryReviewSource.getAttribute("aria-expanded")) !== "true") await recoveryReviewSource.click();
+      if (!(await rejectedSuggestions.evaluate((element) => (element as HTMLDetailsElement).open)))
+        await rejectedSuggestions.locator(":scope > summary").click();
       const recoveryReviewText = await page.locator('[data-ltm-workspace-pane="workbench"]').innerText();
       assert.match(recoveryReviewText, /Mobile recovery source/u);
       assert.match(recoveryReviewText, /Mobile recovery memory/u);
@@ -3124,6 +3558,12 @@ async function main() {
       await page.locator("[data-ltm-bulk-availability]").click();
       const bulkAvailability = page.locator("[data-ltm-bulk-availability-workbench]");
       await bulkAvailability.waitFor();
+      assert.equal(await bulkAvailability.locator("h3").filter({ hasText: "Available in" }).count(), 1);
+      assert.equal(
+        await bulkAvailability.getByText("Chat mode eligibility is set separately", { exact: false }).count(),
+        1,
+      );
+      await bulkAvailability.locator("[data-ltm-availability-picker] > summary").click();
       const bulkRail = bulkAvailability.locator("[data-ltm-availability-tabs]");
       await bulkRail.waitFor();
       assert.deepEqual(
@@ -3250,6 +3690,130 @@ async function main() {
         "Resolved restore batch must target the resolved note",
       );
 
+      const deleteTargetIds = ["world_second_mobile", "world_mobile_recovery"];
+      const deleteTargetCards = [
+        page.locator('[data-ltm-note-type="world"]').filter({ hasText: "Second mobile review memory" }),
+        page.locator('[data-ltm-note-type="world"]').filter({ hasText: "Mobile recovery memory" }),
+      ];
+      for (const card of deleteTargetCards) await card.locator('input[type="checkbox"]').check();
+      const deleteMemorySearch = page.getByLabel("Search memories", { exact: true });
+      await deleteMemorySearch.fill("no-delete-target-match");
+      assert.match(await page.locator("[data-ltm-selection-count]").innerText(), /2 selected, 2 hidden by filters/u);
+      confirmDelete = false;
+      lastDeleteConfirmation = null;
+      await page.evaluate(() => {
+        const element = document.querySelector("marinara-capability-long-term-memory") as HTMLElement & {
+          capabilityProps?: Record<string, unknown>;
+        };
+        element.capabilityProps = {
+          ...element.capabilityProps,
+          confirmAction: (
+            window as Window & {
+              captureDeleteConfirmation: (options: {
+                title: string;
+                message: string;
+                confirmLabel?: string;
+              }) => boolean;
+            }
+          ).captureDeleteConfirmation,
+        };
+        element.dispatchEvent(new CustomEvent("marinara-capability-props"));
+      });
+      const beforeDeleteCalls = permanentDeleteCalls.length;
+      const cancelledConfirmation = new Promise<void>((resolve) => {
+        notifyDeleteConfirmation = resolve;
+      });
+      const cancelledTargetResolution = page.waitForResponse(
+        (response) =>
+          response.request().method() === "GET" &&
+          response.url().includes("/api/long-term-memory/notes?ids=world_second_mobile%2Cworld_mobile_recovery"),
+      );
+      await page.locator("[data-ltm-bulk-actions]").getByRole("button", { name: "Delete" }).click();
+      await cancelledTargetResolution;
+      await cancelledConfirmation;
+      notifyDeleteConfirmation = undefined;
+      assert.equal(permanentDeleteCalls.length, beforeDeleteCalls, "Cancel must not send a deletion request");
+      assert.ok(lastDeleteConfirmation);
+      assert.equal(lastDeleteConfirmation?.title, "Permanently delete 2 memories?");
+      assert.equal(lastDeleteConfirmation?.confirmLabel, "Delete 2 memories permanently");
+      assert.match(lastDeleteConfirmation?.message ?? "", /This cannot be undone\./u);
+      assert.match(lastDeleteConfirmation?.message ?? "", /2 selected memories are hidden by your filters\./u);
+      for (const id of deleteTargetIds) assert.match(lastDeleteConfirmation?.message ?? "", new RegExp(id, "u"));
+      assert.match(lastDeleteConfirmation?.message ?? "", /Second mobile review memory/u);
+      assert.match(lastDeleteConfirmation?.message ?? "", /Mobile recovery memory/u);
+      assert.match(lastDeleteConfirmation?.message ?? "", /Excerpt: .*memory text/u);
+      assert.match(lastDeleteConfirmation?.message ?? "", /Available in: All memories/u);
+      confirmDelete = true;
+      const deleteResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().endsWith("/api/long-term-memory/notes/permanent-delete"),
+      );
+      await page.locator("[data-ltm-bulk-actions]").getByRole("button", { name: "Delete" }).click();
+      await deleteResponse;
+      assert.deepEqual(permanentDeleteCalls.at(-1), deleteTargetIds);
+
+      // A selection change while the delete-target lookup is still resolving must
+      // cancel the pending permanent delete instead of acting on the stale IDs.
+      await deleteMemorySearch.fill("");
+      const worldNoteGroup = page.locator('[data-ltm-memory-group="world"]');
+      if (!(await worldNoteGroup.evaluate((element) => (element as HTMLDetailsElement).open)))
+        await worldNoteGroup.locator("summary").click();
+      for (const card of deleteTargetCards) await card.locator('input[type="checkbox"]').check();
+      lastDeleteConfirmation = null;
+      const beforeStaleDeleteCalls = permanentDeleteCalls.length;
+      holdDeleteTargetLookup = true;
+      const staleLookupResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "GET" &&
+          response.url().includes("/api/long-term-memory/notes?ids=") &&
+          response.url().includes("world_second_mobile"),
+      );
+      // Keep an earlier assertion failure from being masked by this pending wait rejecting during cleanup.
+      staleLookupResponse.catch(() => {});
+      await page.locator("[data-ltm-bulk-actions]").getByRole("button", { name: "Delete" }).click();
+      for (let attempt = 0; attempt < 200 && !releaseDeleteTargetLookup; attempt += 1) await page.waitForTimeout(5);
+      assert.ok(releaseDeleteTargetLookup, "delete target lookup must still be pending");
+      const bulkDeleteButton = page.locator("[data-ltm-bulk-actions]").getByRole("button", { name: "Delete" });
+      assert.equal(
+        await bulkDeleteButton.isDisabled(),
+        true,
+        "bulk delete controls must be disabled while targets resolve",
+      );
+      await deleteTargetCards[1].locator('input[type="checkbox"]').uncheck();
+      const releaseStaleLookup = releaseDeleteTargetLookup;
+      releaseDeleteTargetLookup = null;
+      releaseStaleLookup();
+      await staleLookupResponse;
+      await page.waitForTimeout(50);
+      assert.equal(
+        lastDeleteConfirmation,
+        null,
+        "A selection change during target resolution must not open a delete confirmation",
+      );
+      assert.equal(
+        permanentDeleteCalls.length,
+        beforeStaleDeleteCalls,
+        "A stale permanent delete must not reach the server",
+      );
+      for (let attempt = 0; attempt < 100 && (await bulkDeleteButton.isDisabled()); attempt += 1)
+        await page.waitForTimeout(5);
+      assert.equal(
+        await bulkDeleteButton.isDisabled(),
+        false,
+        "bulk delete controls must be re-enabled after the stale delete cancels",
+      );
+
+      // A failed target lookup must surface the localized no-op message, not raw server text.
+      failReviewContext = true;
+      await bulkDeleteButton.click();
+      await page
+        .locator("[data-ltm-vault-feedback]")
+        .getByText("The selected memories could not be loaded for confirmation. No memories were deleted.")
+        .waitFor();
+      assert.doesNotMatch(await page.locator("[data-ltm-vault-feedback]").innerText(), /temporarily unavailable/u);
+      failReviewContext = false;
+
       await page.locator('[data-ltm-control="navigation"][data-ltm-destination="review"]').first().click();
       const clearSource = page.locator('[data-ltm-review-source-select="source_mobile_single"]');
       await clearSource.click();
@@ -3328,6 +3892,10 @@ async function main() {
       assert.match((await sourceScopeTrigger.innerText()).trim(), /All/u);
       await sourceScopeTrigger.click();
       assert.equal(await sourceScopePicker.locator('[role="listbox"] input').count(), 0);
+      for (const kind of ["all", "chat", "branch", "character", "persona"]) {
+        assert.equal(await sourceScopePicker.locator(`[data-ltm-scope-tab="${kind}"]`).count(), 1);
+      }
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-tab="all"][data-active="true"]').count(), 1);
       assert.deepEqual(
         await sourceScopePicker.locator('[role="option"]').evaluateAll((options) =>
           options.slice(0, 2).map((option) => {
@@ -3345,9 +3913,45 @@ async function main() {
       );
       assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="chat:desktop-chat"]').count(), 1);
       assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="all"]').count(), 1);
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="group:conversation-a"]').count(), 1);
+      await sourceScopePicker.locator('[data-ltm-scope-tab="chat"]').click();
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-tab="chat"][data-active="true"]').count(), 1);
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-tabpanel="chat"][role="tabpanel"]').count(), 1);
+      assert.equal(
+        await sourceScopePicker.locator('[role="tabpanel"]').getAttribute("aria-labelledby"),
+        await sourceScopePicker.locator('[data-ltm-scope-tab="chat"]').getAttribute("id"),
+      );
+      assert.equal(
+        await sourceScopePicker.locator('[data-ltm-scope-tab="chat"]').getAttribute("aria-controls"),
+        await sourceScopePicker.locator('[role="tabpanel"]').getAttribute("id"),
+      );
+      assert.equal(await sourceScopePicker.locator('[role="tabpanel"] [role="listbox"]').count(), 1);
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="chat:desktop-chat"]').count(), 1);
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="group:conversation-a"]').count(), 0);
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="all"]').count(), 1);
+      await sourceScopePicker.locator('[data-ltm-scope-tab="branch"]').click();
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="group:conversation-a"]').count(), 1);
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="chat:desktop-chat"]').count(), 0);
+      assert.equal(
+        await sourceScopePicker
+          .locator('[data-ltm-scope-tab="branch"]')
+          .evaluate((tab) => document.activeElement === tab),
+        true,
+        "mouse-activated tab receives focus so roving keyboard navigation can continue",
+      );
+      await page.keyboard.press("ArrowRight");
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-tab="character"][data-active="true"]').count(), 1);
+      assert.equal(
+        await sourceScopePicker
+          .locator('[data-ltm-scope-tab="character"]')
+          .evaluate((tab) => document.activeElement === tab),
+        true,
+      );
+      await sourceScopePicker.locator('[data-ltm-scope-tab="all"]').click();
       await sourceScopePicker.locator("[data-ltm-scope-picker-popup] input").fill("does-not-match");
       assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="chat:desktop-chat"]').count(), 1);
       assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="all"]').count(), 1);
+      assert.equal(await sourceScopePicker.locator('[data-ltm-scope-option="group:conversation-a"]').count(), 0);
       await sourceScopePicker.locator("[data-ltm-scope-picker-popup] input").fill("Member Final Branch");
       assert.equal(
         await sourceScopePicker.locator('[data-ltm-scope-option="group:conversation-a"]').count(),
@@ -3381,6 +3985,7 @@ async function main() {
           body.source === "chats" && JSON.stringify(body.sourceScope) === JSON.stringify(expectedInitialChatSourceScope)
         );
       });
+      await sourceScopePicker.locator('[data-ltm-scope-tab="chat"]').click();
       await sourceScopePicker.locator('[role="option"][data-ltm-scope-option="chat:desktop-chat"]').click();
       const scopedChatPreviewRequest = (await scopedChatPreviewRequestPromise).postDataJSON() as {
         sourceScope?: unknown;
@@ -3390,6 +3995,23 @@ async function main() {
       // Unified destination panel replaces the split combobox + "Add more locations".
       const destinationPanel = page.locator("#ltm-destination-scope-control");
       await destinationPanel.waitFor();
+      const destinationScope = destinationPanel.locator("[data-ltm-destination-scope]");
+      assert.equal(await destinationScope.getAttribute("open"), null, "destination scope starts collapsed");
+      assert.match(
+        await destinationScope.locator("[data-ltm-destination-scope-summary]").innerText(),
+        /Choose a destination/u,
+      );
+      assert.equal(
+        await destinationScope.locator('[data-ltm-availability-tab="all"]').isVisible(),
+        false,
+        "destination tab rail stays inside the collapsed disclosure",
+      );
+      await destinationScope.locator("summary").click();
+      assert.notEqual(
+        await destinationScope.getAttribute("open"),
+        null,
+        "destination scope expands when the summary is clicked",
+      );
       assert.equal(await page.locator('[data-ltm-scope-picker="destination"]').count(), 0);
       assert.equal(await page.locator("[data-ltm-add-destination]").count(), 0);
       assert.equal(await destinationPanel.getByText("Make memories available in", { exact: true }).count(), 1);
@@ -3503,6 +4125,11 @@ async function main() {
       assert.equal(
         await destinationPanel.locator('button[aria-label^="Remove Persona A (current and future chats)"]').count(),
         1,
+      );
+      // The collapsed summary tracks the current destination selection.
+      assert.doesNotMatch(
+        await destinationScope.locator("[data-ltm-destination-scope-summary]").innerText(),
+        /^Choose a destination$/u,
       );
 
       // Capacity: the per-kind 100-ID limit blocks the 100th additional chat.
@@ -3657,6 +4284,71 @@ async function main() {
           path: join(visualOutputDir, "long-term-memory-source-pagination-desktop.png"),
           fullPage: true,
         });
+      // Keep the import pending so row feedback can be checked independently of response timing.
+      const importRoute = "**/api/long-term-memory/import/source-notes";
+      let releaseImport!: () => void;
+      const importPending = new Promise<void>((resolve) => {
+        releaseImport = resolve;
+      });
+      await page.route(importRoute, async (route) => {
+        await importPending;
+        await route.continue();
+      });
+      const importingButton = page.locator(
+        '[data-ltm-source-action="import"][data-ltm-source-id="character-outside-current-chat"]',
+      );
+      const idleButton = page.locator('[data-ltm-source-action="import"][data-ltm-source-id="character-next-page"]');
+      const idleIcon = await idleButton.locator("svg").getAttribute("class");
+      await importingButton.click();
+      try {
+        await page.locator('[data-ltm-import-status="pending"]').waitFor();
+        const visibleSourceCountOwners = page.locator(
+          '[data-ltm-surface="sources"] [data-ltm-source-task-count]:visible',
+        );
+        assert.equal(
+          await visibleSourceCountOwners.count(),
+          1,
+          "an active source task exposes exactly one visible source count",
+        );
+        assert.match(await visibleSourceCountOwners.innerText(), /Importing 1/u);
+        assert.equal(await importingButton.isDisabled(), true);
+        assert.equal(await idleButton.isDisabled(), true);
+        assert.equal(
+          await idleButton.locator("svg").getAttribute("class"),
+          idleIcon,
+          "unrelated sources retain their import icon",
+        );
+        assert.equal(
+          await importingButton.locator("svg").getAttribute("class"),
+          idleIcon,
+          "the active row keeps its default icon while the task surface owns activity",
+        );
+        await page.waitForFunction(() => {
+          const button = document.querySelector(
+            '[data-ltm-source-action="import"][data-ltm-source-id="character-next-page"]',
+          );
+          return button && Number(getComputedStyle(button).opacity) < 1;
+        });
+        await page.waitForFunction(() => {
+          const icon = document.querySelector('[data-ltm-surface="sources"] [data-ltm-source-task-count] svg');
+          return Boolean(icon?.getAnimations().some((animation) => animation.playState === "running"));
+        });
+        const animatedIndicators = await page
+          .locator('[data-ltm-surface="sources"] svg')
+          .evaluateAll(
+            (icons) =>
+              icons.filter((icon) => icon.getAnimations().some((animation) => animation.playState === "running"))
+                .length,
+          );
+        assert.equal(animatedIndicators, 1, "a running source task animates exactly one indicator");
+      } finally {
+        releaseImport();
+      }
+      await page.locator('[data-ltm-import-status="idle"]').waitFor();
+      await page.unroute(importRoute);
+      assert.equal(await importingButton.isEnabled(), true);
+      assert.equal(await importingButton.locator("svg").getAttribute("class"), idleIcon);
+      await selectedCharacter.check();
       const searchRestart = page.waitForRequest(
         (request) =>
           request.method() === "POST" &&
@@ -3716,7 +4408,8 @@ async function main() {
       assert.equal(await desktopReextract.isDisabled(), true);
       await page.locator("[data-ltm-source-task-progress]").waitFor();
       const desktopSourcesNavigation = page.locator('[data-ltm-navigation="desktop"] [data-ltm-destination="sources"]');
-      assert.match(await desktopSourcesNavigation.innerText(), /Re-extracting 1/u);
+      assert.match(await desktopSourcesNavigation.innerText(), /Re-extracting\.\.\./u);
+      assert.match(await page.locator("[data-ltm-source-task-progress]").innerText(), /Re-extracting 1/u);
       await page.locator('[data-ltm-navigation="desktop"] [data-ltm-destination="vault"]').click();
       await reextractionStarted;
       releaseReextraction?.();
@@ -3752,6 +4445,9 @@ async function main() {
         ),
         3,
       );
+      if ((await destinationScope.getAttribute("open")) === null) {
+        await destinationScope.locator("summary").click();
+      }
       await destinationPanel.locator('[data-ltm-availability-tab="branch"]').click();
       await destinationPanel.locator('[data-ltm-availability-target="branch:conversation-a"] input').check();
       await page.locator('[data-ltm-lorebook-id="lorebook_mobile_fixture"]').click();
@@ -4118,6 +4814,8 @@ async function main() {
       assert.equal(mobileExtractionLayout.columns, 1);
       assert.deepEqual(mobileExtractionLayout.labelHeights, [44, 44]);
       assert.deepEqual(mobileExtractionLayout.selectWidths, mobileExtractionLayout.fieldWidths);
+      const mobileDebugPage = await openDebugActivity(mobileContext, "mobile");
+      await mobileDebugPage.close();
       await mobilePage.setViewportSize({ width: 320, height: 720 });
       assert.ok(
         await mobilePage.locator(".mari-editor-header").evaluate((header) => {

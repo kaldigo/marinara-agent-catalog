@@ -2,7 +2,6 @@ import {
   buildSpatialLocationIndex,
   resolveSpatialBreadcrumb,
   resolveSpatialDestinations,
-  spatialContextDefinitionSchema,
   type CapabilityPersistenceSession,
   type SpatialContextDefinition,
   type SpatialContextResponse,
@@ -31,6 +30,7 @@ import {
   type SpatialHierarchyProfile,
   type SpatialLocationDeletionProtection,
   type SpatialSharedWorldStatus,
+  spatialMapDefinitionSchema,
 } from "../../../../maps-shared/src/maps-model.js";
 import {
   independentSpatialWorldStatus,
@@ -568,7 +568,7 @@ export function createSpatialContextService() {
           input.hierarchyProfile ?? stored.hierarchyProfile ?? metadata[HIERARCHY_PROFILE_KEY],
           definition,
         );
-        const parsedDefinition = spatialContextDefinitionSchema.safeParse(definition);
+        const parsedDefinition = spatialMapDefinitionSchema.safeParse(definition);
         if (!parsedDefinition.success) {
           throw new SpatialContextServiceError(
             "spatial_replacement_invalid",

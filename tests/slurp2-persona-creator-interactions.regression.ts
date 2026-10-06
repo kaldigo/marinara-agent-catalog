@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { slurp2Source } from "./slurp2-source";
 
-const routes = readFileSync("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts", "utf8");
-const home = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx", "utf8");
-const cards = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpPostCard.tsx", "utf8");
-const storage = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts",
-  "utf8",
-);
+const routes = slurp2Source("packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts");
+const home = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx");
+const cards = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpPostCard.tsx");
+const storage = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
 
-assert.match(routes, /resolveInteractableNoodlerPost/u);
+assert.match(routes, /resolveInteractableCreatorPost/u);
 assert.match(
   routes,
   /const actor = creatorBelongsToViewer\(gated\.creator, identity\.viewer\) \? gated\.creator : identity\.actor/u,
@@ -38,7 +35,7 @@ assert.match(
   "poll votes must recognize the same Creator identity",
 );
 assert.equal(
-  (storage.match(/!ownsAuthor &&\s*!canViewNoodlerPost/gu) ?? []).length,
+  (storage.match(/!ownsAuthor &&\s*!canViewCreatorPost/gu) ?? []).length,
   3,
   "owning personas must bypass audience paywalls when adding, removing, or voting on their own posts",
 );

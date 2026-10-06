@@ -1,22 +1,26 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   makeSlurpProject,
   readSlurpProject,
+  type SlurpArcType,
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-project.js";
+import {
   slurpArcChapterMood,
   slurpArcEffectMultiplier,
   slurpArcImageLine,
   slurpArcResolveProfile,
+  slurpProjectDirect,
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-arc-progress.js";
+import {
   slurpArcTypeFromProject,
   slurpGeneratedArcProject,
-  slurpProjectDirect,
-  type SlurpArcType,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-project.js";
-import { scoreSlurpRapport } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-rapport.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/projects/slp-arc-library.js";
+import { scoreSlurpRapport } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/messages/slp-rapport.js";
+import { slurp2Source } from "./slurp2-source";
 
 const root = "packages/slurp2/src/engine/packages/server/src";
-const source = (path: string) => readFileSync(`${root}/${path}`, "utf8");
+const source = (path: string) => slurp2Source(`${root}/${path}`);
 const at = new Date("2026-09-13T10:00:00.000Z");
 
 const type: SlurpArcType = {
@@ -91,12 +95,15 @@ assert.match(
   /slurpArcChapterMood\(after, \(await this\.getSettings\(\)\)\.arcAffectsMood\)/,
 );
 
-// Image prompt carries the chapter line, joined before identity protection.
+// Image prompt carries the chapter line, joined before identity protection. The draft is
+// `generated.imagePrompt` in classic mode and the situation-assembled brief in produce mode, so
+// the guard names the joined variable rather than either source: what matters is that the arc line
+// is inside the protected value, not which mode wrote the draft.
 assert.equal(slurpArcImageLine(arc), "The picture shows this moment of an ongoing story: packing (cozy tone).");
 assert.equal(slurpArcImageLine(null), null);
 assert.match(
   source("services/slurp/slurp-generation.service.ts"),
-  /protectNoodlerGeneratedIdentity\(\s*generated\.imagePrompt && arcImageLine/,
+  /protectCreatorGeneratedIdentity\(\s*imageDraft && arcImageLine/,
 );
 
 // Profile proposal lifecycle: propose on chapter start, apply stores previous, revert proposal at end.
@@ -125,7 +132,7 @@ const back = slurpProjectDirect(moved, "back", at)!;
 assert.deepEqual(back.history.at(-1)?.effects, { growth: 30, earnings: -8 });
 // Single-player, so not owner-gated, and not gated by Director mode.
 const routes = source("routes/slurp.routes.ts");
-const routeStart = routes.indexOf('"/noodler/accounts/:id/projects/:projectId/profile"');
+const routeStart = routes.indexOf('"/slurp/accounts/:id/projects/:projectId/profile"');
 assert.notEqual(routeStart, -1, "profile route must exist");
 const routeEnd = routes.indexOf("\n  app.", routeStart + 1);
 const route = routes.slice(routeStart, routeEnd === -1 ? undefined : routeEnd);

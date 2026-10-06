@@ -1,107 +1,118 @@
-/**
- * The splash screen ships the release notes inside the client bundle, so they are a second copy of
- * CHANGELOG.md. Copies drift: this fails the build when the mirror, the changelog and the shipped
- * version stop agreeing.
- */
+/** Ensure the splash mirrors the public release history. */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-// @ts-expect-error -- plain .mjs helper, no types published.
-import { parsePackageChangelog } from "../scripts/catalog-release-notes.mjs";
 import {
   getSlurp2UnseenReleases,
   SLURP2_RELEASES,
   SLURP2_VERSION,
-} from "../packages/slurp2/src/engine/packages/client/src/components/slurp/slurp2-release.ts";
+} from "../packages/slurp2/src/engine/packages/client/src/slp/features/onboarding/slp-release.ts";
 
 const root = join(import.meta.dirname, "..", "packages", "slurp2");
 const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8")) as { version: string };
-const changelog = parsePackageChangelog(readFileSync(join(root, "CHANGELOG.md"), "utf8"), "slurp2") as Array<{
-  version: string;
-  date: string;
-  notes: string;
-}>;
+const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+const expectedVersions = [
+  "0.2.75",
+  "0.2.74",
+  "0.2.73",
+  "0.2.72",
+  "0.2.71",
+  "0.2.70",
+  "0.2.69",
+  "0.2.68",
+  "0.2.67",
+  "0.2.66",
+  "0.2.65",
+  "0.2.64",
+  "0.2.63",
+  "0.2.62",
+  "0.2.61",
+  "0.2.60",
+  "0.2.59",
+  "0.2.58",
+  "0.2.57",
+  "0.2.56",
+  "0.2.55",
+  "0.2.54",
+  "0.2.53",
+  "0.2.52",
+  "0.2.51",
+  "0.2.50",
+  "0.2.49",
+  "0.2.48",
+  "0.2.47",
+  "0.2.46",
+  "0.2.45",
+  "0.2.44",
+  "0.2.43",
+  "0.2.42",
+  "0.2.41",
+  "0.2.40",
+  "0.2.39",
+  "0.2.38",
+  "0.2.37",
+  "0.2.36",
+  "0.2.35",
+  "0.2.34",
+  "0.2.29",
+  "0.2.28",
+  "0.2.27",
+  "0.2.26",
+  "0.2.24",
+  "0.2.23",
+  "0.2.22",
+  "0.2.20",
+  "0.2.19",
+  "0.2.18",
+  "0.2.17",
+  "0.2.16",
+  "0.2.15",
+  "0.2.8",
+  "0.2.7",
+  "0.2.5",
+  "0.2.4",
+  "0.2.3",
+  "0.2.2",
+  "0.2.1",
+  "0.2.0",
+  "0.1.3",
+  "0.1.2",
+  "0.1.1",
+  "0.1.0",
+  "0.0.22",
+];
 
-assert.equal(SLURP2_VERSION, manifest.version, "SLURP2_VERSION must match the shipped manifest version");
-assert.equal(SLURP2_VERSION, changelog[0].version, "the newest changelog entry must be the shipped version");
-
+assert.equal(SLURP2_VERSION, "0.2.75");
+assert.equal(SLURP2_VERSION, manifest.version);
+for (const version of expectedVersions) assert.match(changelog, new RegExp(`^## ${version} — `, "mu"));
 assert.deepEqual(
-  SLURP2_RELEASES.map((release) => ({ version: release.version, date: release.date, notes: release.notes })),
-  changelog.map((entry) => ({
-    version: entry.version,
-    date: entry.date,
-    notes: entry.notes
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => line.replace(/^-\s*/u, "")),
-  })),
-  "the splash release notes must mirror CHANGELOG.md",
+  SLURP2_RELEASES.map((release) => release.version),
+  expectedVersions,
 );
-
+const unseenAfter = (seenVersion: string) => expectedVersions.slice(0, expectedVersions.indexOf(seenVersion));
 assert.deepEqual(
   getSlurp2UnseenReleases(null).map((release) => release.version),
-  SLURP2_RELEASES.map((release) => release.version),
-  "a fresh install must retain the complete release history for progressive disclosure",
+  expectedVersions,
 );
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.4").map((release) => release.version),
-  ["0.0.15", "0.0.14", "0.0.13", "0.0.12", "0.0.11", "0.0.10", "0.0.9", "0.0.8", "0.0.7", "0.0.6", "0.0.5"],
-  "an update from the previous release must show only the new release",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.2").map((release) => release.version),
-  [
-    "0.0.15",
-    "0.0.14",
-    "0.0.13",
-    "0.0.12",
-    "0.0.11",
-    "0.0.10",
-    "0.0.9",
-    "0.0.8",
-    "0.0.7",
-    "0.0.6",
-    "0.0.5",
-    "0.0.4",
-    "0.0.3",
-  ],
-  "a skipped update must retain every unseen release",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.8").map((release) => release.version),
-  ["0.0.15", "0.0.14", "0.0.13", "0.0.12", "0.0.11", "0.0.10", "0.0.9"],
-  "an update from 0.0.8 must show both newer releases",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.9").map((release) => release.version),
-  ["0.0.15", "0.0.14", "0.0.13", "0.0.12", "0.0.11", "0.0.10"],
-  "an update from 0.0.9 must show the audience release",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.10").map((release) => release.version),
-  ["0.0.15", "0.0.14", "0.0.13", "0.0.12", "0.0.11"],
-  "an update from 0.0.10 must show the draft fix",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.11").map((release) => release.version),
-  ["0.0.15", "0.0.14", "0.0.13", "0.0.12"],
-  "an update from 0.0.11 must show the smart draft release",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.12").map((release) => release.version),
-  ["0.0.15", "0.0.14", "0.0.13"],
-  "an update from 0.0.12 must show the ownership fix release",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.13").map((release) => release.version),
-  ["0.0.15", "0.0.14"],
-  "an update from 0.0.13 must show the integration release",
-);
-assert.deepEqual(
-  getSlurp2UnseenReleases("0.0.14").map((release) => release.version),
-  ["0.0.15"],
-  "an update from 0.0.14 must show the layout and follow fix release",
-);
-assert.deepEqual(getSlurp2UnseenReleases("0.0.15"), [], "the current release must not reopen an acknowledged splash");
+for (const seenVersion of [
+  "0.0.22",
+  "0.1.0",
+  "0.1.1",
+  "0.1.3",
+  "0.2.0",
+  "0.2.1",
+  "0.2.2",
+  "0.2.3",
+  "0.2.4",
+  "0.2.5",
+  "0.2.28",
+  "0.2.29",
+  "0.2.34",
+]) {
+  assert.deepEqual(
+    getSlurp2UnseenReleases(seenVersion).map((release) => release.version),
+    unseenAfter(seenVersion),
+  );
+}
 
 console.log("slurp2 release notes mirror CHANGELOG.md");

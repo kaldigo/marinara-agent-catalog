@@ -9,16 +9,16 @@
  */
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import {
   createStoredZip,
   readStoredZip,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-backup.ts";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/maintenance/slp-backup.ts";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 // ── 1. Round trip ─────────────────────────────────────────────────────────────
 const manifest = { format: "marinara-slurp-backup", formatVersion: 1, sourcePackage: "slurp2" };
@@ -108,14 +108,22 @@ assert.equal(exported.length, declared.length, "the backup registry and the sche
 // ── 4. The legacy migration actually lands ────────────────────────────────────
 // A Slurp Legacy export names these entities. Each one must resolve to a table here, or a user
 // migrating off legacy silently loses that part of their data with no error to tell them.
-const legacyStorage = read("packages/slurp/src/engine/packages/server/src/services/storage/slurp.storage.ts");
-const legacyExport = legacyStorage.slice(
-  legacyStorage.indexOf("async exportSlurpBackup()"),
-  legacyStorage.indexOf("async updateSlurpSettings("),
-);
-const legacyTableBlock = legacyExport.slice(legacyExport.indexOf("tables: {"), legacyExport.lastIndexOf("},"));
-const legacyNames = [...legacyTableBlock.matchAll(/^\s+(\w+),$/gmu)].map(([, name]) => name);
-assert.ok(legacyNames.length >= 12, `expected the legacy table set, saw ${legacyNames.length}`);
+// Frozen from legacy `exportSlurpBackup()` when the Slurp Legacy source was removed; its backups
+// still exist in the wild, so the list must not change.
+const legacyNames = [
+  "accounts",
+  "posts",
+  "subscriptions",
+  "unlocks",
+  "interactions",
+  "replyClaims",
+  "preparedPosts",
+  "attempts",
+  "reserveState",
+  "fanState",
+  "digests",
+  "refreshRuns",
+];
 for (const name of legacyNames) {
   assert.match(
     registry,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 // The shipped NoodleR generation guidance is the whole tone contract: it is the only place the
 // adult-first balance is stated, it is duplicated in the client so settings can show "Default",
@@ -8,28 +9,19 @@ import { readFileSync } from "node:fs";
 // the feature ships a tone the README and onboarding deny. noodle.storage.ts cannot be imported
 // outside an Engine checkout (it resolves ../../db/file-query.js), so this reads the source.
 
-const storage = readFileSync(
-  "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts",
-  "utf8",
-);
-const home = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx", "utf8");
-const settings = readFileSync(
-  "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpSettings.tsx",
-  "utf8",
-);
-const readme = readFileSync("packages/slurp/README.md", "utf8");
-const enLocale = readFileSync("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json", "utf8");
-const generation = readFileSync(
+const storage = slurp2Source("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
+const home = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx");
+const settings = slurp2BackstageSource();
+const readme = slurp2Source("packages/slurp2/README.md");
+const enLocale = slurp2Source("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json");
+const generation = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-generation.service.ts",
-  "utf8",
 );
-const stageDraft = readFileSync(
+const stageDraft = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-stage-profile-draft.service.ts",
-  "utf8",
 );
-const replyGeneration = readFileSync(
+const replyGeneration = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-reply-generation.service.ts",
-  "utf8",
 );
 
 /** The three spice levels, as the literal block both sides must agree on character for character. */
@@ -47,7 +39,7 @@ function level(presets: string, name: string): string {
 
 const serverPresets = guidancePresets(storage);
 const serverDefault = level(serverPresets, "steamy");
-assert.doesNotMatch(home, /NOODLER_DEFAULT_GENERATION_GUIDANCE/u);
+assert.doesNotMatch(home, /SLP_CREATOR_DEFAULT_GENERATION_GUIDANCE/u);
 assert.equal(
   guidancePresets(settings),
   serverPresets,
@@ -65,7 +57,7 @@ for (const level of levels)
   assert.match(serverPresets, new RegExp(`\\n  ${level}:\\s+"`, "u"), `missing level: ${level}`);
 assert.match(
   storage,
-  /export const NOODLER_DEFAULT_GENERATION_GUIDANCE: string = SLURP_GUIDANCE_PRESETS\.steamy;/u,
+  /export const SLP_CREATOR_DEFAULT_GENERATION_GUIDANCE: string = SLURP_GUIDANCE_PRESETS\.steamy;/u,
   "the middle level must be the shipped default",
 );
 // The levels must actually differ in explicitness, or the control does nothing.
@@ -82,25 +74,25 @@ assert.doesNotMatch(serverPresets, /normallly/u);
 assert.match(storage, /LEGACY_TYPO_SLURP_DEFAULT_GENERATION_GUIDANCE/u);
 assert.match(storage, /LEGACY_STEAMY_SLURP_DEFAULT_GENERATION_GUIDANCE/u);
 assert.match(storage, /LEGACY_EXPLICIT_SLURP_DEFAULT_GENERATION_GUIDANCE/u);
-assert.match(storage, /LEGACY_NOODLER_DEFAULT_IMAGE_GENERATION_PROMPT/u);
+assert.match(storage, /LEGACY_SLP_CREATOR_DEFAULT_IMAGE_GENERATION_PROMPT/u);
 assert.match(serverPresets, /\n  steamy:\s+"[^"]*tits, nipples, ass, pussy, clit, cock, balls, cum/u);
 assert.match(serverPresets, /\n  explicit:\s+"[^"]*tits, nipples, ass, pussy, clit, cock, balls, cum/u);
 assert.doesNotMatch(serverPresets, /\n  mild:\s+"[^"]*tits, nipples, ass/u);
 assert.match(
   storage,
-  /NOODLER_DEFAULT_IMAGE_GENERATION_PROMPT =\n  "[^"]*tits, nipples, ass, pussy, clit, cock, balls, cum/u,
+  /SLP_CREATOR_DEFAULT_IMAGE_GENERATION_PROMPT =\n  "[^"]*tits, nipples, ass, pussy, clit, cock, balls, cum/u,
 );
-assert.match(storage, /LEGACY_NOODLER_DEFAULT_IMAGE_PROMPT_INTERPRETATION/u);
+assert.match(storage, /LEGACY_SLP_CREATOR_DEFAULT_IMAGE_PROMPT_INTERPRETATION/u);
 assert.match(
   storage,
-  /NOODLER_DEFAULT_IMAGE_PROMPT_INTERPRETATION =\n  "[^"]*tits, nipples, ass, pussy, clit, cock, balls, cum/u,
+  /SLP_CREATOR_DEFAULT_IMAGE_PROMPT_INTERPRETATION =\n  "[^"]*tits, nipples, ass, pussy, clit, cock, balls, cum/u,
 );
 
 // The exact previously shipped prompt migrates, while any customized value remains untouched.
-assert.match(storage, /LEGACY_NOODLER_DEFAULT_GENERATION_GUIDANCE/u);
-assert.match(storage, /rawRecord\.generationGuidance === LEGACY_NOODLER_DEFAULT_GENERATION_GUIDANCE/u);
+assert.match(storage, /LEGACY_SLP_CREATOR_DEFAULT_GENERATION_GUIDANCE/u);
+assert.match(storage, /rawRecord\.generationGuidance === LEGACY_SLP_CREATOR_DEFAULT_GENERATION_GUIDANCE/u);
 assert.match(storage, /rawRecord\.generationGuidance === LEGACY_STEAMY_SLURP_DEFAULT_GENERATION_GUIDANCE/u);
-assert.match(storage, /rawRecord\.imageGenerationPrompt === LEGACY_NOODLER_DEFAULT_IMAGE_GENERATION_PROMPT/u);
+assert.match(storage, /rawRecord\.imageGenerationPrompt === LEGACY_SLP_CREATOR_DEFAULT_IMAGE_GENERATION_PROMPT/u);
 assert.doesNotMatch(generation, /"[^"\n]*NoodleR/u);
 assert.doesNotMatch(stageDraft, /"[^"\n]*NoodleR/u);
 assert.doesNotMatch(replyGeneration, /"[^"\n]*NoodleR/u);
@@ -110,7 +102,7 @@ assert.doesNotMatch(replyGeneration, /"[^"\n]*NoodleR/u);
 assert.match(storage, /const SLURP_SETTINGS_KEY = "slurp2\.settings";/u);
 assert.match(storage, /export const slurpSettingsSchema = z\.object\(/u);
 assert.match(storage, /export type SlurpSettings = z\.infer<typeof slurpSettingsSchema>;/u);
-assert.doesNotMatch(storage, /DEFAULT_NOODLE_SETTINGS|noodleSettingsSchema|NoodleSettingsUpdateInput/u);
+assert.doesNotMatch(storage, /DEFAULT_SLP_SETTINGS|slpSettingsSchema|SlpSettingsUpdateInput/u);
 assert.doesNotMatch(storage, /"noodle\.settings"/u);
 
 // Player-facing copy must not deny the shipped default.
@@ -127,7 +119,7 @@ assert.match(enLocale, /Edit image generation prompt/u);
 assert.match(settings, /SLURP_GUIDANCE_PRESETS\[level\]/u, "the spice picker must apply a shipped level");
 assert.match(settings, /restoreDefaultImagePrompt/u);
 assert.match(settings, /saveImagePrompt/u);
-assert.match(storage, /NOODLER_DEFAULT_IMAGE_GENERATION_PROMPT/u);
+assert.match(storage, /SLP_CREATOR_DEFAULT_IMAGE_GENERATION_PROMPT/u);
 assert.match(storage, /rawRecord\.imageGenerationPrompt === undefined \|\|/u);
 assert.match(storage, /rawRecord\.imageGenerationPrompt === ""/u);
 assert.match(settings, /DEFAULT_SLURP_IMAGE_GENERATION_PROMPT/u);

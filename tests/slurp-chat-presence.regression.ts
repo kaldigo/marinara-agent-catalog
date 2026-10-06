@@ -3,15 +3,14 @@
 // connection were the same blank screen. Read state had the same problem: written on every message
 // since messaging shipped, displayed on none.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { slurp2Source } from "./slurp2-source";
 
-const view = readFileSync("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpMessages.tsx", "utf8");
-const operation = readFileSync(
+const view = slurp2Source("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpMessages.tsx");
+const operation = slurp2Source(
   "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-message.operation.ts",
-  "utf8",
 );
 const locales = JSON.parse(
-  readFileSync("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json", "utf8"),
+  slurp2Source("packages/slurp2/src/engine/packages/client/src/localization/locales/en.json"),
 ) as Record<string, string>;
 
 // A queued reply means she noticed and did not answer. That is a beat, not a bug, and it needs a
@@ -28,6 +27,11 @@ assert.match(
   /momentum === "hot" && availability\.online/u,
   "only an online Creator can extend the conversation window",
 );
+assert.doesNotMatch(
+  operation,
+  /setExtendedOnline\(thread\.id, null\)/u,
+  "an incoming message must not clear an active online window before the reply outcome",
+);
 
 // Every outcome the operation can report has copy, so none of them renders as silence.
 for (const status of ["queued", "cooling", "busy", "ineligible", "connection_not_found", "failed"]) {
@@ -41,10 +45,9 @@ assert.match(view, /setReplyStatus\(result\.replyStatus \?\? null\)/u);
 // A replied outcome is the message itself. Announcing it would be noise.
 assert.match(view, /replyStatus !== "replied"/u);
 
-// The receipt goes on the newest message you sent, not on all of them.
-assert.match(view, /const lastOwnMessageId = messages\.reduce/u);
-assert.match(view, /showReceipt=\{entry\.message\.id === lastOwnMessageId\}/u);
-assert.match(view, /mine && showReceipt && message\.readAt/u);
+// Every message you sent carries a receipt, as in real messengers: one check delivered, two seen.
+assert.match(view, /\{mine && \(/u);
+assert.match(view, /message\.readAt \? <CheckCheck/u);
 assert.ok(locales["ui.slurp.messages.seenAt"], "missing seen receipt copy");
 
 console.log("slurp chat presence regression passed");

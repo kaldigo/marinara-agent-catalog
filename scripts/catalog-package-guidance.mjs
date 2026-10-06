@@ -60,6 +60,14 @@ export const OFFICIAL_PACKAGE_GUIDANCE = Object.freeze({
     modes: ["roleplay"],
     activation: "Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
   },
+  quartermaster: {
+    modes: ["roleplay"],
+    activation: "Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
+  },
+  "relationship-tracker": {
+    modes: ["roleplay"],
+    activation: "Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
+  },
   quest: {
     modes: ["roleplay"],
     activation: "Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
@@ -125,21 +133,27 @@ export const OFFICIAL_PACKAGE_GUIDANCE = Object.freeze({
     modes: ["conversation", "roleplay", "game"],
     activation: "Install it, restart Marinara Engine when prompted, then open Home → Noodle.",
   },
-  slurp: {
-    modes: ["conversation", "roleplay", "game"],
-    activation: "Install it, restart Marinara Engine when prompted, then open Home → Slurp.",
-  },
   slurp2: {
     modes: ["conversation", "roleplay", "game"],
-    activation: "Install it, restart Marinara Engine when prompted, then open Home → Slurp Remastered.",
+    activation: "Install it, restart Marinara Engine when prompted, then open Home → Slurp.",
   },
   "gacha-forge": {
     modes: ["conversation", "roleplay", "game"],
     activation: "Install it, restart Marinara Engine when prompted, then open Home → Gacha Forge.",
   },
+  "modern-life-sim": {
+    modes: ["conversation", "roleplay", "game"],
+    activation: "Install it, restart Marinara Engine when prompted, then open Home → Life Sim.",
+  },
   pixelforge: {
     modes: ["game"],
     activation: "Install it, then choose Pixelforge as the Experience when creating a Game Mode chat.",
+  },
+  // A ruleset is data, not an Agent: nothing is added under Chat Settings and
+  // nothing runs. It becomes selectable in the Game Mode setup wizard instead.
+  "ruleset-5e-2014": {
+    modes: ["game"],
+    activation: "After installing, choose it under Rules in the Game Mode setup wizard when you create a new game.",
   },
   spotify: {
     modes: ["conversation", "roleplay", "game"],

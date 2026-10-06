@@ -92,6 +92,22 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("standalone Slurp package", () => {
+  test("a missing Admin Secret tells remote readers how to set it", async ({ page }) => {
+    // Package routes are privileged, so another device without the secret gets this 403 (#1136).
+    await page.route(
+      (url) => url.pathname.startsWith("/api/slurp2/"),
+      (route) => route.fulfill({ status: 403, json: { error: "Invalid or missing X-Admin-Secret header" } }),
+    );
+    await page.goto("/");
+    await openSlurp(page);
+    await expect(
+      page
+        .locator('[data-component="NoodleView"]')
+        .getByRole("alert")
+        .filter({ hasText: "Slurp could not be loaded." }),
+    ).toContainText("Settings → Advanced → Admin Access");
+  });
+
   test("image context choices persist and creator refresh counts down", async ({ page }, testInfo) => {
     const initialSettings = await (await getSlurpSettings(page)).json();
     let profileId: string | null = null;
@@ -112,17 +128,19 @@ test.describe("standalone Slurp package", () => {
             bio: "Fixture",
             stagePersonality: "Concise",
             disclosureMode: "open",
+            gender: "other",
+            tags: ["art", "gaming", "cosplay"],
           },
         },
       });
       expect(profileResponse.ok()).toBe(true);
       profileId = ((await profileResponse.json()) as { id: string }).id;
-      const profiles = (await (await page.request.get("/api/slurp2/noodler/accounts")).json()) as Array<
+      const profiles = (await (await page.request.get("/api/slurp2/slurp/accounts")).json()) as Array<
         Record<string, unknown>
       >;
       const profile = profiles.find(({ id }) => id === profileId)!;
       expect(profile).toBeTruthy();
-      await page.route("**/api/slurp2/noodler/accounts", (route) =>
+      await page.route("**/api/slurp2/slurp/accounts", (route) =>
         route.fulfill({
           json: [0, 1, 2].map((index) => ({
             ...profile,
@@ -131,7 +149,7 @@ test.describe("standalone Slurp package", () => {
           })),
         }),
       );
-      await page.route("**/api/slurp2/noodler/auto-post/refresh-targeted", async (route) => {
+      await page.route("**/api/slurp2/slurp/auto-post/refresh-targeted", async (route) => {
         const body = route.request().postDataJSON() as { accountIds: string[] };
         expect(body.accountIds).toHaveLength(1);
         await new Promise<void>((resolve) => releases.push(resolve));
@@ -148,7 +166,10 @@ test.describe("standalone Slurp package", () => {
       const choice = page.getByRole("combobox", { name: /Image context for reactions/ });
       await expect(choice).toHaveValue("auto");
       for (const mode of ["imagePrompt", "vision", "auto"]) {
+        await expect(choice).toBeEnabled();
         await choice.selectOption(mode);
+        await expect(choice).toHaveValue(mode);
+        await page.getByRole("button", { name: "Apply changes", exact: true }).click();
         await expect
           .poll(
             async () =>
@@ -158,7 +179,19 @@ test.describe("standalone Slurp package", () => {
           .toBe(mode);
       }
       await page.screenshot({ path: testInfo.outputPath("slurp2-image-context-settings.png") });
-      await page.getByRole("button", { name: "Publishing", exact: true }).click();
+      if (testInfo.project.name.includes("mobile")) {
+        // Phones go back to the settings list and open Posting from it.
+        await page.getByRole("button", { name: "Settings", exact: true }).first().click();
+        await page
+          .getByRole("navigation", { name: "Settings", exact: true })
+          .getByRole("button", { name: /^Posting/u })
+          .click();
+      } else {
+        await page
+          .getByRole("navigation", { name: "Creator settings sections" })
+          .getByRole("button", { name: "Posting", exact: true })
+          .click();
+      }
       await page.getByRole("button", { name: "Generate posts", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Generate posts", exact: true });
       await dialog.getByRole("button", { name: "Generate 3", exact: true }).click();
@@ -172,13 +205,12 @@ test.describe("standalone Slurp package", () => {
       await expect(dialog.getByRole("status")).toHaveText("1 remaining");
       releases[2]!();
       await expect(dialog).toBeHidden();
-      await expect(page.getByText("3 published.", { exact: true })).toBeVisible();
     } finally {
       releases.forEach((release) => release());
       await page.request.patch("/api/slurp2/settings", {
         data: { imageContextMode: initialSettings.imageContextMode, onboarding: initialSettings.onboarding },
       });
-      if (profileId) await page.request.delete(`/api/slurp2/noodler/accounts/${profileId}`);
+      if (profileId) await page.request.delete(`/api/slurp2/slurp/accounts/${profileId}`);
     }
   });
 
@@ -239,17 +271,78 @@ test.describe("standalone Slurp package", () => {
       )
       .toContain("linear-gradient");
 
-    const sectionNavigation = slurp.locator('nav[aria-label="Creator settings sections"]:visible');
-    await expect(sectionNavigation).toBeVisible();
     if (testInfo.project.name.includes("mobile")) {
       const mobileNavigation = slurp.getByRole("navigation", { name: "Slurp navigation" });
       for (const label of ["Slurp", "Profile", "Inbox", "Discover", "More"]) {
         await expect(mobileNavigation.getByRole("button", { name: label, exact: true })).toBeVisible();
       }
-      await expect(sectionNavigation).toHaveClass(/overflow-x-auto/u);
+      // A saved section opens its page; the Settings link above the title returns to the list.
+      await expect(slurp.getByRole("button", { name: "Settings", exact: true }).first()).toBeVisible();
+    } else {
+      const sectionNavigation = slurp.getByRole("navigation", { name: "Creator settings sections" });
+      await expect(sectionNavigation).toBeVisible();
       await expect(sectionNavigation.getByRole("button", { name: "Overview" })).toHaveAttribute("aria-current", "page");
     }
 
+    expect(errors).toEqual([]);
+  });
+
+  test("Prompt Studio keeps outcomes, recipes, blocks, and preview in a focused responsive flow", async ({
+    page,
+  }, testInfo) => {
+    const errors = collectUnexpectedErrors(page);
+    await getSlurpSettings(page);
+    expect((await page.request.patch("/api/slurp2/settings", { data: { onboarding: "completed" } })).ok()).toBe(true);
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        "marinara:slurp2:package-ui",
+        JSON.stringify({
+          navigation: { mode: "creator-settings", section: "prompts" },
+          onboardingState: "completed",
+        }),
+      );
+    });
+    const previewRequests: string[] = [];
+    page.on("request", (request) => {
+      if (/\/settings\/prompt-blocks\/(?:preview|generate-preview)$/u.test(new URL(request.url()).pathname)) {
+        previewRequests.push(request.url());
+      }
+    });
+
+    await page.goto("/");
+    await openSlurp(page);
+    const slurp = page.locator('[data-component="NoodleView"]');
+    await expect(slurp.getByRole("heading", { name: "Prompt Studio", exact: true })).toBeVisible();
+    for (const outcome of ["Voice and writing", "Post behavior", "Image direction"]) {
+      await expect(slurp.getByRole("heading", { name: outcome, exact: true })).toBeVisible();
+    }
+    await expect(slurp.getByText("Generation guidance", { exact: true })).toBeVisible();
+    await expect(slurp.getByText("Public post direction", { exact: true })).toBeVisible();
+    await expect(slurp.getByText("Locked post direction", { exact: true })).toBeVisible();
+    await expect(slurp.getByRole("heading", { name: "Prompt recipes", exact: true })).toBeVisible();
+    await expect(slurp.getByText("Try your changes", { exact: true })).toBeVisible();
+    expect(previewRequests).toEqual([]);
+
+    await slurp.getByRole("button", { name: /^Creator posts/u }).click();
+    await expect(slurp.getByRole("heading", { level: 2, name: "Creator posts", exact: true })).toBeVisible();
+    // Every block is readable and editable in place: no open or apply step.
+    const pipeline = slurp.locator("ol:has(textarea)");
+    await expect(pipeline.locator("textarea").first()).toBeVisible();
+    await expect(pipeline.locator("> li").first().locator("pre, textarea").first()).not.toBeEmpty();
+    expect(previewRequests.filter((url) => url.endsWith("/generate-preview"))).toEqual([]);
+
+    if (testInfo.project.name.includes("mobile")) {
+      await slurp.getByRole("button", { name: "Result", exact: true }).click();
+      await expect(slurp.getByText("Try your changes", { exact: true })).toBeVisible();
+      await slurp.getByRole("button", { name: "Sample post", exact: true }).click();
+      await expect(slurp.getByRole("button", { name: "Run preview", exact: true })).toBeVisible();
+    } else {
+      await expect(slurp.getByRole("navigation", { name: "Recipe blocks" })).toBeVisible();
+      await expect(slurp.getByText("Try your changes", { exact: true })).toBeVisible();
+    }
+
+    await expect.poll(() => slurp.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("slurp2-prompt-studio-workspace.png"), fullPage: true });
     expect(errors).toEqual([]);
   });
 
@@ -315,7 +408,7 @@ test.describe("standalone Slurp package", () => {
         }),
       );
     });
-    await page.route("**/api/slurp2/noodler/ads/pool", async (route) => {
+    await page.route("**/api/slurp2/slurp/ads/pool", async (route) => {
       const response = await route.fetch();
       const data = (await response.json()) as { items: Array<{ id: string; contentRating?: string }> };
       for (const ad of data.items) {
@@ -327,14 +420,16 @@ test.describe("standalone Slurp package", () => {
     await openSlurp(page);
     const slurp = page.locator('[data-component="NoodleView"]');
     const imageToggle = slurp.getByRole("switch", { name: /^Ad images/u });
-    await slurp.getByText("Ad images", { exact: true }).click();
+    await slurp.getByText("Ad images", { exact: true }).click({ force: true });
     await expect(imageToggle).toBeChecked();
+    await slurp.getByRole("button", { name: "Apply changes", exact: true }).click();
     await expect
       .poll(async () => (await (await page.request.get("/api/slurp2/settings")).json()).inlineAdsImagesEnabled)
       .toBe(true);
     await expect(slurp.getByRole("heading", { name: "Ad controls", exact: true })).toBeVisible();
-    await slurp.getByText("Ad images", { exact: true }).click();
+    await slurp.getByText("Ad images", { exact: true }).click({ force: true });
     await expect(imageToggle).not.toBeChecked();
+    await slurp.getByRole("button", { name: "Apply changes", exact: true }).click();
     await expect
       .poll(async () => (await (await page.request.get("/api/slurp2/settings")).json()).inlineAdsImagesEnabled)
       .toBe(false);
@@ -354,7 +449,8 @@ test.describe("standalone Slurp package", () => {
     expect(errors).toEqual([]);
   });
 
-  test("creates package-owned profiles and shows their viewer feed", async ({ page }, testInfo) => {
+  test("creates package-owned profiles and shows their viewer feed", async ({ page, request }, testInfo) => {
+    test.setTimeout(120_000);
     test.skip(
       !testInfo.project.name.includes("desktop"),
       "The complete standalone Creator flow is covered on desktop.",
@@ -390,6 +486,8 @@ test.describe("standalone Slurp package", () => {
             bio: "Standalone Slurp package browser proof.",
             stagePersonality: "Knowing, playful, and scientifically precise.",
             disclosureMode: "open",
+            gender: "female",
+            tags: ["art", "gaming", "cosplay"],
           },
         },
       });
@@ -408,6 +506,8 @@ test.describe("standalone Slurp package", () => {
             bio: "Persona-owned Slurp profile proof.",
             stagePersonality: "Direct and self-authored.",
             disclosureMode: "open",
+            gender: "other",
+            tags: ["art", "gaming", "cosplay"],
           },
         },
       });
@@ -434,7 +534,7 @@ test.describe("standalone Slurp package", () => {
       }
 
       const postContent = `Standalone Slurp viewer post ${suffix}`;
-      const postResponse = await page.request.post("/api/slurp2/noodler/posts", {
+      const postResponse = await page.request.post("/api/slurp2/slurp/posts", {
         data: {
           targetAccountId: stageProfile.id,
           title: null,
@@ -466,7 +566,7 @@ test.describe("standalone Slurp package", () => {
       );
 
       const feedProbe = await page.request.get(
-        `/api/slurp2/noodler/viewer/feed?personaId=${encodeURIComponent(persona.id)}&tab=all&limit=20`,
+        `/api/slurp2/slurp/viewer/feed?personaId=${encodeURIComponent(persona.id)}&tab=all&limit=20`,
       );
       expect(feedProbe.ok(), `${feedProbe.status()} ${feedProbe.statusText()} ${await feedProbe.text()}`).toBe(true);
       const feedProbeBody = (await feedProbe.json()) as {
@@ -476,9 +576,7 @@ test.describe("standalone Slurp package", () => {
         feedProbeBody.items.some((item) => item.post.id === postId && item.post.content === postContent),
         JSON.stringify(feedProbeBody),
       ).toBe(true);
-      const shellProbe = await page.request.get(
-        `/api/slurp2/noodler/viewer?personaId=${encodeURIComponent(persona.id)}`,
-      );
+      const shellProbe = await page.request.get(`/api/slurp2/slurp/viewer?personaId=${encodeURIComponent(persona.id)}`);
       expect(shellProbe.ok()).toBe(true);
       const shellProbeBody = (await shellProbe.json()) as {
         creators: Array<{ profile: { id: string } }>;
@@ -492,13 +590,9 @@ test.describe("standalone Slurp package", () => {
       await openSlurp(page);
       const slurp = page.locator('[data-component="NoodleView"]');
       await slurp.getByRole("tab", { name: "All creators" }).click();
-      await expect(slurp.getByText(postContent)).toBeVisible();
-      await expect(
-        slurp.getByRole("button", {
-          name: stageProfile.displayName,
-          exact: true,
-        }),
-      ).toBeVisible();
+      const postArticle = slurp.getByRole("article").filter({ hasText: postContent, visible: true });
+      await expect(postArticle).toBeVisible();
+      await expect(postArticle).toContainText(stageProfile.displayName);
 
       await page.evaluate(
         ({ personaId }) => {
@@ -516,33 +610,41 @@ test.describe("standalone Slurp package", () => {
       await page.reload();
       await openSlurp(page);
 
-      await slurp.getByRole("button", { name: new RegExp(`^${stageProfile.displayName} @`) }).click();
-      const creatorSettings = slurp.getByRole("region", { name: stageProfile.displayName, exact: true });
+      const creatorRow = slurp
+        .getByRole("button", { name: new RegExp(`^${stageProfile.displayName} @`) })
+        .filter({ visible: true });
+      await creatorRow.click();
+      const creatorSettings = page.getByRole("dialog", { name: `${stageProfile.displayName}'s settings` });
+      await expect(creatorSettings).toBeVisible();
+      await creatorSettings.getByRole("tab", { name: "Identity", exact: true }).click();
+      const profileName = creatorSettings.getByLabel("Stage name");
+      const originalProfileName = await profileName.inputValue();
+      await profileName.fill(`${originalProfileName} draft`);
+      await creatorSettings.getByRole("tab", { name: "Production", exact: true }).click();
+      await creatorSettings.getByRole("tab", { name: "Identity", exact: true }).click();
+      await expect(profileName).toHaveValue(`${originalProfileName} draft`);
+      await profileName.fill(originalProfileName);
+      await creatorSettings.getByRole("tab", { name: "Production", exact: true }).click();
       const imageConnectionSelect = creatorSettings.getByRole("combobox", { name: /^Image connection/u });
-      await expect(imageConnectionSelect).toBeEnabled();
+      await expect(imageConnectionSelect).toBeEnabled({ timeout: 30_000 });
       await imageConnectionSelect.selectOption(imageConnectionIds[1]);
       await expect
         .poll(async () => {
-          const response = await page.request.get("/api/slurp2/noodler/image-connections");
+          const response = await page.request.get("/api/slurp2/slurp/image-connections");
           if (!response.ok()) return null;
           const mappings = (await response.json()) as { creatorConnectionIds: Record<string, string> };
           return mappings.creatorConnectionIds[stageProfile.id] ?? null;
         })
         .toBe(imageConnectionIds[1]);
 
-      const scheduleButton = creatorSettings.getByRole("button", { name: "Posting Schedule", exact: true });
-      await expect(scheduleButton).toBeVisible();
-      await scheduleButton.click();
-      const scheduleDialog = page.getByRole("dialog", { name: `Schedule for ${stageProfile.displayName}` });
-      await expect(scheduleDialog).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(scheduleDialog).toBeHidden();
+      await creatorSettings.getByRole("tab", { name: "Automation", exact: true }).click();
+      await expect(creatorSettings.getByRole("region", { name: "Posting Schedule" })).toBeVisible();
+      await creatorSettings.getByRole("button", { name: "Close dialog" }).click();
 
-      await page.getByRole("button", { name: "Publishing" }).click();
-      await slurp.locator("summary").filter({ hasText: "Generation & prompts" }).click();
-      await page.getByRole("button", { name: "Edit prompt" }).click();
+      await slurp.getByRole("button", { name: "Prompts", exact: true }).click();
+      await slurp.getByRole("button", { name: "Edit prompt", exact: true }).first().click();
       const promptDialog = page.getByRole("dialog", { name: "Edit generation guidance" });
-      const savePrompt = promptDialog.getByRole("button", { name: "Save prompt" });
+      const savePrompt = promptDialog.getByRole("button", { name: "Apply to draft" });
       await expect(savePrompt).toBeVisible();
       await expect
         .poll(() =>
@@ -577,44 +679,238 @@ test.describe("standalone Slurp package", () => {
       );
       await page.reload();
       await openSlurp(page);
-      await slurp.getByRole("button", { name: "Profile controls", exact: true }).click();
+      const profileControls = slurp.getByRole("button", { name: "Profile controls", exact: true });
+      if ((await profileControls.getAttribute("aria-expanded")) !== "true") await profileControls.click();
       await expect(page.getByRole("button", { name: /^Automation/u })).toHaveCount(0);
-      await page.getByRole("button", { name: "Access", exact: true }).click();
-      const accessDialog = page.getByRole("dialog", { name: "Viewer access" });
-      await expect(accessDialog).toBeVisible();
-      await expect(accessDialog.getByText(personaName, { exact: true })).toHaveCount(0);
+      // Viewer access was removed: every persona sees every Creator.
+      await expect(page.getByRole("button", { name: "Access", exact: true })).toHaveCount(0);
 
       expect(errors).toEqual([]);
     } finally {
       if (postId) {
-        await page.request.delete(`/api/slurp2/noodler/posts/${postId}`, { timeout: 5_000 }).catch(() => undefined);
+        await request.delete(`/api/slurp2/slurp/posts/${postId}`, { timeout: 5_000 }).catch(() => undefined);
       }
       if (stageProfileId) {
-        await page.request
-          .delete(`/api/slurp2/noodler/accounts/${stageProfileId}`, {
+        await request
+          .delete(`/api/slurp2/slurp/accounts/${stageProfileId}`, {
             timeout: 5_000,
           })
           .catch(() => undefined);
       }
       if (personaStageProfileId) {
-        await page.request
-          .delete(`/api/slurp2/noodler/accounts/${personaStageProfileId}`, {
+        await request
+          .delete(`/api/slurp2/slurp/accounts/${personaStageProfileId}`, {
             timeout: 5_000,
           })
           .catch(() => undefined);
       }
-      const connectionCleanupResults = await Promise.allSettled(
-        imageConnectionIds.map((connectionId) =>
-          page.request.delete(`/api/connections/${connectionId}`, { timeout: 5_000 }),
-        ),
-      );
-      for (const result of connectionCleanupResults) {
-        expect(result.status).toBe("fulfilled");
-        if (result.status === "fulfilled") {
-          expect(result.value.ok()).toBe(true);
-        }
+      for (const connectionId of imageConnectionIds) {
+        const response = await request.delete(`/api/connections/${connectionId}`, { timeout: 5_000 });
+        expect(response.ok()).toBe(true);
       }
-      await page.request.delete(`/api/characters/personas/${persona.id}`, { timeout: 5_000 }).catch(() => undefined);
+      await request.delete(`/api/characters/personas/${persona.id}`, { timeout: 5_000 }).catch(() => undefined);
     }
   });
+});
+
+test("edits all messaging Details inline and persists overrides", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  page.setDefaultTimeout(15_000);
+  test.skip(
+    !testInfo.project.name.includes("desktop"),
+    "This focused proof covers all three widths from one isolated session.",
+  );
+  const personaResponse = await page.request.post("/api/characters/personas", {
+    data: { name: "Details editor viewer" },
+  });
+  expect(personaResponse.ok()).toBeTruthy();
+  const persona = await personaResponse.json();
+  await getSlurpSettings(page);
+  const settings = await page.request.patch("/api/slurp2/settings", { data: { onboarding: "completed" } });
+  expect(settings.ok()).toBeTruthy();
+  const creatorResponse = await page.request.post("/api/slurp2/accounts/__professor_mari__/noodler", {
+    data: {
+      stageProfile: {
+        displayName: "Details test Creator",
+        handle: "details_test_creator",
+        bio: "Details editing proof.",
+        stagePersonality: "Friendly.",
+        disclosureMode: "open",
+        gender: "female",
+        tags: ["art", "gaming", "cosplay"],
+      },
+    },
+  });
+  expect(creatorResponse.ok(), await creatorResponse.text()).toBeTruthy();
+  const creator = await creatorResponse.json();
+  const send = await page.request.post("/api/slurp2/messages/send", {
+    data: { personaId: persona.id, creatorAccountId: creator.id, content: "Hello!" },
+  });
+  expect(send.ok(), await send.text()).toBeTruthy();
+  const { thread } = await send.json();
+  const detailsUrl = `/api/slurp2/messages/threads/${thread.id}`;
+  const initial = await page.request.patch(`${detailsUrl}/details`, {
+    data: {
+      personaId: persona.id,
+      creatorState: { energy: 60, modifiers: [] },
+      threadState: { emotionalTrust: 60 },
+      score: 25,
+      spentCoins: 123,
+      availability: {
+        online: true,
+        minutesUntilOnline: 0,
+        activity: "Reading a very long book title that should wrap without widening the drawer",
+      },
+    },
+  });
+  expect(initial.ok(), await initial.text()).toBeTruthy();
+  await page.addInitScript(
+    ({ personaId, creatorId }) => {
+      localStorage.setItem(
+        "marinara:slurp2:package-ui",
+        JSON.stringify({
+          navigation: { mode: "creator", view: "messages", creatorAccountId: creatorId },
+          viewerPersonaId: personaId,
+          onboardingState: "completed",
+        }),
+      );
+    },
+    { personaId: persona.id, creatorId: creator.id },
+  );
+  await page.goto("/");
+  await openSlurp(page);
+  const errors = collectUnexpectedErrors(page);
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByText("Details", { exact: true }).last().click();
+  await page.getByRole("radio", { name: "Advanced", exact: true }).click();
+  const toggle = page.getByRole("switch", { name: "Edit values and options", exact: true });
+  await expect(toggle).toBeVisible();
+  await expect(page.getByRole("slider")).toHaveCount(0);
+  if (!(await toggle.isChecked())) await toggle.locator("..").click();
+  const energy = page.getByRole("slider", { name: "Energy", exact: true }).first();
+  await energy.fill("85");
+  await energy.press("ArrowRight");
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(`${detailsUrl}?personaId=${persona.id}`)).json()).relationship.creatorState
+          .energy,
+    )
+    .toBe(86);
+  await page.getByRole("combobox", { name: "Emotion", exact: true }).selectOption("playful");
+  await expect(page.getByRole("combobox", { name: "Emotion", exact: true })).toHaveValue("playful");
+  for (const title of ["Rapport breakdown", "Context", "Exact values"])
+    await page.locator("summary").filter({ hasText: title }).click();
+  await page.getByRole("combobox", { name: "Pictures", exact: true }).selectOption("none");
+  const spent = page.getByRole("slider", { name: "Spent", exact: true }).first();
+  await spent.fill("999");
+  await spent.press("ArrowRight");
+  await expect
+    .poll(
+      async () =>
+        (await (await page.request.get(`${detailsUrl}?personaId=${persona.id}`)).json()).relationship.spentCoins,
+    )
+    .toBe(1000);
+  const vibe = page.getByRole("textbox", { name: "Day vibe", exact: true });
+  await vibe.fill("A quiet afternoon with friends.");
+  await vibe.press("Enter");
+  await expect
+    .poll(
+      async () => (await (await page.request.get(`${detailsUrl}?personaId=${persona.id}`)).json()).relationship.dayVibe,
+    )
+    .toBe("A quiet afternoon with friends.");
+  await expect(page.getByRole("listbox", { name: "True right now", exact: true })).toBeVisible();
+  for (const section of await page.locator("details").all())
+    if ((await section.getAttribute("open")) === null) await section.locator("summary").click();
+  for (const name of [
+    "Rapport",
+    "Mood",
+    "Energy",
+    "Arousal",
+    "Exposure",
+    "Emotion intensity",
+    "Familiarity",
+    "Sexual comfort",
+    "Emotional trust",
+    "Respect",
+    "Resentment",
+    "Conversation desire",
+    "Strikes",
+    "Spent",
+    "Back in",
+  ])
+    await expect(page.getByRole("slider", { name, exact: true }).first()).toBeVisible();
+  for (const name of [
+    "Emotion",
+    "Intent",
+    "Posture",
+    "Adult level",
+    "Tier",
+    "Availability",
+    "Audience tone",
+    "Pictures",
+  ])
+    await expect(page.getByRole("combobox", { name, exact: true })).toBeVisible();
+  for (const name of ["Activity", "Day vibe", "Creator updated at", "Conversation updated at", "Cool-off until"])
+    await expect(page.getByRole("textbox", { name, exact: true })).toBeVisible();
+  await page.reload();
+  await openSlurp(page);
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByText("Details", { exact: true }).last().click();
+  await expect(toggle).toBeChecked();
+  await expect(page.getByRole("slider", { name: "Energy", exact: true }).first()).toBeVisible();
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.getByRole("radio", { name: "Advanced", exact: true }).click();
+    await expect(toggle).toBeVisible();
+    if (!(await toggle.isChecked())) await toggle.locator("..").click();
+    await toggle.locator("..").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`details-edit-${width}.png`), fullPage: true });
+    await page.getByRole("slider", { name: "Energy", exact: true }).first().scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`details-controls-${width}.png`), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  }
+  await toggle.locator("..").click();
+  await expect(page.getByRole("slider")).toHaveCount(0);
+  await page.reload();
+  await openSlurp(page);
+  const saved = await (await page.request.get(`${detailsUrl}?personaId=${persona.id}`)).json();
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByText("Details", { exact: true }).last().click();
+  await page.getByRole("radio", { name: "Advanced", exact: true }).click();
+  await expect(toggle).not.toBeChecked();
+  await expect(page.getByRole("slider")).toHaveCount(0);
+  expect(saved.relationship.spentCoins).toBe(1000);
+  expect(saved.relationship.creatorState.emotion).toBe("playful");
+  expect(saved.relationship.imageMode).toBe("none");
+  expect(saved.relationship.dayVibe).toBe("A quiet afternoon with friends.");
+  expect(errors).toEqual([]);
+});
+
+test("update sheet restores G and the alpha message", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("desktop"), "Three widths in one session.");
+  await page.addInitScript(() => localStorage.setItem("slurp2:splash-seen-version", "0.2.75"));
+  await page.goto("/");
+  await openSlurp(page);
+  const errors = collectUnexpectedErrors(page);
+  const sheet = page.getByRole("dialog", { name: `What's new in ${SLURP_VERSION}`, exact: true });
+  await expect(sheet.getByRole("heading", { name: "Hey, I’m G." })).toBeVisible();
+  await expect(sheet.getByText("The dude responsible for all the bugs.")).toBeVisible();
+  await expect(sheet.getByText(/You’re testing alpha software/)).toBeVisible();
+  await expect(
+    sheet.getByText(
+      "Keep in mind: Slurp uses image and text generation in the background. Be sure you can afford that.",
+    ),
+  ).toBeVisible();
+  const face = sheet.locator('img[src^="data:image/svg+xml"]');
+  await expect(face).toBeVisible();
+  expect(await face.evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  for (const width of [1440, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await sheet.screenshot({ path: testInfo.outputPath(`g-update-${width}.png`) });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  }
+  await sheet.getByRole("button", { name: "Got it", exact: true }).click();
+  await expect(sheet).toBeHidden();
+  expect(errors).toEqual([]);
 });

@@ -1,8 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronRight, Loader2, X } from "lucide-react";
 import {
+  ltmDraftLinkChoiceSchema,
   ltmDraftMutationSchema,
+  type LtmDraftLinkChoice,
   type LtmDraftMutation,
   type LtmDraftPreflightResponse,
   type LtmDraftReviewDraft,
@@ -14,6 +16,7 @@ import {
   type LtmRejectedSuggestionsClearResponse,
   type LtmRejectedSuggestion,
   type LtmRejectedSuggestionsResponse,
+  type LtmSavedSubjectIdentityChoice,
 } from "../../../../shared/src/features/agents/long-term-memory/schema.js";
 import { invalidateLtmQueries, queryKeys, request, requestNotesByIds } from "./api";
 import { humanizeLabel, labelKeys, localizedLabel } from "./display-labels";
@@ -21,6 +24,14 @@ import { Button, IconButton, InfoPopover, inputClass, StatusSurface } from "./sh
 import type { LongTermMemoryDestinationProps } from "./types";
 import { selectLtmPluralForm, useLtmTranslation } from "./localization";
 import { LtmWorkspace, type LtmWorkspacePane } from "./LtmWorkspace";
+import SubjectIdentityReview from "./SubjectIdentityReview";
+import {
+  ambiguousLinkChoiceTarget,
+  ambiguousLinkUnresolvedChoiceValue,
+  ambiguousLinkDetails,
+  replaceAmbiguousLinkTarget,
+  type AmbiguousLinkDiagnostic,
+} from "./review-queue-ambiguous-link";
 
 type ReviewRow = {
   sourceNoteId: string;
@@ -46,7 +57,12 @@ type AcceptRequest = {
   draftId: string;
   mutationIds: string[];
   editedMutations: LtmDraftMutation[];
+  linkChoices: LtmDraftLinkChoice[];
 };
+
+function linkChoiceKey(mutationId: string, linkTarget: string, linkRelation: string) {
+  return `${mutationId}\u0000${linkRelation}\u0000${linkTarget}`;
+}
 
 type SkipDraftResponse = {
   mutationIds: string[];
@@ -84,6 +100,7 @@ type PersistedReviewState = {
       mutationFingerprints: Array<[string, string]>;
       selectedIds: string[];
       editedMutations: Array<[string, LtmDraftMutation]>;
+      linkChoices?: Array<[string, LtmDraftLinkChoice]>;
     }
   >;
 };
@@ -132,6 +149,7 @@ const mutationLabels: Record<LtmDraftMutation["kind"], string> = {
   add_link: "ui.longTermMemory.reviewqueue.addLink",
   set_keywords: "ui.longTermMemory.reviewqueue.replaceKeywords",
   set_status: "ui.longTermMemory.reviewqueue.changeStatus",
+  set_title: "ui.longTermMemory.reviewqueue.updateTitle",
   set_subjects: "ui.longTermMemory.reviewqueue.updateSubjects",
 };
 
@@ -342,6 +360,11 @@ function parsePersistedMutation(value: unknown): LtmDraftMutation | null {
   return parsed.success ? parsed.data : null;
 }
 
+function parsePersistedLinkChoice(value: unknown): LtmDraftLinkChoice | null {
+  const parsed = ltmDraftLinkChoiceSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 function mutationHasOverlongText(mutation: LtmDraftMutation) {
   return mutation.kind === "append_section"
     ? mutation.text.length > MAX_APPEND_TEXT_LENGTH
@@ -362,6 +385,7 @@ function mutationProposedText(mutation: LtmDraftMutation, noteById: ReadonlyMap<
   if (mutation.kind === "update_section") return mutation.section.text.trim();
   if (mutation.kind === "set_keywords") return mutation.keywords.join(", ");
   if (mutation.kind === "set_status") return mutation.status;
+  if (mutation.kind === "set_title") return mutation.title;
   if (mutation.kind === "set_subjects") return mutation.subjects.map((subject) => subject.key).join(", ");
   if (mutation.kind === "add_link") return noteById.get(mutation.link.target)?.title?.trim() || mutation.link.target;
   return "";
@@ -423,7 +447,17 @@ function isPersistedReviewState(value: unknown, chatId: string | null): value is
           typeof entry[0] === "string" &&
           entry[1] &&
           typeof entry[1] === "object",
-      )
+      ) &&
+      (!draft.linkChoices ||
+        (Array.isArray(draft.linkChoices) &&
+          draft.linkChoices.every(
+            (entry) =>
+              Array.isArray(entry) &&
+              entry.length === 2 &&
+              typeof entry[0] === "string" &&
+              entry[1] &&
+              typeof entry[1] === "object",
+          )))
     );
   });
 }
@@ -517,6 +551,7 @@ function buildPersistedReviewState(
   chatId: string | null | undefined,
   selectedIds: ReadonlySet<string>,
   editedById: ReadonlyMap<string, LtmDraftMutation>,
+  linkChoicesById: ReadonlyMap<string, LtmDraftLinkChoice>,
 ) {
   if (!reviewData || !reviewDataSignature || reviewStateHydrated !== `${reviewStateKey}:${reviewDataSignature}`)
     return null;
@@ -531,7 +566,8 @@ function buildPersistedReviewState(
     const mutationIds = new Set(pendingMutations.map((mutation) => mutation.id));
     const selected = [...selectedIds].filter((id) => mutationIds.has(id));
     const editedMutations = [...editedById].filter(([id]) => mutationIds.has(id));
-    if (selected.length || editedMutations.length) {
+    const linkChoices = [...linkChoicesById].filter(([, choice]) => mutationIds.has(choice.mutationId));
+    if (selected.length || editedMutations.length || linkChoices.length) {
       drafts[draftId] = {
         savedAt: Date.now(),
         draftFingerprint: draftReviewFingerprint(item),
@@ -539,6 +575,7 @@ function buildPersistedReviewState(
         mutationFingerprints: pendingMutations.map((mutation) => [mutation.id, mutationFingerprint(mutation)]),
         selectedIds: selected,
         editedMutations,
+        linkChoices,
       };
     }
   }
@@ -650,6 +687,15 @@ function recoveryLabel(
   return hints.join(", ") || localizeUi("ui.longTermMemory.reviewqueue.reviewRejectedCandidate");
 }
 
+function savedIdentityChoiceLabel(
+  choice: LtmSavedSubjectIdentityChoice,
+  localizeUi: ReturnType<typeof useLtmTranslation>["t"],
+) {
+  if (choice.action === "skip") return localizeUi("ui.longTermMemory.reviewqueue.skipIdentityParticipant");
+  if (choice.action === "different") return localizeUi("ui.longTermMemory.reviewqueue.differentIdentity");
+  return choice.subject.ref?.id ?? choice.subject.key;
+}
+
 const rejectionReasonLabels: Partial<Record<LtmExtractionDropReason, string>> = {
   invalid_format: "ui.longTermMemory.reviewqueue.rejectionReasonInvalidFormat",
   placeholder_output: "ui.longTermMemory.reviewqueue.rejectionReasonPlaceholderOutput",
@@ -730,6 +776,62 @@ function SelectionCheckbox({
       />
       <span className={compact ? "sr-only" : undefined}>{label}</span>
     </label>
+  );
+}
+
+function AmbiguousLinkChoice({
+  mutation,
+  diagnostic,
+  noteById,
+  explicitTarget,
+  onChange,
+}: {
+  mutation: LtmDraftMutation;
+  diagnostic: AmbiguousLinkDiagnostic;
+  noteById: ReadonlyMap<string, LtmNote>;
+  explicitTarget?: string;
+  onChange: (mutation: LtmDraftMutation, selectedTarget: string | null) => void;
+}) {
+  const { t: localizeUi } = useLtmTranslation();
+  const details = ambiguousLinkDetails(diagnostic);
+  if (!details) return null;
+  const selectedTarget = ambiguousLinkChoiceTarget(mutation, diagnostic, explicitTarget);
+  if (selectedTarget === null) return null;
+  return (
+    <div
+      data-ltm-review-link-choice
+      className="mari-editor-panel mari-editor-panel--soft space-y-2 border-[var(--marinara-editor-warning)]/45 p-3 text-xs"
+    >
+      <p className="font-semibold">{localizeUi("ui.longTermMemory.reviewqueue.ambiguousLinkChoiceTitle")}</p>
+      <p className="text-[var(--muted-foreground)]">
+        {localizeUi("ui.longTermMemory.reviewqueue.ambiguousLinkChoiceDescription", {
+          target: details.linkTarget,
+        })}
+      </p>
+      <label className="block space-y-1 font-medium">
+        <span>{localizeUi("ui.longTermMemory.reviewqueue.ambiguousLinkChoiceLabel")}</span>
+        <select
+          data-ltm-review-link-choice-select
+          aria-label={localizeUi("ui.longTermMemory.reviewqueue.ambiguousLinkChoiceLabel")}
+          className={inputClass}
+          value={selectedTarget}
+          onChange={(event) => {
+            const selected =
+              event.target.value === ambiguousLinkUnresolvedChoiceValue(details) ? null : event.target.value;
+            onChange(replaceAmbiguousLinkTarget(mutation, details, event.target.value), selected);
+          }}
+        >
+          <option value={ambiguousLinkUnresolvedChoiceValue(details)}>
+            {localizeUi("ui.longTermMemory.reviewqueue.ambiguousLinkChoiceUnresolved")}
+          </option>
+          {details.candidateTargetNoteIds.map((candidateId) => (
+            <option key={candidateId} value={candidateId}>
+              {noteById.get(candidateId)?.title?.trim() || candidateId}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
   );
 }
 
@@ -1145,6 +1247,10 @@ export default function ReviewQueue({
     queryKey: queryKeys.rejectedSuggestions,
     queryFn: () => request<LtmRejectedSuggestionsResponse>("/rejected-suggestions"),
   });
+  const savedIdentityChoices = useQuery({
+    queryKey: queryKeys.savedIdentityChoices,
+    queryFn: () => request<LtmRejectedSuggestionsResponse>("/rejected-suggestions?includeResolved=true"),
+  });
   const contextNoteIds = useMemo(() => {
     const ids = new Set<string>();
     for (const source of review.data?.sources ?? []) {
@@ -1157,8 +1263,11 @@ export default function ReviewQueue({
       ids.add(suggestion.source.sourceNoteId);
       if (suggestion.candidate.recovery?.noteId) ids.add(suggestion.candidate.recovery.noteId);
     }
+    for (const suggestion of savedIdentityChoices.data?.suggestions ?? []) {
+      ids.add(suggestion.source.sourceNoteId);
+    }
     return [...ids].sort();
-  }, [rejectedSuggestions.data?.suggestions, review.data?.sources]);
+  }, [rejectedSuggestions.data?.suggestions, savedIdentityChoices.data?.suggestions, review.data?.sources]);
   const notes = useQuery({
     queryKey: [...queryKeys.notes, "review-context", contextNoteIds],
     queryFn: ({ signal }) => requestNotesByIds<LtmNote>(contextNoteIds, signal, true),
@@ -1179,14 +1288,21 @@ export default function ReviewQueue({
       ...new Set([
         ...(review.data?.sources ?? []).map((source) => source.sourceNoteId),
         ...(rejectedSuggestions.data?.suggestions ?? []).map((suggestion) => suggestion.source.sourceNoteId),
+        ...(savedIdentityChoices.data?.suggestions ?? []).map((suggestion) => suggestion.source.sourceNoteId),
         ...(selectedSourceId ? [selectedSourceId] : []),
       ]),
     ],
-    [rejectedSuggestions.data?.suggestions, review.data?.sources, selectedSourceId],
+    [
+      rejectedSuggestions.data?.suggestions,
+      savedIdentityChoices.data?.suggestions,
+      review.data?.sources,
+      selectedSourceId,
+    ],
   );
   const selectedSourceIsLive =
     review.data?.sources.some((source) => source.sourceNoteId === selectedSourceId) ||
     rejectedSuggestions.data?.suggestions.some((suggestion) => suggestion.source.sourceNoteId === selectedSourceId) ||
+    savedIdentityChoices.data?.suggestions.some((suggestion) => suggestion.source.sourceNoteId === selectedSourceId) ||
     false;
   useEffect(() => {
     if (!review.isSuccess || !rejectedSuggestions.isSuccess || !selectedSourceId || selectedSourceIsLive) {
@@ -1206,6 +1322,10 @@ export default function ReviewQueue({
     selectedReviewSource?.drafts.find((item) => item.draft.id === selectedDraftId) ?? selectedReviewSource?.drafts[0];
   const sourceRejectedSuggestions =
     rejectedSuggestions.data?.suggestions.filter((item) => item.source.sourceNoteId === effectiveSourceId) ?? [];
+  const sourceSavedIdentityChoices =
+    savedIdentityChoices.data?.suggestions.filter(
+      (item) => item.identityResolution && item.source.sourceNoteId === effectiveSourceId,
+    ) ?? [];
   const needsSourceReextraction = Boolean(
     selectedReviewSource?.drafts.some(
       (item) =>
@@ -1216,6 +1336,7 @@ export default function ReviewQueue({
   const selectedSourceIsExtractable = noteById.get(effectiveSourceId ?? "")?.type === "source";
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editedById, setEditedById] = useState<Map<string, LtmDraftMutation>>(new Map());
+  const [linkChoicesById, setLinkChoicesById] = useState<Map<string, LtmDraftLinkChoice>>(new Map());
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
   const [reviewStateHydrated, setReviewStateHydrated] = useState<string | null>(null);
   const [running, setRunning] = useState<"accept" | "skip" | null>(null);
@@ -1225,6 +1346,8 @@ export default function ReviewQueue({
   const [preflightByDraftId, setPreflightByDraftId] = useState<Map<string, LtmDraftPreflightResponse>>(new Map());
   const [preflightKey, setPreflightKey] = useState<string | null>(null);
   const [deleteSuggestionError, setDeleteSuggestionError] = useState("");
+  const [identityDirtyIds, setIdentityDirtyIds] = useState<Set<string>>(new Set());
+  const identitySaveRequestsRef = useRef(new Map<string, () => Promise<boolean>>());
   const [rejectedSuggestionsMessage, setRejectedSuggestionsMessage] = useState("");
   const [clearingSourceId, setClearingSourceId] = useState<string | null>(null);
   const [extractingSourceId, setExtractingSourceId] = useState<string | null>(null);
@@ -1238,6 +1361,7 @@ export default function ReviewQueue({
   const batchControllerRef = useRef<AbortController | null>(null);
   const selectedIdsRef = useRef(selectedIds);
   const editedByIdRef = useRef(editedById);
+  const linkChoicesByIdRef = useRef(linkChoicesById);
   const reviewDataRef = useRef(review.data);
   const reviewDataSignatureRef = useRef<string | null>(null);
   const reviewStateHydratedRef = useRef<string | null>(null);
@@ -1246,6 +1370,29 @@ export default function ReviewQueue({
   const persistReviewStateSnapshotRef = useRef<(key: string, chatId: string | null | undefined) => boolean>(() => true);
   const flushReviewStateRef = useRef<() => boolean>(() => true);
   const reviewStateKey = reviewStateStorageKey(props.chatId);
+  const onIdentityDirtyChange = useCallback((suggestionId: string, dirty: boolean) => {
+    setIdentityDirtyIds((current) => {
+      const next = new Set(current);
+      if (dirty) next.add(suggestionId);
+      else next.delete(suggestionId);
+      return next;
+    });
+  }, []);
+  const onIdentityRegisterSave = useCallback((suggestionId: string, save: (() => Promise<boolean>) | null) => {
+    if (save) identitySaveRequestsRef.current.set(suggestionId, save);
+    else identitySaveRequestsRef.current.delete(suggestionId);
+  }, []);
+  const onIdentityResolved = useCallback(
+    (skipped: boolean) =>
+      setRejectedSuggestionsMessage(
+        localizeUi(
+          skipped
+            ? "ui.longTermMemory.reviewqueue.identitySuggestionSkipped"
+            : "ui.longTermMemory.reviewqueue.identitySuggestionResolved",
+        ),
+      ),
+    [localizeUi],
+  );
   const reviewDataSignature = useMemo(
     () =>
       review.data
@@ -1259,6 +1406,7 @@ export default function ReviewQueue({
   );
   selectedIdsRef.current = selectedIds;
   editedByIdRef.current = editedById;
+  linkChoicesByIdRef.current = linkChoicesById;
   reviewDataRef.current = review.data;
   reviewDataSignatureRef.current = reviewDataSignature;
   reviewStateHydratedRef.current = reviewStateHydrated;
@@ -1272,6 +1420,7 @@ export default function ReviewQueue({
       chatId,
       selectedIdsRef.current,
       editedByIdRef.current,
+      linkChoicesByIdRef.current,
     );
     if (!state) return true;
     const persisted = writePersistedReviewState(key, state);
@@ -1301,6 +1450,7 @@ export default function ReviewQueue({
   useEffect(() => {
     setSelectedIds(new Set());
     setEditedById(new Map());
+    setLinkChoicesById(new Map());
     setReviewedIds(new Set());
     setResult(null);
     setReviewStateHydrated(null);
@@ -1340,13 +1490,18 @@ export default function ReviewQueue({
     return () => window.removeEventListener("pagehide", handlePageHide);
   }, []);
   useEffect(() => {
-    if (reviewStatePersisted || !editedById.size) {
+    if (!identityDirtyIds.size && (reviewStatePersisted || (!editedById.size && !linkChoicesById.size))) {
       onSaveRequest?.(null);
       return;
     }
-    onSaveRequest?.(async () => flushReviewStateRef.current());
+    onSaveRequest?.(async () => {
+      for (const save of identitySaveRequestsRef.current.values()) {
+        if (!(await save())) return false;
+      }
+      return flushReviewStateRef.current();
+    });
     return () => onSaveRequest?.(null);
-  }, [editedById.size, onSaveRequest, reviewStatePersisted]);
+  }, [editedById.size, identityDirtyIds.size, linkChoicesById.size, onSaveRequest, reviewStatePersisted]);
   useEffect(
     () => () => {
       mountedRef.current = false;
@@ -1384,9 +1539,10 @@ export default function ReviewQueue({
     }
     const hydrationKey = `${reviewStateKey}:${reviewDataSignature}`;
     if (reviewStateHydrated === hydrationKey) return;
-    if (selectedIds.size || editedById.size) {
+    if (selectedIds.size || editedById.size || linkChoicesById.size) {
       setSelectedIds(new Set());
       setEditedById(new Map());
+      setLinkChoicesById(new Map());
       setReviewStateMismatch(true);
       setReviewStateMessage(localizeUi("ui.longTermMemory.reviewqueue.savedReviewStateDiscarded"));
       setReviewStateHydrated(hydrationKey);
@@ -1396,6 +1552,7 @@ export default function ReviewQueue({
     const persisted = persistedResult.state;
     const restoredSelectedIds = new Set<string>();
     const restoredEdits = new Map<string, LtmDraftMutation>();
+    const restoredLinkChoices = new Map<string, LtmDraftLinkChoice>();
     let discardedState = false;
     const currentDrafts = new Map(
       review.data.sources.flatMap((source) => source.drafts.map((item) => [item.draft.id, item] as const)),
@@ -1431,9 +1588,26 @@ export default function ReviewQueue({
         if (parsed?.id === id) restoredEdits.set(id, parsed);
         else discardedState = true;
       }
+      for (const [key, choice] of saved.linkChoices ?? []) {
+        const parsed = parsePersistedLinkChoice(choice);
+        if (!parsed || !currentMutationIds.has(parsed.mutationId)) {
+          discardedState = true;
+          continue;
+        }
+        if (
+          savedMutationFingerprints.get(parsed.mutationId) !==
+          mutationFingerprint(currentMutations.get(parsed.mutationId)!)
+        ) {
+          discardedState = true;
+          continue;
+        }
+        if (parsed.mutationId === key.split("\u0000", 1)[0]) restoredLinkChoices.set(key, parsed);
+        else discardedState = true;
+      }
     }
     setSelectedIds(restoredSelectedIds);
     setEditedById(restoredEdits);
+    setLinkChoicesById(restoredLinkChoices);
     setReviewStateMessage(
       persistedResult.error
         ? localizeUi(
@@ -1458,6 +1632,7 @@ export default function ReviewQueue({
     reviewStateKey,
     selectedIds.size,
     editedById.size,
+    linkChoicesById.size,
   ]);
 
   useEffect(() => {
@@ -1474,7 +1649,15 @@ export default function ReviewQueue({
         persistenceTimerRef.current = null;
       }
     };
-  }, [editedById, review.isSuccess, reviewDataSignature, reviewStateHydrated, reviewStateKey, selectedIds]);
+  }, [
+    editedById,
+    linkChoicesById,
+    review.isSuccess,
+    reviewDataSignature,
+    reviewStateHydrated,
+    reviewStateKey,
+    selectedIds,
+  ]);
 
   const { rowByMutationId, rows } = useMemo(() => buildReviewRows(review.data), [review.data]);
   const mutationDisplayLabels = useMemo(
@@ -1529,8 +1712,20 @@ export default function ReviewQueue({
     );
   const reviewDraftTitle = (item: LtmDraftReviewDraft) => draftDisplayTitle(item, localizeUi);
   useEffect(
-    () => onDirtyChange?.(reviewStateMismatch || (!reviewStatePersisted && editedById.size > 0)),
-    [editedById.size, onDirtyChange, reviewStateMismatch, reviewStatePersisted],
+    () =>
+      onDirtyChange?.(
+        reviewStateMismatch ||
+          identityDirtyIds.size > 0 ||
+          (!reviewStatePersisted && (editedById.size > 0 || linkChoicesById.size > 0)),
+      ),
+    [
+      editedById.size,
+      identityDirtyIds.size,
+      linkChoicesById.size,
+      onDirtyChange,
+      reviewStateMismatch,
+      reviewStatePersisted,
+    ],
   );
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
@@ -1627,12 +1822,35 @@ export default function ReviewQueue({
     });
   };
 
-  const updateMutation = (original: LtmDraftMutation, next: LtmDraftMutation) => {
+  const updateMutation = (original: LtmDraftMutation, next: LtmDraftMutation, forceEdit = false) => {
     setEditedById((current) => {
       const updated = new Map(current);
-      if (sameMutation(original, next)) updated.delete(original.id);
+      if (!forceEdit && sameMutation(original, next)) updated.delete(original.id);
       else updated.set(original.id, next);
       return updated;
+    });
+    clearPreflight();
+  };
+
+  const updateLinkChoice = (
+    mutation: LtmDraftMutation,
+    diagnostic: AmbiguousLinkDiagnostic,
+    selectedTarget: string | null,
+  ) => {
+    const details = ambiguousLinkDetails(diagnostic);
+    if (!details) return;
+    const key = linkChoiceKey(mutation.id, details.linkTarget, details.linkRelation);
+    setLinkChoicesById((current) => {
+      const next = new Map(current);
+      if (selectedTarget) {
+        next.set(key, {
+          mutationId: mutation.id,
+          linkTarget: details.linkTarget,
+          linkRelation: details.linkRelation as LtmDraftLinkChoice["linkRelation"],
+          selectedTarget,
+        });
+      } else next.delete(key);
+      return next;
     });
     clearPreflight();
   };
@@ -1673,6 +1891,9 @@ export default function ReviewQueue({
         draftId,
         mutationIds,
         editedMutations: [...editedById].filter(([id]) => mutationIds.includes(id)).map(([, edited]) => edited),
+        linkChoices: [...linkChoicesById]
+          .filter(([, choice]) => mutationIds.includes(choice.mutationId))
+          .map(([, choice]) => choice),
       };
     });
 
@@ -1682,6 +1903,7 @@ export default function ReviewQueue({
         draftId: request.draftId,
         mutationIds: request.mutationIds,
         editedMutations: request.editedMutations,
+        linkChoices: request.linkChoices,
       })),
     );
 
@@ -1774,6 +1996,7 @@ export default function ReviewQueue({
               {
                 mutationIds: requestBody.mutationIds,
                 ...(requestBody.editedMutations.length ? { editedMutations: requestBody.editedMutations } : {}),
+                ...(requestBody.linkChoices.length ? { linkChoices: requestBody.linkChoices } : {}),
                 bulk: requestBody.mutationIds.length > 1,
               },
               controller.signal,
@@ -1858,6 +2081,9 @@ export default function ReviewQueue({
                 mutationIds: [...readyIds],
                 ...(requestBody.editedMutations.length
                   ? { editedMutations: requestBody.editedMutations.filter((mutation) => readyIds.has(mutation.id)) }
+                  : {}),
+                ...(requestBody.linkChoices.length
+                  ? { linkChoices: requestBody.linkChoices.filter((choice) => readyIds.has(choice.mutationId)) }
                   : {}),
               },
               controller.signal,
@@ -2104,7 +2330,13 @@ export default function ReviewQueue({
     setDeleteSuggestionError("");
     try {
       await request(`/rejected-suggestions/${encodeURIComponent(suggestion.id)}`, "DELETE");
-      await invalidateLtmQueries(queryClient, [queryKeys.rejectedSuggestions]);
+      // A saved identity choice also drops its pending recovery draft on delete.
+      await invalidateLtmQueries(queryClient, [
+        queryKeys.rejectedSuggestions,
+        ...(suggestion.identityResolution
+          ? [queryKeys.savedIdentityChoices, queryKeys.review, queryKeys.pendingDrafts]
+          : []),
+      ]);
     } catch (error) {
       setDeleteSuggestionError(
         error instanceof Error ? error.message : localizeUi("ui.longTermMemory.reviewqueue.requestFailed"),
@@ -2497,6 +2729,25 @@ export default function ReviewQueue({
                 ))}
               </div>
             ) : null}
+            {row.diagnostics.map((diagnostic, index) => (
+              <AmbiguousLinkChoice
+                key={`${diagnostic.code}-choice-${index}`}
+                mutation={mutation}
+                diagnostic={diagnostic}
+                noteById={noteById}
+                explicitTarget={(() => {
+                  const details = ambiguousLinkDetails(diagnostic);
+                  return details
+                    ? linkChoicesById.get(linkChoiceKey(row.mutation.id, details.linkTarget, details.linkRelation))
+                        ?.selectedTarget
+                    : undefined;
+                })()}
+                onChange={(next, selectedTarget) => {
+                  updateMutation(row.mutation, next);
+                  updateLinkChoice(row.mutation, diagnostic, selectedTarget);
+                }}
+              />
+            ))}
             {preflight ? (
               <div
                 data-ltm-review-preflight
@@ -2645,7 +2896,8 @@ export default function ReviewQueue({
     !rejectedSuggestions.isLoading &&
     !rejectedSuggestions.isError &&
     !review.data?.sources.length &&
-    !rejectedSuggestions.data?.suggestions.length;
+    !rejectedSuggestions.data?.suggestions.length &&
+    !savedIdentityChoices.data?.suggestions.some((suggestion) => suggestion.identityResolution);
   const workspaceUnavailable = reviewQueueEmpty || reviewContextBusy || reviewContextFailed;
   const reviewDataUnavailable =
     review.isLoading || review.isError || rejectedSuggestions.isLoading || rejectedSuggestions.isError;
@@ -2838,6 +3090,7 @@ export default function ReviewQueue({
                         <button
                           type="button"
                           data-ltm-review-source-select={id}
+                          disabled={identityDirtyIds.size > 0}
                           aria-current={active || undefined}
                           aria-expanded={expanded}
                           aria-controls={panelId}
@@ -2862,6 +3115,7 @@ export default function ReviewQueue({
                         {rejectedCount ? (
                           <Button
                             data-ltm-review-rejected-count={rejectedCount}
+                            disabled={identityDirtyIds.size > 0}
                             className="!min-h-11 !min-w-11 shrink-0 rounded-full border border-[var(--marinara-editor-warning)]/40 px-2 py-0.5 text-[0.625rem] font-semibold text-[var(--marinara-editor-warning)] underline underline-offset-2"
                             style={{ minHeight: 44, minWidth: 44 }}
                             onClick={() => {
@@ -2978,7 +3232,10 @@ export default function ReviewQueue({
                     </Button>
                   ) : null}
                   {effectiveSourceId && selectedSourceIsExtractable && needsSourceReextraction ? (
-                    <Button disabled={extractingSourceId !== null} onClick={() => void reextractSource()}>
+                    <Button
+                      disabled={extractingSourceId !== null || identityDirtyIds.size > 0}
+                      onClick={() => void reextractSource()}
+                    >
                       {extractingSourceId === effectiveSourceId ? (
                         <Loader2
                           aria-hidden="true"
@@ -3034,7 +3291,7 @@ export default function ReviewQueue({
                             destructive
                             data-ltm-clear-rejected-suggestions
                             className="min-h-[2.75rem]"
-                            disabled={dismissingId !== null || clearingSourceId !== null}
+                            disabled={dismissingId !== null || clearingSourceId !== null || identityDirtyIds.size > 0}
                             onClick={() => void clearRejectedSuggestions()}
                           >
                             {clearingSourceId === sourceNoteId ? (
@@ -3107,6 +3364,15 @@ export default function ReviewQueue({
                                 </details>
                               ) : null}
                             </div>
+                            {item.candidate.identityReview?.length ? (
+                              <SubjectIdentityReview
+                                suggestionId={item.id}
+                                review={item.candidate.identityReview}
+                                onDirtyChange={onIdentityDirtyChange}
+                                onRegisterSave={onIdentityRegisterSave}
+                                onResolved={onIdentityResolved}
+                              />
+                            ) : null}
                             <div className="flex flex-wrap gap-2">
                               {onRecoverCandidate ? (
                                 <Button
@@ -3134,6 +3400,61 @@ export default function ReviewQueue({
                       </article>
                     );
                   })}
+                </details>
+              ) : null}
+              {sourceSavedIdentityChoices.length ? (
+                <details
+                  data-ltm-saved-identity-choices
+                  aria-label={localizeUi("ui.longTermMemory.reviewqueue.savedIdentityChoices")}
+                  className="group rounded-lg border border-[var(--border)] bg-[var(--secondary)]/20"
+                >
+                  <summary className="flex min-h-14 cursor-pointer list-none items-start gap-2 rounded-lg p-3 hover:bg-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]">
+                    <ChevronRight
+                      aria-hidden="true"
+                      size="0.875rem"
+                      className="mt-1 shrink-0 transition-transform group-open:rotate-90"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold">
+                        {localizeUi("ui.longTermMemory.reviewqueue.savedIdentityChoices")}
+                      </span>
+                      <span className="block text-xs text-[var(--muted-foreground)]">
+                        {localizeUi("ui.longTermMemory.reviewqueue.savedIdentityChoicesDescription")}
+                      </span>
+                    </span>
+                  </summary>
+                  <div className="space-y-3 border-t border-[var(--border)] p-3">
+                    {sourceSavedIdentityChoices.map((item) => (
+                      <article
+                        key={item.id}
+                        data-ltm-saved-identity-choice={item.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--border)] p-3"
+                      >
+                        <p className="text-sm font-medium">
+                          {(item.identityResolution?.choices ?? [])
+                            .map((choice) => `${choice.name}: ${savedIdentityChoiceLabel(choice, localizeUi)}`)
+                            .join(" · ")}
+                        </p>
+                        <Button
+                          destructive
+                          disabled={dismissingId !== null || clearingSourceId !== null}
+                          aria-label={localizeUi("ui.longTermMemory.reviewqueue.deleteSuggestionNamed", {
+                            value1: item.candidate.message,
+                          })}
+                          onClick={() => void deleteRejectedSuggestion(item)}
+                        >
+                          {dismissingId === item.id ? (
+                            <Loader2
+                              aria-hidden="true"
+                              size="0.875rem"
+                              className="animate-spin motion-reduce:animate-none"
+                            />
+                          ) : null}
+                          {localizeUi("ui.longTermMemory.reviewqueue.delete")}
+                        </Button>
+                      </article>
+                    ))}
+                  </div>
                 </details>
               ) : null}
               <div className="flex flex-wrap items-center justify-between gap-2">

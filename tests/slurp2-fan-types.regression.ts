@@ -7,7 +7,6 @@
  * 0 / 0.02 / 0.05 / 0.12 daily conversion — or every existing save quietly earns different money.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -21,14 +20,15 @@ import {
   slurpNormalizeFanTypes,
   slurpPickFanType,
   slurpResolveFanType,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-fan-types.js";
-import { generateSlurpPopulationMember } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-population.js";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-fan-types.js";
+import { generateSlurpPopulationMember } from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-population.js";
 import {
   slurpAudienceConversionChance,
   SLURP_AUDIENCE_WEEKLY_BUDGET,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-audience-subscription.js";
-import { populationNoodlerFanIdentityProvider } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-fan-identity-provider.js";
-import { planSlurpWorldPulse } from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world-pulse.js";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-audience-subscription.js";
+import { populationCreatorFanIdentityProvider } from "../packages/slurp2/src/engine/packages/server/src/slp/modules/audience/slp-fan-identity-provider.js";
+import { planSlurpWorldPulse } from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-world-pulse.js";
+import { slurp2Source } from "./slurp2-source";
 
 const at = new Date("2026-09-05T00:00:00.000Z");
 
@@ -132,7 +132,7 @@ assert.equal(slurpResolveFanType(slurpFanTypesDefault(), { fanTypeId: null, arch
 assert.equal(slurpResolveFanType(slurpFanTypesDefault(), {}).id, "regular");
 
 // ── The voice reaches the prompt ────────────────────────────────────────────
-const identities = populationNoodlerFanIdentityProvider([
+const identities = populationCreatorFanIdentityProvider([
   {
     id: "slurp-fan:v",
     handle: "moth_hour",
@@ -160,7 +160,7 @@ assert.equal(slurpFanVoiceForPrompt(""), undefined);
 assert.equal(slurpFanVoiceForPrompt(null), undefined);
 
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages/server/src");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
 
 // The fan-activity prompt has to be told the voice matters, and be handed it.
 const fanService = read("services/slurp/slurp-fan-activity.service.ts");

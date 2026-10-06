@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -12,12 +11,13 @@ import {
   SLURP_WORLD_MAX_CATCHUP_DAYS,
   SLURP_WORLD_MAX_OPEN_REQUESTS,
   type SlurpWorldCreator,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world.js";
+} from "../packages/slurp2/src/engine/packages/shared/src/slp/slp-world.js";
 import {
   slurpAudienceOpener,
   slurpAudienceQuestion,
   slurpCommissionBrief,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-world-copy.js";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/modules/world/slp-world-copy.js";
+import { slurp2Source } from "./slurp2-source";
 
 const day = (n: number) => new Date(Date.parse("2026-09-01T00:00:00.000Z") + n * 86_400_000);
 const creator = (over: Partial<SlurpWorldCreator> = {}): SlurpWorldCreator => ({
@@ -134,16 +134,44 @@ for (const bad of [-1, Number.NaN]) {
 assert.equal(slurpAudienceOpener("seed"), slurpAudienceOpener("seed"));
 assert.ok(new Set(Array.from({ length: 60 }, (_, index) => slurpAudienceOpener(`o${index}`))).size > 4);
 
+// The player's own first lines (Messaging settings) replace the built-in ones; empty keeps the built-in ones.
+const ownFan = ["hey you", "big fan"];
+assert.ok(
+  Array.from({ length: 30 }, (_, index) => slurpAudienceOpener(`o${index}`, ownFan)).every((line) =>
+    ownFan.includes(line),
+  ),
+);
+assert.equal(slurpAudienceOpener("seed", []), slurpAudienceOpener("seed"));
+const ownCommission = ["Quick one:"];
+assert.ok(
+  Array.from({ length: 30 }, (_, index) => slurpCommissionBrief(`c${index}`, ownCommission)).every((brief) =>
+    brief.startsWith("Quick one: "),
+  ),
+);
+assert.equal(slurpCommissionBrief("seed-1", []), slurpCommissionBrief("seed-1"));
+
 // ── Wiring ──────────────────────────────────────────────────────────────────
 const root = join(import.meta.dirname, "..", "packages/slurp2/src/engine/packages/server/src");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
+const read = (path: string) => slurp2Source(join(root, path));
+
+// 0.3.7: `applyAction` takes the settings (for the player's own openers); `applyPulse` still takes the
+// Fan Type list its caller passes. A pulse given the wrong shape read `fanTypes` as undefined.
+const worldActions = read("slp/features/world/slp-world-actions.ts");
+assert.match(
+  worldActions,
+  /export async function applyPulse\([^)]*banks: SlurpReactionBanks,\s*fanTypes: readonly SlurpFanType\[\],/u,
+);
+assert.match(
+  read("slp/features/world/slp-world-operation.ts"),
+  /applyPulse\(db, action, settings\.audienceReactionBank, settings\.fanTypes, characterFanPinnedTypeIds\)/u,
+);
 
 const operation = read("services/slurp/slurp-world.operation.ts");
 // One function, two callers. Writing the logic twice is what the plan forbids.
 assert.match(operation, /export async function advanceSlurpWorld/u);
 // A failed action must never stop the mark being written, or the same stretch replays forever.
 assert.match(operation, /await writeLastTick\(db, until\);\s*return \{\s*status: applied \+ pulsed > 0/u);
-assert.match(operation, /tryNoodleOperation\("slurp-world-tick"/u, "concurrent ticks must not double-apply");
+assert.match(operation, /trySlpOperation\("slurp-world-tick"/u, "concurrent ticks must not double-apply");
 // An unanswered conversation is somebody waiting on the player, exactly like an unanswered
 // commission, so both count against the same queue.
 assert.match(operation, /listOpenCommissionsForCreator\(account\.id\)/u);

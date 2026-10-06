@@ -1,43 +1,29 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
-const panel = readFileSync(
+const panel = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpOnboardingPanel.tsx"),
-  "utf8",
 );
-const home = readFileSync(
-  join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx"),
-  "utf8",
-);
-const settings = readFileSync(
-  join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpSettings.tsx"),
-  "utf8",
-);
-const storage = readFileSync(
+const home = slurp2Source(join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpHome.tsx"));
+const settings = slurp2BackstageSource();
+const storage = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts"),
-  "utf8",
 );
-const routes = readFileSync(
-  join(root, "packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts"),
-  "utf8",
-);
-const creatorCard = readFileSync(
+const routes = slurp2Source(join(root, "packages/slurp2/src/engine/packages/server/src/routes/slurp.routes.ts"));
+const creatorCard = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpCreatorPostCard.tsx"),
-  "utf8",
 );
-const postCard = readFileSync(
+const postCard = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpPostCard.tsx"),
-  "utf8",
 );
-const fanActivity = readFileSync(
+const fanActivity = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-fan-activity.service.ts"),
-  "utf8",
 );
-const responseFormat = readFileSync(
+const responseFormat = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-response-format.ts"),
-  "utf8",
 );
 
 assert.match(
@@ -47,7 +33,7 @@ assert.match(
 );
 assert.doesNotMatch(panel, /showConfirmDialog/u, "onboarding must not wait on the disconnected host dialog store");
 assert.match(panel, /open=\{providerConfirmationOpen\}[\s\S]*?void performFinish\(\)/u);
-assert.match(panel, /open=\{providerConfirmationOpen\}[\s\S]*?panelStyle=\{getNoodleAccentStyle\(NOODLE_PINK/u);
+assert.match(panel, /open=\{providerConfirmationOpen\}[\s\S]*?panelStyle=\{getSlpAccentStyle\(SLP_PINK/u);
 assert.match(
   panel,
   /const performFinish = async \(\) => \{[\s\S]*?bulkCreate\.mutateAsync\([\s\S]*?\} catch \(error\) \{[\s\S]*?if \(error instanceof Error\) setCreationError\(error\.message\);/u,
@@ -113,7 +99,7 @@ assert.match(
 );
 assert.match(
   routes,
-  /noodleBulkNoodlerAccountCreateSchema\.extend\(\{[\s\S]*?connectionId: z\.string\(\)\.min\(1\)\.nullable\(\)\.optional\(\)/u,
+  /slpBulkCreatorAccountCreateSchema\.extend\(\{[\s\S]*?connectionId: z\.string\(\)\.min\(1\)\.nullable\(\)\.optional\(\)/u,
   "Creator creation must accept the wizard connection override",
 );
 assert.match(
@@ -136,11 +122,9 @@ assert.match(
   /const viewingOwnCreator = profile\.sourceAccountId === viewerAccount\?\.entityId/u,
   "Profile ownership must follow the active persona",
 );
-assert.match(
-  home,
-  /onRefresh=\{\(\) =>[\s\S]*?viewerQuery\.refetch\(\)[\s\S]*?ui\.slurp\.feed\.refreshed/u,
-  "The timeline refresh action must refetch and report completion",
-);
+// Step 3.1 (user): no refresh action; the feed refetches itself (30 s poll + focus, see
+// slurp2-step3.1-shell-polish) and new posts wait behind the "New posts" pill.
+assert.doesNotMatch(home, /onRefresh=/u, "The timeline has no manual refresh action");
 assert.doesNotMatch(creatorCard, /repost|Repeat2/iu, "Slurp creator cards must not expose repost actions");
 assert.doesNotMatch(postCard, /repost|Repeat2/iu, "Slurp post cards must not expose repost actions");
 assert.doesNotMatch(fanActivity, /fanRepostsPerRefresh|repost/iu, "Synthetic Slurp audience activity must not repost");

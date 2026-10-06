@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   containsIdentity,
   normalizedDisclosureWords,
-  protectNoodlerGeneratedIdentity,
+  protectCreatorGeneratedIdentity,
   protectedIdentityValues,
   stageProfileContainsPublicIdentity,
   stageProfileContainsSourceDetails,
-} from "../packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-identity-protection";
+} from "../packages/slurp2/src/engine/packages/server/src/slp/base/identity/slp-identity-protection";
+import { slurp2Source } from "./slurp2-source";
 
 // The disclosure privacy core had no behavioural coverage: the existing disclosure test only
 // grepped source text, which passes forever regardless of what the code does. These assertions
@@ -16,38 +16,38 @@ import {
 
 const identity = { displayName: "Mari Vale", handle: "marivale", sourceIdentifiers: ["char-1"] };
 
-// --- protectNoodlerGeneratedIdentity ---------------------------------------------------------
+// --- protectCreatorGeneratedIdentity ---------------------------------------------------------
 
 // Open is a pass-through.
-assert.equal(protectNoodlerGeneratedIdentity("Mari Vale was here", "open", identity), "Mari Vale was here");
+assert.equal(protectCreatorGeneratedIdentity("Mari Vale was here", "open", identity), "Mari Vale was here");
 
 // Hinted rewrites into something a creator would type; Secret uses the flatter word.
-assert.equal(protectNoodlerGeneratedIdentity("Mari Vale was here", "hinted", identity), "you-know-who was here");
-assert.equal(protectNoodlerGeneratedIdentity("Mari Vale was here", "secret", identity), "someone was here");
+assert.equal(protectCreatorGeneratedIdentity("Mari Vale was here", "hinted", identity), "you-know-who was here");
+assert.equal(protectCreatorGeneratedIdentity("Mari Vale was here", "secret", identity), "someone was here");
 
 // A leading @ is consumed rather than left dangling.
-assert.equal(protectNoodlerGeneratedIdentity("ask @marivale", "secret", identity), "ask someone");
+assert.equal(protectCreatorGeneratedIdentity("ask @marivale", "secret", identity), "ask someone");
 
 // The longest identifier wins, so the name is not half-replaced from the inside.
-assert.doesNotMatch(protectNoodlerGeneratedIdentity("Mari Vale", "secret", identity) ?? "", /Vale/u);
+assert.doesNotMatch(protectCreatorGeneratedIdentity("Mari Vale", "secret", identity) ?? "", /Vale/u);
 
 // A "Name (@handle)" pair collapses to one token instead of "someone (@someone)".
-assert.equal(protectNoodlerGeneratedIdentity("Mari Vale (@marivale)", "secret", identity), "someone");
+assert.equal(protectCreatorGeneratedIdentity("Mari Vale (@marivale)", "secret", identity), "someone");
 
 // Word boundaries are respected: a longer word that merely contains the handle is left alone.
 assert.equal(
-  protectNoodlerGeneratedIdentity("marivalentine posts daily", "secret", identity),
+  protectCreatorGeneratedIdentity("marivalentine posts daily", "secret", identity),
   "marivalentine posts daily",
 );
 
 // The source entity id never survives into generated text either.
-assert.doesNotMatch(protectNoodlerGeneratedIdentity("see char-1", "hinted", identity) ?? "", /char-1/u);
+assert.doesNotMatch(protectCreatorGeneratedIdentity("see char-1", "hinted", identity) ?? "", /char-1/u);
 
 // Empty input is null, not an empty string that would read as "no identity to protect".
-assert.equal(protectNoodlerGeneratedIdentity("   ", "secret", identity), null);
+assert.equal(protectCreatorGeneratedIdentity("   ", "secret", identity), null);
 
 // With no linked identity there is nothing to redact against, so the value passes through trimmed.
-assert.equal(protectNoodlerGeneratedIdentity(" hello ", "secret", null), "hello");
+assert.equal(protectCreatorGeneratedIdentity(" hello ", "secret", null), "hello");
 
 // --- protectedIdentityValues / containsIdentity ------------------------------------------------
 
@@ -140,9 +140,8 @@ assert.equal(
 // --- the briefs must describe the rule the validator actually enforces -------------------------
 
 const root = join(import.meta.dirname, "..");
-const draft = readFileSync(
+const draft = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-stage-profile-draft.service.ts"),
-  "utf8",
 );
 const briefRule = /ignoring short connecting words/gu;
 assert.equal(

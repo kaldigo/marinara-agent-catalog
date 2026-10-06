@@ -7,6 +7,7 @@ import {
   ltmBulkNoteResultSchema,
   ltmConflictSchema,
   ltmDraftMutationSchema,
+  ltmDraftLinkChoiceSchema,
   ltmDraftPreflightRequestSchema,
   ltmDraftPreflightResponseSchema,
   ltmDraftReviewResponseSchema,
@@ -35,6 +36,10 @@ import {
   ltmIdentityRepairApplyResponseSchema,
   ltmIdentityRepairPreviewRequestSchema,
   ltmIdentityRepairPreviewResponseSchema,
+  ltmNoteForkApplyRequestSchema,
+  ltmNoteForkApplyResponseSchema,
+  ltmNoteForkPreviewRequestSchema,
+  ltmNoteForkPreviewResponseSchema,
   ltmInteropPreviewRequestSchema,
   ltmInteropPreviewResponseSchema,
   ltmRepairRequestSchema,
@@ -46,6 +51,7 @@ import {
   ltmWriteScopeSchema,
   ltmScopeSchema,
   type LtmScope,
+  type LtmResolvedGlobalSettings,
   ltmSectionKeySchema,
   ltmSectionSchema,
   ltmStatusSchema,
@@ -55,6 +61,7 @@ import {
   ltmSubjectsSchema,
   ltmRejectedSuggestionsClearResponseSchema,
   ltmRejectedSuggestionsResponseSchema,
+  ltmResolveSubjectIdentityResponseSchema,
 } from "../../../../shared/src/features/agents/long-term-memory/schema.js";
 import { clearLtmDebugLog, exportLtmDebugLog, readLtmDebugLog } from "./debug-log.js";
 import { projectLongTermMemoryDraftReview } from "./draft-review.js";
@@ -62,6 +69,7 @@ import { getLtmExtractionConfig, updateLtmExtractionConfig } from "./extraction-
 import { isEnoent } from "./ltm-utils.js";
 import { checkLongTermMemoryIntegrity, repairLongTermMemory } from "./maintenance.js";
 import { applyLtmNoteTransfer, previewLtmNoteTransfer } from "./note-transfer.js";
+import { applyLtmNoteForkRepair, previewLtmNoteForkRepair } from "./note-fork-repair.js";
 import { getPackageLanguageModels, getPackagePersistence, getPackageResources, logger } from "./package-runtime.js";
 import { getLongTermMemoryDirectories, LTM_DIR_NAME } from "./paths.js";
 import { longTermMemoryRecallIndexPath, parseLtmRecallIndex, rebuildLongTermMemoryIndexes } from "./rebuild.js";
@@ -71,10 +79,12 @@ import { CURRENT_LTM_CHUNK_FORMAT_VERSION } from "./chunking.js";
 import { retrieveLongTermMemory } from "./retrieval.js";
 import { applyLongTermMemoryDraft, preflightLongTermMemoryDraft } from "./reconciliation.js";
 import { applyLtmScopeLinksToDerivedNotes } from "./scope-links.js";
-import { getLtmGlobalSettings, updateLtmGlobalSettings } from "./settings.js";
+import { getLtmGlobalSettings, ltmGeneratedStopWords, updateLtmGlobalSettings } from "./settings.js";
+import { buildStopWordSet } from "./keyword-extract.js";
+import { withLtmVaultLock } from "./vault-lock.js";
 import type { LongTermMemoryDraftStore } from "./draft-store.js";
 import type { LongTermMemoryStorage } from "./storage.js";
-import { readLongTermMemoryInjectionReceipt } from "./usage.js";
+import { readLongTermMemoryAttempt, readLongTermMemoryInjectionReceipt } from "./usage.js";
 import {
   ltmModeForChatMode,
   normalizeLtmChatCharacterIds,
@@ -99,6 +109,7 @@ import {
 } from "../../../../shared/src/features/agents/long-term-memory/scope.js";
 import { applyLtmIdentityRepairs, LtmIdentityRepairError, previewLtmIdentityRepairs } from "./identity-repair.js";
 import { loadTrustedLtmSubjectCatalog } from "./subject-identity.js";
+import { resolveLtmSubjectIdentityReview } from "./subject-choice-review.js";
 import { LtmServiceError, ltmErrorResponse } from "./service-error.js";
 import {
   deleteAllLongTermMemoryData,
@@ -375,6 +386,7 @@ const rejectedSuggestionsQuery = z
   .object({
     sourceNoteId: ltmNoteIdSchema.optional(),
     chatId: z.string().min(1).max(120).optional(),
+    includeResolved: queryBoolean,
   })
   .strict();
 const rejectedSuggestionsDeleteQuery = z.object({ sourceNoteId: ltmNoteIdSchema }).strict();
@@ -383,6 +395,7 @@ const acceptDraftBody = z
     mutationIds: z.array(z.string().uuid()).min(1).optional(),
     lowRiskOnly: z.boolean().optional(),
     editedMutations: z.array(ltmDraftMutationSchema).optional(),
+    linkChoices: z.array(ltmDraftLinkChoiceSchema).max(1_000).optional(),
   })
   .strict()
   .default({});
@@ -407,6 +420,13 @@ function routeError(error: unknown, fallback: string) {
     (error && typeof error === "object" && "statusCode" in error && "code" in error)
   )
     return ltmErrorResponse(error, fallback);
+  if (error instanceof AggregateError) {
+    logger.error(error, "[ltm] Unexpected aggregate failure in route");
+    return {
+      statusCode: 500,
+      body: { error: fallback, code: "ltm_unexpected_failure" },
+    };
+  }
   const message = error instanceof Error ? error.message : fallback;
   return {
     statusCode: 500,
@@ -461,6 +481,11 @@ export function createLongTermMemoryRoutes(runtime: {
         };
       }
     };
+    // The recall index fingerprints the effective generated stop-word set, so only a
+    // change to that normalized set (or the filter flag that gates it) needs a rebuild.
+    // Comparing the normalized set keeps equivalent spellings from rebuilding needlessly.
+    const effectiveIndexStopWords = (settings: LtmResolvedGlobalSettings) =>
+      JSON.stringify([...buildStopWordSet(ltmGeneratedStopWords(settings))].sort());
     app.get("/status", async () => {
       await storage.initializeLtmStore();
       const dirs = getLongTermMemoryDirectories(root);
@@ -543,9 +568,22 @@ export function createLongTermMemoryRoutes(runtime: {
     );
     app.delete("/debug-log", async () => clearLtmDebugLog(root));
     app.get<{ Params: { chatId: string } }>("/last-injection/:chatId", async (request) => {
-      const receipt = await readLongTermMemoryInjectionReceipt(request.params.chatId, root);
+      const [receipt, observedAttempt] = await Promise.all([
+        readLongTermMemoryInjectionReceipt(request.params.chatId, root),
+        readLongTermMemoryAttempt(request.params.chatId, root),
+      ]);
+      const attempt = observedAttempt
+        ? { ...observedAttempt, confirmed: receipt?.attemptId === observedAttempt.attemptId }
+        : null;
       if (!receipt)
-        return { memoryCount: 0, tokenCount: 0, memories: [], state: "not_recorded" as const, dispatchedAt: null };
+        return {
+          memoryCount: 0,
+          tokenCount: 0,
+          memories: [],
+          state: "not_recorded" as const,
+          dispatchedAt: null,
+          attempt,
+        };
       const notesById = new Map((await storage.listNotes()).map((note) => [note.id, note]));
       const memories = new Map<
         string,
@@ -582,6 +620,7 @@ export function createLongTermMemoryRoutes(runtime: {
         memories: [...memories.values()],
         state: memories.size ? ("injected" as const) : ("no_matches" as const),
         dispatchedAt: receipt.dispatchedAt,
+        attempt,
       };
     });
     app.get("/settings", async () => getLtmGlobalSettings(root));
@@ -608,9 +647,25 @@ export function createLongTermMemoryRoutes(runtime: {
       }
     });
     app.delete("/data", async () => deleteAllLongTermMemoryData(root));
-    app.post("/settings/reset", async () => resetLongTermMemorySettings(root));
+    // Settings that change the recall index persist first, then rebuild under the
+    // reentrant vault lock so a concurrent recall never sees the new settings beside a
+    // stale index. A failed rebuild is reported as deferred without rolling the save back.
+    app.post("/settings/reset", async () =>
+      withLtmVaultLock(root, async () => {
+        const before = effectiveIndexStopWords(await getLtmGlobalSettings(root));
+        const result = await resetLongTermMemorySettings(root);
+        const after = effectiveIndexStopWords(await getLtmGlobalSettings(root));
+        return { ...result, rebuild: before === after ? null : await rebuildAfterMutation() };
+      }),
+    );
     app.put<{ Body: unknown }>("/settings", { bodyLimit: MAINTENANCE_BODY_LIMIT_BYTES }, async (request) =>
-      updateLtmGlobalSettings(ltmGlobalSettingsSchema.parse(request.body ?? {}), root),
+      withLtmVaultLock(root, async () => {
+        const parsed = ltmGlobalSettingsSchema.parse(request.body ?? {});
+        const before = effectiveIndexStopWords(await getLtmGlobalSettings(root));
+        const saved = await updateLtmGlobalSettings(parsed, root);
+        const after = effectiveIndexStopWords(saved);
+        return { ...saved, rebuild: before === after ? null : await rebuildAfterMutation() };
+      }),
     );
     app.get("/extraction-settings", async () => getLtmExtractionConfig(root));
     app.put<{ Body: unknown }>(
@@ -885,7 +940,7 @@ export function createLongTermMemoryRoutes(runtime: {
       async (request, reply) => {
         const id = ltmNoteIdSchema.parse(request.params.id);
         const body = ltmExtractSourceNoteRequestSchema.parse(request.body ?? {});
-        const sourceNote = await storage.getNote(id);
+        let sourceNote = await storage.getNote(id);
         if (!sourceNote) return reply.status(404).send({ error: "Long-term memory note not found" });
         if (!isLtmSourceNote(sourceNote))
           return reply.status(400).send({ error: "Long-term memory note is not a source note" });
@@ -918,6 +973,22 @@ export function createLongTermMemoryRoutes(runtime: {
               "ltm_model_configuration",
             );
           }
+          // Re-extract applies the current availability selection, like a fresh import. An explicit mode
+          // must still be enabled; otherwise the previous extraction mode is kept, as import keeps the chat's.
+          if (body.modes && body.mode && !body.modes.includes(body.mode))
+            throw new LtmServiceError(
+              `Long-term memory extraction mode is not enabled for source note: ${body.mode}`,
+              400,
+              "ltm_mode_not_enabled",
+            );
+          const extractionMode =
+            body.modes && !body.mode ? (sourceNote.extractionFingerprint?.extractionMode ?? body.modes[0]) : undefined;
+          const savedModes = sourceNote.modes ?? [];
+          if (
+            body.modes &&
+            (body.modes.length !== savedModes.length || body.modes.some((entry) => !savedModes.includes(entry)))
+          )
+            sourceNote = (await storage.updateNote(id, { modes: body.modes })) ?? sourceNote;
           return ltmExtractSourceNoteResponseSchema.parse(
             await processLongTermMemorySource({
               sourceNote,
@@ -931,6 +1002,7 @@ export function createLongTermMemoryRoutes(runtime: {
                     ? [body.mode]
                     : undefined,
               mode: body.mode,
+              extractionMode,
               instruction: body.instruction,
               operationId,
               applyLowRisk: body.applyLowRisk,
@@ -1323,6 +1395,34 @@ export function createLongTermMemoryRoutes(runtime: {
         }
       },
     );
+    app.post<{ Body: unknown }>(
+      "/fork-repair/preview",
+      { bodyLimit: MAINTENANCE_BODY_LIMIT_BYTES },
+      async (request, reply) => {
+        try {
+          return ltmNoteForkPreviewResponseSchema.parse(
+            await previewLtmNoteForkRepair(ltmNoteForkPreviewRequestSchema.parse(request.body ?? {}), { root }),
+          );
+        } catch (error) {
+          const result = routeError(error, "Could not preview long-term memory fork repair");
+          return reply.status(result.statusCode).send(result.body);
+        }
+      },
+    );
+    app.post<{ Body: unknown }>(
+      "/fork-repair/apply",
+      { bodyLimit: IDENTITY_REPAIR_BODY_LIMIT_BYTES },
+      async (request, reply) => {
+        try {
+          return ltmNoteForkApplyResponseSchema.parse(
+            await applyLtmNoteForkRepair(ltmNoteForkApplyRequestSchema.parse(request.body ?? {}), { root }),
+          );
+        } catch (error) {
+          const result = routeError(error, "Could not apply long-term memory fork repair");
+          return reply.status(result.statusCode).send(result.body);
+        }
+      },
+    );
     app.post<{ Body: unknown }>("/search", { bodyLimit: SEARCH_BODY_LIMIT_BYTES }, async (request) =>
       retrieveLongTermMemory({ ...searchBody.parse(request.body), root }),
     );
@@ -1367,6 +1467,21 @@ export function createLongTermMemoryRoutes(runtime: {
       return deleteRejectedSuggestion(parsed.data, root);
     });
     app.post<{ Params: { id: string }; Body: unknown }>(
+      "/rejected-suggestions/:id/resolve-identity",
+      { bodyLimit: MAINTENANCE_BODY_LIMIT_BYTES },
+      async (request, reply) => {
+        try {
+          const id = z.string().uuid().parse(request.params.id);
+          return ltmResolveSubjectIdentityResponseSchema.parse(
+            await resolveLtmSubjectIdentityReview(id, request.body, root),
+          );
+        } catch (error) {
+          const result = routeError(error, "Failed to save subject identity choices");
+          return reply.status(result.statusCode).send(result.body);
+        }
+      },
+    );
+    app.post<{ Params: { id: string }; Body: unknown }>(
       "/drafts/:id/preflight",
       { bodyLimit: DRAFT_BODY_LIMIT_BYTES },
       async (request, reply) => {
@@ -1378,6 +1493,7 @@ export function createLongTermMemoryRoutes(runtime: {
             root,
             mutationIds: body.mutationIds,
             editedMutations: body.editedMutations,
+            linkChoices: body.linkChoices,
             bulk: body.bulk,
           });
         } catch (error) {
@@ -1399,6 +1515,7 @@ export function createLongTermMemoryRoutes(runtime: {
             actor: "maintenance_api",
             mutationIds: body.mutationIds,
             editedMutations: body.editedMutations,
+            linkChoices: body.linkChoices,
             autoApplyLowRiskOnly: body.lowRiskOnly,
             operationId: randomUUID(),
           });

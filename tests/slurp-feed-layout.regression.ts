@@ -1,56 +1,63 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
 const root = join(import.meta.dirname, "..");
 const componentsDir = join(root, "packages/slurp2/src/engine/packages/client/src/components/slurp");
-const home = readFileSync(join(componentsDir, "SlurpHome.tsx"), "utf8");
-const settings = readFileSync(join(componentsDir, "SlurpSettings.tsx"), "utf8");
-const shell = readFileSync(join(componentsDir, "SlurpShell.tsx"), "utf8");
-const coin = readFileSync(join(componentsDir, "SlurpCoin.tsx"), "utf8");
-const creatorPostCard = readFileSync(join(componentsDir, "SlurpCreatorPostCard.tsx"), "utf8");
-const sparkle = readFileSync(join(componentsDir, "SlurpSparkleVeil.tsx"), "utf8");
-const hooks = readFileSync(join(root, "packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts"), "utf8");
-const mediaHook = readFileSync(
+const home = slurp2Source(join(componentsDir, "SlurpHome.tsx"));
+const settings = slurp2BackstageSource();
+const shell = slurp2Source(join(componentsDir, "SlurpShell.tsx"));
+const coin = slurp2Source(join(componentsDir, "SlurpCoin.tsx"));
+const creatorPostCard = slurp2Source(join(componentsDir, "SlurpCreatorPostCard.tsx"));
+const sparkle = slurp2Source(join(componentsDir, "SlurpSparkleVeil.tsx"));
+const hooks = slurp2Source(join(root, "packages/slurp2/src/engine/packages/client/src/hooks/use-slurp.ts"));
+const mediaHook = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/client/src/hooks/use-slurp-media-src.ts"),
-  "utf8",
 );
-const ageGate = readFileSync(join(componentsDir, "SlurpAgeGate.tsx"), "utf8");
-const artwork = readFileSync(
+const ageGate = slurp2Source(join(componentsDir, "SlurpAgeGate.tsx"));
+const artwork = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-artwork.operation.ts"),
-  "utf8",
 );
-const images = readFileSync(
+const images = slurp2Source(
   join(root, "packages/slurp2/src/engine/packages/server/src/services/slurp/slurp-images.service.ts"),
-  "utf8",
 );
 
 // The feed row must offer both readings of the same feed.
 assert.match(home, /useState<"list" \| "wall">\("list"\)/u, "The feed must default to the list layout");
 assert.match(home, /feedLayout === "wall" \? \(\s*<SlurpMediaWall/u, "The wall layout must replace the post list");
 
-// Small polish stays structural: icon-only mobile navigation, useful empty states, and no empty rail.
+// Small polish stays structural: the mobile navigation, useful empty states, and no empty rail.
+// Updated in redesign step 2 (user-approved): step 1 replaced the icon-only pink nav with the floating
+// pill — small visible labels, muted icons, pink ink + tint on the active tab.
 const mobileNavigation = shell.slice(
   shell.indexOf('data-component="NoodleView.MobileBottomNav"'),
   shell.indexOf("</nav>", shell.indexOf('data-component="NoodleView.MobileBottomNav"')),
 );
+// W: Hub · Discover · ✦ Stir · Inbox · Me ("More" became "Me", the own profile).
 for (const label of [
   "homeLabel",
-  "ui.slurp.navigation.profile",
-  "ui.slurp.navigation.messages",
   "ui.slurp.navigation.search",
-  "ui.slurp.navigation.more",
+  "ui.slurp.navigation.stir",
+  "ui.slurp.navigation.messages",
+  "ui.slurp.navigation.me",
 ]) {
-  assert.match(mobileNavigation, new RegExp(`aria-label=\\{[\\s\\S]*${label.replaceAll(".", "\\.")}`, "u"));
+  assert.match(mobileNavigation, new RegExp(`label=\\{[\\s\\S]*${label.replaceAll(".", "\\.")}`, "u"));
 }
+const navTab = shell.slice(shell.indexOf("function SlpNavTab"), shell.indexOf("export function SlpShell"));
+assert.match(navTab, /aria-label=\{badge > 0 \? `\$\{label\}, /u, "each tab is named by its label (plus the count)");
 // 48px: compact, and still above the 44px minimum touch target.
-assert.match(shell, /h-12 grid-flow-col/u, "mobile navigation must keep its touch-target height");
-assert.doesNotMatch(
-  mobileNavigation,
-  /<span className="max-w-full truncate px-1">/u,
-  "mobile navigation must hide text labels",
+assert.match(navTab, /relative flex h-12 min-w-11/u, "mobile navigation must keep its touch-target height");
+assert.match(
+  navTab,
+  /<span aria-hidden="true" className=\{cn\(SLP_TYPE\.caption/u,
+  "mobile navigation shows small labels",
 );
-assert.match(mobileNavigation, /!text-\[var\(--noodle-accent\)\]/u, "mobile navigation icons must stay pink");
+assert.match(
+  navTab,
+  /text-\[var\(--slurp-muted\)\][\s\S]*?active &&[\s\S]*?text-\[var\(--slurp-ink\)\]/u,
+  "icons stay muted; the active tab takes the pink ink",
+);
 assert.match(home, /ui\.slurp\.empty\.clearSearch/u, "empty search must offer a recovery action");
 assert.match(home, /ui\.slurp\.empty\.browseAll/u, "an empty Following feed must offer all creators");
 assert.match(
@@ -75,14 +82,28 @@ assert.match(
   "the Wallet balance must animate spending and earning",
 );
 assert.match(home, /function SlurpAccessTransition/u, "locked and revealed post shapes need a persistent shell");
-assert.match(home, /layout=\{reduceMotion \? false : "size"\}/u, "post height changes must animate instead of jumping");
+// 0.3.6: only a card that starts locked keeps the layout animation; the rest skip framer's measuring.
+assert.match(
+  home,
+  /layout=\{reduceMotion \|\| !mayReveal \? false : "size"\}/u,
+  "a revealed post's height change still animates",
+);
 assert.match(home, /mode="popLayout"/u, "the old post must remain while its revealed form enters");
 assert.match(creatorPostCard, /runTransaction/u, "the unlock sheet must stay mounted through payment");
 assert.match(creatorPostCard, /ui\.slurp\.unlocksheet\.bestValue/u, "the subscription offer must carry its value cue");
 assert.match(sparkle, /data-slurp-celebration-ring/u, "creator identity must share the reveal celebration");
 assert.match(sparkle, /new IntersectionObserver/u, "sparkles must observe their viewport visibility");
 assert.match(sparkle, /\{inViewport && \(/u, "off-screen sparkle particles must not remain mounted");
-assert.match(home, /contentVisibility: "auto"/u, "off-screen feed cards must skip unnecessary rendering work");
+assert.doesNotMatch(
+  home,
+  /contentVisibility: "auto"/u,
+  "feed cards never skip painting: a fast phone flick showed half-black pages (0.3.6)",
+);
+// 0.3.6: desktop keeps it (off-screen cards skip restyles); phones do not.
+assert.match(
+  slurp2Source(join(root, "packages/slurp2/src/engine/packages/client/src/slp/slp-client-entry.tsx")),
+  /@media \(min-width: 1024px\) \{\s*\[data-slurp-access-transition\]:not\(\[data-slp-menu-open\]\) \{\s*content-visibility: auto;/u,
+);
 assert.match(
   home,
   /const \{ moments, feed, searchResults, discoveredCreators, suggestedCreators \} = useMemo/u,
@@ -118,26 +139,24 @@ assert.match(
   /desktopSidebar=\{\s*<SlurpSettingsSidebar navigation=\{navigation\} onNavigate=\{onNavigate\} onExit=\{exitToCreatorHub\}/u,
   "Settings must supply the desktop sidebar with a way out",
 );
-assert.match(
-  settings,
-  /md:flex md:flex-col @min-\[1024px\]:hidden/u,
-  "The in-page desktop nav must yield to the shell",
-);
+assert.match(home, /desktopSidebar/u, "The shell must own the desktop settings navigation");
 
-// The mobile section row must show where you are and that there is more of it.
+// Mobile uses one compact destination picker instead of the quick tabs, and search gets its own row.
 const row = settings.slice(
   settings.indexOf("function SlurpSettingsSectionRow("),
-  settings.indexOf("export function SlurpSettings("),
+  settings.indexOf("function useSlurpBackstageController("),
 );
+assert.match(row, /<select/u, "The active destination must be exposed as a native picker");
+assert.match(row, /<optgroup/u, "The picker must reach a page, not only its section");
+assert.match(row, /md:hidden/u, "The destination picker is mobile only");
+assert.match(settings, /<SlurpBackstageSubnav\s+className="hidden md:flex"/u, "Mobile must hide the quick tabs");
 assert.match(
-  row,
-  /scrollIntoView\(\{ block: "nearest", inline: "center" \}\)/u,
-  "The active section must scroll into view",
+  settings,
+  /className="max-w-none basis-full md:max-w-xl md:basis-auto"/u,
+  "Mobile search must use a full row",
 );
-assert.match(row, /edges\.start \? "transparent"/u, "A scrollable start edge must fade");
-assert.match(row, /edges\.end \? "transparent"/u, "A scrollable end edge must fade");
 
-const card = readFileSync(join(componentsDir, "SlurpCreatorProfileCard.tsx"), "utf8");
+const card = slurp2Source(join(componentsDir, "SlurpCreatorProfileCard.tsx"));
 
 // One creator card everywhere; only Discover opts into its horizontal layout and actions.
 assert.match(card, /layout = "grid"/u, "the shared card must preserve the grid default");
@@ -213,8 +232,8 @@ assert.match(moment, /<SlurpMediaDialog/u, "Stories must use the same dialog sha
 assert.match(settings, /bg-\[var\(--noodle-accent\)\]\/15[\s\S]*?ui\.slurp\.settings\.exit/u);
 assert.match(shell, /<NoodleLogo[\s\S]*?\{desktopSidebar \?\? \(/u, "The mark must survive the sidebar swap");
 
-const postCard = readFileSync(join(componentsDir, "SlurpCreatorPostCard.tsx"), "utf8");
-const imageFrame = readFileSync(join(componentsDir, "PostImageCropEditor.tsx"), "utf8");
+const postCard = slurp2Source(join(componentsDir, "SlurpCreatorPostCard.tsx"));
+const imageFrame = slurp2Source(join(componentsDir, "PostImageCropEditor.tsx"));
 
 // Active state must be a fill, not a shadow that vanishes against the panel behind it.
 assert.match(shell, /export const SLURP_TOGGLE_ACTIVE_CLASS/u, "Small toggles need a shared active fill");

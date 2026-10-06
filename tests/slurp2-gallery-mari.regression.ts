@@ -4,19 +4,20 @@
  * - Professor Mari may be picked as a new Creator source only while the Slurp setting allows it.
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { slurp2BackstageSource } from "./slurp2-backstage-source";
+import { slurp2Source } from "./slurp2-source";
 
-const read = (path: string) => readFileSync(`packages/slurp2/src/engine/packages/${path}`, "utf8");
+const read = (path: string) => slurp2Source(`packages/slurp2/src/engine/packages/${path}`);
 const generation = read("server/src/services/slurp/slurp-generation.service.ts");
 const storage = read("server/src/services/storage/slurp.storage.ts");
-const settingsView = read("client/src/components/slurp/SlurpSettings.tsx");
+const settingsView = slurp2BackstageSource();
 
 // Gallery images are a fallback: gated on the setting and a character source, never an error.
 assert.match(
   generation,
-  /if \(!settings\.allowGalleryImageAttachments \|\| linkedPublicAccount\?\.kind !== "character"\) return \{\};/u,
+  /if \(textOnly \|\| !settings\.allowGalleryImageAttachments \|\| linkedPublicAccount\?\.kind !== "character"\)\s*return \{\};/u,
 );
-assert.match(generation, /if \(!draftImagePrompt\) return \{ post: await persist\(await galleryFallback\(\)\)/u);
+assert.match(generation, /if \(!prompt\) return \{ post: await persist\(await galleryFallback\(\)\)/u);
 // Every no-picture outcome tries the gallery first: no connection, review failure, generation failure.
 assert.equal(
   generation.match(
@@ -30,10 +31,10 @@ assert.match(settingsView, /update\("allowGalleryImageAttachments", value\)/u);
 const reserve = read("server/src/services/slurp/slurp-reserve.operation.ts");
 assert.match(
   reserve,
-  /settings\.allowGalleryImageAttachments &&\s*typeof payload\.metadata\.noodlerMediaPath !== "string" &&\s*payload\.metadata\.imageGenerationDeferred !== true/u,
+  /settings\.allowGalleryImageAttachments &&\s*payload\.metadata\.contentDelivery !== "text_only" &&\s*typeof payload\.metadata\.noodlerMediaPath !== "string" &&\s*payload\.metadata\.imageGenerationDeferred !== true/u,
 );
 assert.match(reserve, /galleryAttachmentImageUrl: attachment\.imageUrl/u);
-assert.match(storage, /imageUrl: hasMedia \? noodlerPostMediaUrl\(postId\) : galleryImageUrl,/u);
+assert.match(storage, /imageUrl: hasMedia \? slpCreatorPostMediaUrl\(postId\) : galleryImageUrl,/u);
 
 // Professor Mari: one gate where new Creators and drafts resolve a source, plus the source list.
 assert.match(

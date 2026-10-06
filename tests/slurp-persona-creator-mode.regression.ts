@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { slurp2Source } from "./slurp2-source";
 
-const read = (path: string) => readFileSync(path, "utf8");
+const read = (path: string) => slurp2Source(path);
 const base = "packages/slurp2/src/engine/packages/server/src/services/slurp/";
 const schema = read("packages/slurp2/src/engine/packages/server/src/db/schema/slurp.ts");
 const storage = read("packages/slurp2/src/engine/packages/server/src/services/storage/slurp.storage.ts");
@@ -17,14 +17,14 @@ assert.match(
 );
 assert.match(
   read("packages/slurp2/src/engine/packages/client/src/components/slurp/SlurpOnboardingPanel.tsx"),
-  /useNoodlerEligibleAccounts\("", "all", open\)/u,
+  /useCreatorEligibleAccounts\("", "all", open\)/u,
   "onboarding must offer personas as well as characters",
 );
 
 // 3.3 — drafts only: a persona Creator never writes a DM reply or a comment reply on its own.
 assert.match(
   read(base + "slurp-message.operation.ts"),
-  /creator\.kind === "persona" && creator\.sourceKind === "persona"\) return \{ status: "ineligible" \}/u,
+  /creator\.kind === "persona" && creator\.sourceKind === "persona"\)\) \{[\s\S]*?return \{ status: "ineligible" \}/u,
 );
 assert.match(
   read(base + "slurp-audience-reply.operation.ts"),

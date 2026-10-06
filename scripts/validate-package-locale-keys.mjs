@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 // bundle actually references against the catalog that ships beside it.
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packagesRoot = join(repoRoot, "packages");
-const catalogPath = "src/engine/packages/client/src/localization/locales/en.json";
+// Slurp2 keeps its catalog inside its slp namespace; every other package uses the Engine location.
+const catalogPaths = [
+  "src/engine/packages/client/src/localization/locales/en.json",
+  "src/engine/packages/client/src/slp/locales/en.json",
+];
 // i18next resolves a plural key through its suffixed variants, so a bare reference is satisfied by
 // any of them.
 const pluralSuffixes = ["", "_zero", "_one", "_two", "_few", "_many", "_other"];
@@ -24,7 +28,10 @@ async function readOptionalJson(path) {
 const failures = [];
 for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
-  const catalog = await readOptionalJson(join(packagesRoot, entry.name, catalogPath));
+  let catalog = null;
+  for (const catalogPath of catalogPaths) {
+    catalog ??= await readOptionalJson(join(packagesRoot, entry.name, catalogPath));
+  }
   if (!catalog) continue;
   let bundle;
   try {
@@ -35,7 +42,11 @@ for (const entry of await readdir(packagesRoot, { withFileTypes: true })) {
   }
   const referenced = new Set([...bundle.matchAll(/"(ui\.[a-zA-Z0-9_.]+)"/gu)].map((match) => match[1]));
   const missing = [...referenced]
-    .filter((key) => !pluralSuffixes.some((suffix) => `${key}${suffix}` in catalog))
+    // Bundled non-English catalogs also contribute plural variants such as _few and _many.
+    .filter((key) => {
+      const baseKey = key.replace(/_(?:zero|one|two|few|many|other)$/u, "");
+      return !pluralSuffixes.some((suffix) => `${baseKey}${suffix}` in catalog);
+    })
     .sort();
   if (missing.length > 0) failures.push({ id: entry.name, missing });
 }
