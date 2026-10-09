@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "better-impersonate",
   "name": "Better Impersonate",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Native Quick Actions for impersonation drafts, continuation and guidance recall.",
   "engine": {
     "min": "2.5.0",
@@ -32,8 +32,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "33408a5513d28a72bdb1b9982186ec66a057e0b008e8e844874a83ff9e07b07f",
-      "bytes": 31476
+      "sha256": "f292b9709beb938bd65a5c608f0ebf3870dcd06310fe01a561077a9ef6faf296",
+      "bytes": 31450
     }
   ]
 }

@@ -649,7 +649,7 @@ function mountBetterImpersonate() {
     if (!ctx) return "Select or create a chat first.";
     if (controller.active || ctx.busy) return "Wait for generation to finish.";
     if (mode === "restore") return readRecall(localStorage, ctx.chatId).lastGuidance.trim() ? "" : "No previous direction saved for this chat.";
-    return ctx.read().trim() ? "" : mode === "continue" ? "Type a draft first." : "Type a direction first.";
+    return mode === "continue" && !ctx.read().trim() ? "Type a draft first." : "";
   }
   function closeMenu() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

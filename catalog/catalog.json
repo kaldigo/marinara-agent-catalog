@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-09T15:54:53.269Z",
+  "generatedAt": "2026-10-09T16:33:34.458Z",
   "packages": [
     {
       "manifest": {
@@ -3796,7 +3796,7 @@
         "schemaVersion": 1,
         "id": "better-impersonate",
         "name": "Better Impersonate",
-        "version": "3.0.1",
+        "version": "3.0.2",
         "description": "Native Quick Actions for impersonation drafts, continuation and guidance recall.",
         "engine": {
           "min": "2.5.0",
@@ -3826,16 +3826,16 @@
           },
           {
             "path": "client.js",
-            "sha256": "33408a5513d28a72bdb1b9982186ec66a057e0b008e8e844874a83ff9e07b07f",
-            "bytes": 31476
+            "sha256": "f292b9709beb938bd65a5c608f0ebf3870dcd06310fe01a561077a9ef6faf296",
+            "bytes": 31450
           }
         ]
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.1.zip",
-        "sha256": "09496cf44b3bb07e6efede2b2b766c6726d39f2a40842b3f3964c4130216ac6f",
-        "bytes": 22596
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.2.zip",
+        "sha256": "b035aa7c16fdc3a4ee2d758e1585b7a86bd38446f67cb9fa06de4f84dc8b3f1f",
+        "bytes": 22590
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
     }
