@@ -1,37 +1,37 @@
 # Marinara Capability Packages
 
-This branch contains the editable sources for custom Marinara capability
-packages. Each publishable root folder has a `marinara-source.json`; the catalog
-workflow builds those sources and generates the public `main` branch output.
-Generated catalog artifacts are not edited here.
+This checkout contains capability package sources. The existing catalog repository
+and GitHub Actions remain the distribution path; generated output is not edited here.
 
-## Architecture policy
+## Migration status — 2026-10-09
 
-Packages are native-first:
+The old injected Mari Bridge and five feature packages were retired to
+../archive/packages/2026-10-09-bridge-retirement/. The local archive also contains
+the old SDK, smoke package, tracker codecs and bridge bootstrap CI workflow.
+It is outside this Git checkout and is not published by its workflow.
 
-- use Marinara's normal agent definitions, settings editor, model selection,
-  generation paths, persistence, and UI wherever they already exist;
-- use Mari Bridge only for a missing hook or native extension point;
-- keep package code limited to feature-specific behavior and state;
-- never replace an existing native workflow with a parallel package-owned
-  settings page, request pipeline, connection resolver, or application shell.
+Remaining packages:
 
-When a feature needs new UI, Mari Bridge patches the smallest verified native
-mount. The contribution must follow the corresponding native component's
-layout and behavior, including inline editing, add/remove modes, locking,
-responsive sizing, and lifecycle cleanup. Visual resemblance alone is not
-enough.
+- better-impersonate: browser-only package with integrated controls.
+- pwa-helper: browser-only package covering generation and dry runs.
+- presence: native-backed package; browser-only if persistence semantics allow it.
+- world-map-background: native-backed package; browser-only if native APIs suffice.
+- mari-bridge: planning placeholder for a minimal registry and shared utilities.
 
-## Shared foundation
+Better Impersonate 3.0.0 has been rewritten and verified against Engine 2.5.0.
+The other folders retain temporary MIGRATION.md notes to delete after implementation
+and verification; their old implementations are not build-ready and remain excluded
+from publication. Better Impersonate has includeInMain: true. The maintained
+testbench installs only Better Impersonate 3.0.0. GitHub Actions regenerates the catalog.
 
-- `mari-bridge/` is the installed, version-bound runtime that patches missing
-  Engine seams and owns shared registries.
-- `_mari-bridge/` is the thin SDK bundled into consumers. It performs health,
-  version, capability, session, and cleanup handling; it is not a second
-  patcher.
-- Consumers fail closed when their required Mari Bridge capabilities are not
-  healthy. They do not fall back to DOM observers or legacy interception.
+## Target architecture
 
-Legacy extension code is reference/migration material only. New work belongs in
-package-era sources and follows `AGENTS.md`.
+Use native APIs, generation, storage and contribution surfaces. Do not restore
+Engine patching or private-store integration. Each package bundles a minimal
+shared registry bootstrap so registration is independent of load order.
+Consumers preflight all required contracts at operation start, resolve providers
+at call time and never cache implementations at initialization. Operation-scoped
+ownership governs cancellation, replacement and cleanup.
 
+Keep feature data with its native or package owner. Mari Bridge supplies service
+registration and narrowly scoped utilities, not a replacement application.

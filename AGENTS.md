@@ -4,6 +4,21 @@
 
 These instructions apply to the `packages` branch checkout.
 
+## Active migration direction — 2026-10-09
+
+The old bridge runtime, SDK, smoke package and tracker codecs are archived with
+Tracker Profile Details, Group Sort Order, Unified Tracker, Memory Core and GM
+Notes. Do not restore them to satisfy old imports or checks. See README.md and
+each remaining package's temporary MIGRATION.md.
+
+This direction supersedes legacy bridge guidance below wherever it assumes an
+injected runtime, Engine patches, archived SDK availability, startup health
+gating or retired consumers. Use a tiny bundled registration bootstrap, shared
+contracts and call-time dependency preflight instead. Native-first behavior and
+ownership/cleanup rules still apply. Keep packages excluded from publication
+until migration and verification are complete. Delete temporary migration notes
+when done, retaining enduring contracts in code and API documentation.
+
 ## Investigation and Fix Discipline
 
 - Do not make small patch/hotfix edits until the behavior has been traced through the owning code path.

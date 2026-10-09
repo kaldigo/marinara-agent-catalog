@@ -1,26 +1,65 @@
-# Better Impersonate
+# Better Impersonate 3.0
 
-`better-impersonate` replaces the legacy `impersonate-button` package identity now that the feature is a command-driven impersonation workflow rather than an injected button.
+Browser-only capability package. Adds three actions to Marinara's existing Quick
+Actions / Quick Replies menu:
 
-System Quick Replies can now keep the UI configuration while the command owns the behavior:
+- **Impersonate** uses composer text as direction for a native impersonation dry
+  run and places the generated response in the composer without posting it.
+- **Continue impersonate** asks the same native endpoint to continue the current
+  draft, then appends only new text. A repeated leading draft is removed; matching
+  text elsewhere is preserved. Empty drafts behave like Impersonate.
+- **Restore previous** restores the chat's last non-empty saved guidance.
+  Continue does not overwrite it. Recall from the preceding package is retained.
 
-- `/impersonate_draft {{input}}` produces a persistent editable draft without posting a message.
-- `/impersonate_continue {{input}}` continues the persona draft currently in the composer.
-- `/impersonate_last` restores the last non-empty guidance into the composer without generating.
+Enable the native Quick Replies menu with at least two native actions so Marinara
+renders its menu (one action is rendered by Engine as a direct button). The package
+extends that menu; it does not create another launcher or change user settings.
 
-Native `/impersonate` and `/imp` remain owned by Marinara and are not modified. Active persona draft runs use Marinara's normal Stop button. Runs and partial output are owned per chat by Mari Bridge, so changing chats or opening another screen no longer detaches the result from the mounted textarea. The package fails closed when Mari Bridge or its command, draft, and Quick Reply hooks are unavailable.
+Native impersonation prompt, preset and connection settings are read afresh for
+each operation. Continue supplies direction, not a rewritten prompt or provider
+prefill. Native dryRun remains unchanged. This package never posts a chat message.
 
-Better Impersonate has no per-chat agent entry or replacement settings page. Its dry runs use Marinara's native global Impersonate prompt, connection/model, preset, and agent-blocking settings. Guidance uses Marinara's native generation-guide channel. Continue sends the existing composer draft as a provider-level continuation prefill and receives only the generated continuation. Mari Bridge resolves the Quick Reply `{{input}}` macro before dispatching the slash command.
+The upstream inline-thinking stream filter removes leading reasoning before draft
+insertion, including supported custom tags from the selected preset. Separate
+provider reasoning channels are not inserted. Reasoning-only output preserves the
+original input. Exact repeated draft prefixes (also ignoring surrounding draft
+whitespace) are removed only at the beginning.
 
-Mari Bridge adds a native **Preset handles impersonation** switch beside the existing Impersonate switches. When enabled with a selected Impersonate preset, the preset is treated as the complete impersonation prompt and the normal Impersonate prompt template is omitted. Guidance is still added through the native generation-guide channel, and Continue still uses the existing draft as a provider prefill. With the switch disabled, Draft and Continue retain the normal Impersonate prompt template.
+## Lifecycle and DOM boundary
 
-Recall is stored per chat as separate guidance and generated-draft values. Supplying the exact last generated draft to `/impersonate_draft` does not replace the guidance restored by `/impersonate_last`. Successful Continue runs update the remembered generated draft but never replace the remembered guidance.
+DOM integration was explicitly authorized for this rewrite. Verified Engine 2.5.0
+markers: textarea[data-chat-composer][data-chat-id], .mari-chat-input,
+.mari-chat-send-btn, and [data-chat-input-popup="quick-reply"] [role="menu"].
 
-## Native boundary
+The menu has native styling, keyboard navigation and viewport clamping. A filtered
+structure observer handles mounting without repeatedly scanning chat messages.
+No private React/Zustand access, Engine patch, old bridge, model picker, prompt
+editor, slash command or additional generation route is used.
 
-Marinara owns impersonation prompt assembly, connection handling, dry-run
-generation, streaming, abort behavior, the composer draft store, and the native
-Stop button. Better Impersonate owns only the additional commands, their
-generation-guide content, guidance/output recall, and Quick Reply dispatch. It must not
-introduce a parallel request client, model picker, prompt editor, Stop command,
-or replacement settings UI.
+Before generation, the package verifies installation, chat and output-filter
+configuration. While running, the composer is read-only and a temporary Stop
+control occupies Send's position; it aborts this dry run, never clicks native Stop.
+Chat changes/unmounts cancel. Every output write verifies the originating composer
+and its expected value. Partial visible output remains on Stop/error; original
+guidance remains when no visible output arrived.
+
+The runtime owns all listeners, nodes and observers. Re-evaluation disposes the
+previous runtime. For explicit local teardown:
+window[Symbol.for("marinara.better-impersonate.runtime")].dispose()
+Engine's client loader does not expose an uninstall callback: reload after
+uninstall. Each new generation checks installation before changing the draft.
+
+## Build and checks
+
+npm run check builds a prepared client package and runs behavior/transport checks.
+npm run check:browser exercises the generated bundle in the maintained Engine
+2.5.0 testbench with isolated data and a deterministic model stub. Acquire the
+testbench lease first. Desktop/mobile placement, generation, continuation, Stop,
+failure cleanup, native chat switching, recall persistence and teardown passed.
+
+Catalog publication is enabled for this verified 3.0.0 release.
+The DOM markers and persisted UI settings format are undocumented integration
+dependencies. For a random connection in Roleplay, select an explicit impersonation
+preset in native settings. The endpoint does not report its selected preset, so
+preflight otherwise stops before modifying the draft rather than risking insertion
+of custom reasoning tags. No ZIPs, checksums or catalog files are published manually.

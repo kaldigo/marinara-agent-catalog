@@ -1,23 +1,11 @@
 {
   "schemaVersion": 1,
   "type": "capability-package",
-  "includeInMain": true,
-  "processing": {
-    "kind": "package-build",
-    "buildCommand": ["npm", "run", "build"],
-    "outputDir": "dist/package",
-    "sharedRoots": ["_mari-bridge"]
-  },
+  "includeInMain": false,
+  "processing": { "kind": "pending" },
   "package": {
     "id": "mari-bridge",
     "name": "Mari Bridge",
-    "description": "Installs the version-bound injected bridge runtime used by Marinara capability packages.",
-    "engine": {
-      "min": "2.4.6",
-      "maxExclusive": "2.4.7"
-    },
-    "kind": ["agent"],
-    "permissions": ["agent-runtime"],
-    "restartRequired": true
+    "description": "Planned shared service registry and native-backed utilities for capability packages."
   }
 }
