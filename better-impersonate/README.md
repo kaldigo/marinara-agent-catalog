@@ -32,8 +32,8 @@ markers: textarea[data-chat-composer][data-chat-id], .mari-chat-input,
 .mari-chat-send-btn, and [data-chat-input-popup="quick-reply"] [role="menu"].
 
 The actions sit above the native actions and use the same outer control and inner
-icon-ring classes, including hover, focus and disabled states. Impersonate and
-Continue require nonempty input; Restore requires saved guidance for this chat.
+icon-ring classes, including hover, focus and disabled states. Impersonate allows
+empty input. Continue requires a draft; Restore requires saved guidance for this chat.
 All three disable while the composer is busy. Titles explain disabled states.
 While a menu is mounted, its captured native buttons supply the rendered spring,
 blur and opacity values to the added actions across the native stagger phases.

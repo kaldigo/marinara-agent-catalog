@@ -4,7 +4,7 @@ const root = new URL("../dist/package/", import.meta.url);
 const manifest = JSON.parse(fs.readFileSync(new URL("manifest.json", root)));
 const client = fs.readFileSync(new URL("client.js", root), "utf8");
 assert.equal(manifest.id, "better-impersonate");
-assert.equal(manifest.version, "3.0.1");
+assert.equal(manifest.version, "3.0.2");
 assert.deepEqual(manifest.entrypoints, { client: "client.js" });
 assert.equal(manifest.contributions, undefined);
 assert(!client.includes("_mari-bridge"));

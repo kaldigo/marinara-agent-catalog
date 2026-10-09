@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.2
+
+- Allow Impersonate with an empty composer, using the native dry run without
+  additional direction. Continue still requires a draft; busy-state guards remain.
+
 ## 3.0.1
 
 - Place all three actions above the existing native Quick Actions.
