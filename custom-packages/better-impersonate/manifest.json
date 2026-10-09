@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "better-impersonate",
   "name": "Better Impersonate",
-  "version": "2.3.11",
-  "description": "Adds bridge-registered persona draft commands for use from system Quick Replies.",
+  "version": "3.0.0",
+  "description": "Native Quick Actions for impersonation drafts, continuation and guidance recall.",
   "engine": {
-    "min": "2.4.6",
-    "maxExclusive": "2.4.7"
+    "min": "2.5.0",
+    "maxExclusive": "2.5.1"
   },
   "kind": [
     "agent"
@@ -14,21 +14,26 @@
   "entrypoints": {
     "client": "client.js"
   },
-  "contributions": {
-    "slots": [
-      "chat-runtime"
-    ]
-  },
+  "permissions": [
+    "ui",
+    "storage"
+  ],
+  "restartRequired": false,
   "files": [
     {
+      "path": "LICENSE",
+      "sha256": "6142a08dcee50c978f552701c345788d2618548bc80b85ea58999bec94d3bdc4",
+      "bytes": 34467
+    },
+    {
+      "path": "THIRD-PARTY.md",
+      "sha256": "56cba20b65051aace7a65327c7a7817407b9c2710e7773343b9b3c40027feafd",
+      "bytes": 581
+    },
+    {
       "path": "client.js",
-      "sha256": "9e112f207425f4bdd4e03f212cf4f1998eed492dae3c0d5a5b430ef224b5499e",
-      "bytes": 10556
+      "sha256": "fdf17b7a9204e078076f1dcfd826840161b452ef6bdbada1273ad649fcc53ece",
+      "bytes": 27877
     }
-  ],
-  "permissions": [
-    "storage",
-    "ui"
-  ],
-  "restartRequired": false
+  ]
 }
