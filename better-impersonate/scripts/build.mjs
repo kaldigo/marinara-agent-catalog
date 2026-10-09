@@ -6,7 +6,7 @@ const out = path.join(root, "dist/package");
 const pkg = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
 const source = JSON.parse(await fs.readFile(path.join(root, "marinara-source.json"), "utf8"));
 await fs.mkdir(out, { recursive: true });
-const names = ["thinking-tags.js", "recall.js", "request.js", "transport.js", "controller.js", "runtime.js"];
+const names = ["thinking-tags.js", "recall.js", "request.js", "transport.js", "controller.js", "quick-actions.js", "runtime.js"];
 const chunks = await Promise.all(names.map(async name => "// " + name + "\n" +
   (await fs.readFile(path.join(root, "src/client", name), "utf8"))
     .replace(/^import .*?;\r?\n/gm, "").replace(/^export /gm, "")));

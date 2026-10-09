@@ -1,6 +1,6 @@
 {
   "name": "marinara-better-impersonate-package",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "private": true,
   "type": "module",
   "description": "Native Quick Actions for impersonation drafts, continuation and guidance recall.",

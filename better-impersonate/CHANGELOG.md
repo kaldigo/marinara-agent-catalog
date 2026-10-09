@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.1
+
+- Place all three actions above the existing native Quick Actions.
+- Match native outer controls, icon rings, icon sizing, theme colors and hover/
+  disabled states. Explain unavailable actions in titles and disable empty draft
+  actions or Restore with no saved guidance.
+- Follow the native buttons' rendered entry/exit motion and stagger phases.
+- Verify styles against two enabled native actions on Engine 2.5.0, including
+  computed appearance, hover, disabled input transitions and recorded motion.
+
 ## 3.0.0
 
 - Rewrite as a standalone browser capability package with Impersonate, Continue
