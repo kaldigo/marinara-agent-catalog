@@ -514,6 +514,50 @@ function createController(host, storage = localStorage) {
   };
 }
 
+// quick-actions.js
+// Engine 2.5.0 QuickReplyMenu.tsx owns these classes (including theme hooks).
+// Keep both layers: the outer control and the inner icon's hover/disabled ring.
+const CONTROL = "mari-chat-style-control mari-chat-quick-reply group relative flex h-11 w-11 items-center justify-center rounded-full border shadow-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/20 sm:h-10 sm:w-10";
+const ICON = "flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-1 transition-colors";
+
+function styleQuickAction(button, reason, label, description) {
+  button.disabled = Boolean(reason);
+  button.className = CONTROL + " " + (reason
+    ? "cursor-not-allowed border-foreground/10 bg-[var(--card)]/75 opacity-45"
+    : "border-foreground/20 bg-[var(--card)] text-foreground/55 hover:bg-foreground/10 hover:text-foreground/80 active:scale-95");
+  button.firstElementChild.className = ICON + " " + (reason
+    ? "bg-foreground/5 text-foreground/40 ring-transparent"
+    : "bg-foreground/10 ring-foreground/15 group-hover:bg-transparent group-hover:ring-transparent");
+  button.title = label + ": " + (reason || description);
+  button.setAttribute("aria-label", label + ": " + description);
+}
+
+// These DOM contributions are not React motion children. Follow the native
+// rail's actual animated values instead of approximating its spring with CSS.
+// Spread contributions across the native stagger phases. The native rail owns
+// opening, closing, interrupted animations and removal; we never extend its life.
+// Read only the captured menu buttons, only while this popup is mounted.
+function followNativeMotion(nativeButtons, buttons) {
+  let frame = 0;
+  let stopped = false;
+  function update() {
+    if (stopped || !buttons[0].isConnected) return;
+    const motion = nativeButtons.map(button => {
+      const style = getComputedStyle(button);
+      return { opacity: style.opacity, transform: style.transform, filter: style.filter };
+    });
+    buttons.forEach((button, index) => {
+      const values = motion[Math.floor(index * motion.length / buttons.length)];
+      for (const property of ["opacity", "transform", "filter"]) {
+        if (button.style[property] !== values[property]) button.style[property] = values[property];
+      }
+    });
+    frame = requestAnimationFrame(update);
+  }
+  update();
+  return () => { stopped = true; cancelAnimationFrame(frame); };
+}
+
 // runtime.js
 
 const OWNER = Symbol.for("marinara.better-impersonate.runtime");
@@ -549,6 +593,7 @@ function mountBetterImpersonate() {
     const send = root?.querySelector(".mari-chat-send-btn");
     if (!root || !chatId || !send) return null;
     const isBusy = () => textarea.disabled || textarea.readOnly ||
+      Boolean(root.querySelector('button[aria-haspopup="menu"]:disabled')) ||
       Boolean(send.querySelector('[class*="lucide-stop"],[class*="lucide-circle-stop"],[class*="lucide-loader"]'));
     const valid = () => textarea.isConnected && textarea.dataset.chatId === chatId;
     const write = value => {
@@ -594,11 +639,18 @@ function mountBetterImpersonate() {
   }
   const controller = createController({ context, changed: () => schedule() });
   const paths = {
-    impersonate: '<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2m1-10 2 2 4-4"/>',
+    impersonate: '<path d="m16 11 2 2 4-4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>',
     continue: '<path d="M4 12h12m-4-4 4 4-4 4m7-11v14"/>',
     restore: '<path d="M3 4v6h6M3 10a9 9 0 1 1 0 6"/>',
   };
   const labels = { impersonate: "Impersonate", continue: "Continue impersonate", restore: "Restore previous" };
+  const descriptions = { impersonate: "Generate as your persona", continue: "Continue your current draft", restore: "Restore your previous direction" };
+  function disabledReason(mode, ctx = context()) {
+    if (!ctx) return "Select or create a chat first.";
+    if (controller.active || ctx.busy) return "Wait for generation to finish.";
+    if (mode === "restore") return readRecall(localStorage, ctx.chatId).lastGuidance.trim() ? "" : "No previous direction saved for this chat.";
+    return ctx.read().trim() ? "" : mode === "continue" ? "Type a draft first." : "Type a direction first.";
+  }
   function closeMenu() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   }
@@ -610,43 +662,49 @@ function mountBetterImpersonate() {
     for (const popup of document.querySelectorAll(popupSelector)) {
       const menu = popup.querySelector('[role="menu"]');
       if (!menu || menu.querySelector("[data-better-impersonate]")) continue;
-      const sample = menu.querySelector('button[role="menuitem"]');
+      const nativeButtons = [...menu.querySelectorAll('button[role="menuitem"]')];
+      const sample = nativeButtons[0];
       if (!sample) continue;
       const style = popup.getAttribute("style");
+      let stopMotion = () => {};
       restores.set(popup, () => {
+        stopMotion();
         if (style === null) popup.removeAttribute("style"); else popup.setAttribute("style", style);
       });
+      const added = [];
       for (const mode of ["impersonate", "continue", "restore"]) {
         const button = document.createElement("button");
         button.type = "button";
         button.setAttribute("role", "menuitem");
-        button.className = sample.className.replace(/\b(cursor-not-allowed|opacity-45)\b/g, "");
-        button.style.background = "var(--card)";
-        button.style.color = "var(--foreground)";
         button.dataset.betterImpersonate = mode;
-        button.title = labels[mode];
-        button.setAttribute("aria-label", labels[mode]);
-        button.innerHTML = '<span style="display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' + paths[mode] + '</svg></span>';
+        button.innerHTML = '<span><svg width="0.875rem" height="0.875rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[mode] + '</svg></span>';
+        styleQuickAction(button, disabledReason(mode), labels[mode], descriptions[mode]);
         button.addEventListener("click", event => {
           event.preventDefault(); event.stopPropagation();
+          if (disabledReason(mode)) { schedule(); return; }
           closeMenu();
           if (mode === "restore") {
             try { controller.restore(); } catch (error) { report(error); }
           } else void controller.start(mode).catch(report);
         });
         owned.add(button);
-        menu.append(button);
+        added.push(button);
+        menu.insertBefore(button, sample);
       }
+      stopMotion = followNativeMotion(nativeButtons, added);
     }
     const ctx = context();
-    for (const button of owned) button.disabled = Boolean(controller.active) || !ctx || ctx.busy;
+    for (const button of owned) {
+      const mode = button.dataset.betterImpersonate;
+      styleQuickAction(button, disabledReason(mode, ctx), labels[mode], descriptions[mode]);
+    }
     clampMenus();
   }
   function clampMenus() {
     for (const popup of restores.keys()) {
       if (!popup.isConnected) continue;
       popup.style.maxHeight = Math.max(44, innerHeight - 16) + "px";
-      popup.style.overflowY = "auto";
+      popup.style.overflowY = popup.scrollHeight > innerHeight - 16 ? "auto" : "visible";
       const rect = popup.getBoundingClientRect();
       const menuId = popup.querySelector('[role="menu"]')?.id;
       const trigger = menuId && document.querySelector('.mari-chat-input button[aria-controls="' + CSS.escape(menuId) + '"]');
@@ -670,10 +728,12 @@ function mountBetterImpersonate() {
   );
   const observer = new MutationObserver(records => {
     if (records.some(record => record.type === "attributes"
-      ? record.target.matches(selector)
+      ? record.target.matches(selector + ',.mari-chat-input button[aria-haspopup="menu"]')
       : [...record.addedNodes, ...record.removedNodes].some(relevant))) schedule();
   });
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-chat-id", "disabled"] });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-chat-id", "disabled", "readonly"] });
+  function input(event) { if (event.target.matches?.(selector)) schedule(); }
+  document.addEventListener("input", input);
   function keyboard(event) {
     const menu = event.target.closest?.(popupSelector + ' [role="menu"]');
     if (!menu || !["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -694,6 +754,7 @@ function mountBetterImpersonate() {
     disposed = true;
     controller.cancel();
     observer.disconnect();
+    document.removeEventListener("input", input);
     document.removeEventListener("keydown", keyboard, true);
     window.removeEventListener("resize", clampMenus);
     window.removeEventListener("pagehide", controller.cancel);

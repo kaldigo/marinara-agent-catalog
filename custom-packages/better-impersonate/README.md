@@ -7,7 +7,7 @@ Actions / Quick Replies menu:
   run and places the generated response in the composer without posting it.
 - **Continue impersonate** asks the same native endpoint to continue the current
   draft, then appends only new text. A repeated leading draft is removed; matching
-  text elsewhere is preserved. Empty drafts behave like Impersonate.
+  text elsewhere is preserved.
 - **Restore previous** restores the chat's last non-empty saved guidance.
   Continue does not overwrite it. Recall from the preceding package is retained.
 
@@ -31,7 +31,16 @@ DOM integration was explicitly authorized for this rewrite. Verified Engine 2.5.
 markers: textarea[data-chat-composer][data-chat-id], .mari-chat-input,
 .mari-chat-send-btn, and [data-chat-input-popup="quick-reply"] [role="menu"].
 
-The menu has native styling, keyboard navigation and viewport clamping. A filtered
+The actions sit above the native actions and use the same outer control and inner
+icon-ring classes, including hover, focus and disabled states. Impersonate and
+Continue require nonempty input; Restore requires saved guidance for this chat.
+All three disable while the composer is busy. Titles explain disabled states.
+While a menu is mounted, its captured native buttons supply the rendered spring,
+blur and opacity values to the added actions across the native stagger phases.
+The native rail owns entry/exit timing and removal; no independent timer or
+replacement animation library is involved. This is a DOM integration dependency.
+
+The menu has keyboard navigation and viewport clamping. A filtered
 structure observer handles mounting without repeatedly scanning chat messages.
 No private React/Zustand access, Engine patch, old bridge, model picker, prompt
 editor, slash command or additional generation route is used.
