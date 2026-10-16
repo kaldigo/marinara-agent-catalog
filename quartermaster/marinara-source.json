@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": [
+      "npm",
+      "run",
+      "build"
+    ],
+    "outputDir": "dist/package"
+  },
+  "package": {
+    "id": "quartermaster",
+    "name": "Quartermaster (Kaldigo)",
+    "description": "An RPG character sheet and inventory for Roleplay: equip gear around your persona's portrait, save outfits, get AI art for items, and let it keep everything in step with the story. Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
+    "engine": {
+      "min": "2.4.6",
+      "maxExclusive": "4.0.0"
+    },
+    "kind": [
+      "agent"
+    ],
+    "permissions": [
+      "agent-runtime",
+      "chat-read",
+      "chat-write",
+      "network",
+      "prompt-context",
+      "routes",
+      "storage",
+      "ui"
+    ],
+    "restartRequired": true
+  }
+}
