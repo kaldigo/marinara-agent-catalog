@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-16T16:09:06.456Z",
+  "generatedAt": "2026-10-16T04:39:26.358Z",
   "packages": [
     {
       "manifest": {
@@ -2992,8 +2992,8 @@
           "engineCommit": "f66abf7eddb7db6312ff5ba8a080145644191775"
         },
         "id": "quartermaster",
-        "name": "Quartermaster",
-        "version": "0.1.23",
+        "name": "Quartermaster (Kaldigo)",
+        "version": "1.0.0",
         "description": "An RPG character sheet and inventory for Roleplay: equip gear around your persona's portrait, save outfits, get AI art for items, and let it keep everything in step with the story. Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
         "engine": {
           "min": "2.4.6",
@@ -3013,21 +3013,47 @@
             "tracker-panel"
           ]
         },
+        "permissions": [
+          "agent-runtime",
+          "chat-read",
+          "chat-write",
+          "network",
+          "prompt-context",
+          "routes",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": true,
         "files": [
           {
+            "path": "CHANGELOG.md",
+            "sha256": "0f44f6f3a5be3f9464c524c0f03ef884fb32004e1dc4e20e8d21f56cd94a2a7a",
+            "bytes": 306
+          },
+          {
+            "path": "LICENSE",
+            "sha256": "6142a08dcee50c978f552701c345788d2618548bc80b85ea58999bec94d3bdc4",
+            "bytes": 34467
+          },
+          {
+            "path": "THIRD-PARTY.md",
+            "sha256": "cb937bb14869fce5fac996f7c9e5d73bf775659587af188a16e3e4032441a151",
+            "bytes": 685
+          },
+          {
+            "path": "UPSTREAM-README.md",
+            "sha256": "71dbdb0f3f0e7c3c900f5bb39700da02c942dce3042e2c81b2df063a7cab61a4",
+            "bytes": 27828
+          },
+          {
             "path": "agents.json",
-            "sha256": "fcd8b64b649650c5635ff28ab6071647a67695bb6ff4a2cbbe65bfd465b7ae93",
-            "bytes": 5197
+            "sha256": "848ce73304fc2bde5eedbe445212d44d21ef1dfc0cdfc849f0d4ecd39146b2b4",
+            "bytes": 5207
           },
           {
             "path": "client.js",
-            "sha256": "051624c751f6354ecc30bd89b21d01d1d05a24b392ac60e2ef04eeb860fe27ed",
-            "bytes": 289382
-          },
-          {
-            "path": "server.mjs",
-            "sha256": "a11b890e47422ff5ba7f4b6d10a0a18d1f7695b52b0dbaebda95d4717eb2f8e5",
-            "bytes": 129363
+            "sha256": "9d2fa5605a9f32bbbc2bd93b84c6ed8627354f6ac8e77d9934da082185f33c1b",
+            "bytes": 291067
           },
           {
             "path": "icons/armor_legs.webp",
@@ -3103,28 +3129,27 @@
             "path": "icons/weapon_left_hand.webp",
             "sha256": "9a9e629dd0b3d9e4005259f7aa6117d29158527ee3189d3926b3833ec879932f",
             "bytes": 482
+          },
+          {
+            "path": "locales/en.json",
+            "sha256": "c0b62c812f8ba64f0304378d2e24b8ff8c2cc0ca6aa099ebccc730eb2e84f508",
+            "bytes": 698
+          },
+          {
+            "path": "server.mjs",
+            "sha256": "a11b890e47422ff5ba7f4b6d10a0a18d1f7695b52b0dbaebda95d4717eb2f8e5",
+            "bytes": 129363
           }
-        ],
-        "permissions": [
-          "agent-runtime",
-          "chat-read",
-          "chat-write",
-          "network",
-          "prompt-context",
-          "routes",
-          "storage",
-          "ui"
-        ],
-        "restartRequired": true
+        ]
       },
       "category": "tracker",
-      "iconUrl": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artwork/agent-covers/quartermaster.png",
-      "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Agents/blob/main/packages/quartermaster/README.md",
+      "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/quartermaster.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/quartermaster-0.1.23.zip",
-        "sha256": "b69cc02ec41e303b7c236645ed9fefcdfeab3091bcafbdf6386ec80b3570f0c6",
-        "bytes": 451050
-      }
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/quartermaster-1.0.0.zip",
+        "sha256": "a9ddcd4eee5b345dc1881bbd783c10827b8a5055db2b62b1ec7b2d154744d432",
+        "bytes": 162876
+      },
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#quartermaster"
     },
     {
       "manifest": {
