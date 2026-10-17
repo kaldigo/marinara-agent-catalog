@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-17T20:44:30.087Z",
+  "generatedAt": "2026-10-17T23:13:09.033Z",
   "packages": [
     {
       "manifest": {
@@ -3146,7 +3146,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/quartermaster.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/quartermaster-1.0.0.zip",
-        "sha256": "9a96ec43de7cef48718a773414d875ff61e71fb587ec5213ad489361674093d9",
+        "sha256": "a082ace693f8c174565c697542f837bc241e6f48cacf19a844c081bae84979cd",
         "bytes": 162876
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#quartermaster"
@@ -3859,7 +3859,7 @@
       "category": "misc",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.2.zip",
-        "sha256": "47c4832cb8548f2410bdf731b20f0549fd13ff78d216cdcc012d2267c7aa0776",
+        "sha256": "b4a60c023b3f73112d20f4737dcd1394dadeffadc8aa2393d22fb67a9618e3d5",
         "bytes": 22590
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
