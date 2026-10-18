@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-18T11:22:06.871Z",
+  "generatedAt": "2026-10-18T15:59:30.789Z",
   "packages": [
     {
       "manifest": {
@@ -3146,7 +3146,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/quartermaster.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/quartermaster-1.0.0.zip",
-        "sha256": "ca6bf14d9331844db4bf4390411f01cb5be1fbc9d6afc8e4afe2317d7a5123c5",
+        "sha256": "fb8253e8db925bda503124f0bb79b879fe6b649e9dde7df4fd5c5deed531f559",
         "bytes": 162876
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#quartermaster"
