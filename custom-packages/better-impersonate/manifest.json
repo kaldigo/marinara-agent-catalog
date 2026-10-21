@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "better-impersonate",
   "name": "Better Impersonate",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "Native Quick Actions for impersonation drafts, continuation and guidance recall.",
   "engine": {
     "min": "2.5.0",
-    "maxExclusive": "2.5.1"
+    "maxExclusive": "2.5.2"
   },
   "kind": [
     "agent"

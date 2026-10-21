@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-20T22:24:47.272Z",
+  "generatedAt": "2026-10-21T00:54:27.770Z",
   "packages": [
     {
       "manifest": {
@@ -3122,8 +3122,8 @@
           "engineCommit": "f66abf7eddb7db6312ff5ba8a080145644191775"
         },
         "id": "quartermaster",
-        "name": "Quartermaster (Kaldigo)",
-        "version": "1.0.0",
+        "name": "Quartermaster",
+        "version": "0.1.28",
         "description": "An RPG character sheet and inventory for Roleplay: equip gear around your persona's portrait, save outfits, get AI art for items, and let it keep everything in step with the story. Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay mode.",
         "engine": {
           "min": "2.4.6",
@@ -3143,47 +3143,21 @@
             "tracker-panel"
           ]
         },
-        "permissions": [
-          "agent-runtime",
-          "chat-read",
-          "chat-write",
-          "network",
-          "prompt-context",
-          "routes",
-          "storage",
-          "ui"
-        ],
-        "restartRequired": true,
         "files": [
           {
-            "path": "CHANGELOG.md",
-            "sha256": "0f44f6f3a5be3f9464c524c0f03ef884fb32004e1dc4e20e8d21f56cd94a2a7a",
-            "bytes": 306
-          },
-          {
-            "path": "LICENSE",
-            "sha256": "6142a08dcee50c978f552701c345788d2618548bc80b85ea58999bec94d3bdc4",
-            "bytes": 34467
-          },
-          {
-            "path": "THIRD-PARTY.md",
-            "sha256": "cb937bb14869fce5fac996f7c9e5d73bf775659587af188a16e3e4032441a151",
-            "bytes": 685
-          },
-          {
-            "path": "UPSTREAM-README.md",
-            "sha256": "71dbdb0f3f0e7c3c900f5bb39700da02c942dce3042e2c81b2df063a7cab61a4",
-            "bytes": 27828
-          },
-          {
             "path": "agents.json",
-            "sha256": "848ce73304fc2bde5eedbe445212d44d21ef1dfc0cdfc849f0d4ecd39146b2b4",
-            "bytes": 5207
+            "sha256": "d34b7423cf36f935d8aab1bd76355a6d6bc14a97eca058fe5b4755322a0e42da",
+            "bytes": 6277
           },
           {
             "path": "client.js",
-            "sha256": "9d2fa5605a9f32bbbc2bd93b84c6ed8627354f6ac8e77d9934da082185f33c1b",
-            "bytes": 291067
+            "sha256": "acc3b1778a802799f9822aecb2077e138f8e04f5ca4a9d7802587450c1b8e43a",
+            "bytes": 306535
+          },
+          {
+            "path": "server.mjs",
+            "sha256": "8a6b260e52068d0654723a75f98e95c84053491c3d9e3b812a5ab97ef3f073b1",
+            "bytes": 131685
           },
           {
             "path": "icons/armor_legs.webp",
@@ -3207,18 +3181,23 @@
           },
           {
             "path": "icons/clothing_legs.webp",
-            "sha256": "ebad0f719c4d0ed7efdf0b69b01076eed74c4561c64d2e94683b3d5892e326c8",
-            "bytes": 1246
+            "sha256": "090e970a6026a114013ca30464a85fe09097621a45b255f40e66413442e83fa5",
+            "bytes": 1004
           },
           {
             "path": "icons/clothing_torso.webp",
-            "sha256": "aff20911dcb06507c87a9f6e5387d72b6e5aa67a27e8c3397da152dea1cea799",
-            "bytes": 1542
+            "sha256": "bca1d91c3beb44e70686566596476f30c3613eba766c4e8e10b40717a925cbd1",
+            "bytes": 1424
           },
           {
             "path": "icons/ears.webp",
             "sha256": "071253ea4c8f8a0b6e6e412ca3276a41d9ddd7a39fc02402d09c51493a952c30",
             "bytes": 1314
+          },
+          {
+            "path": "icons/extra_wearable.webp",
+            "sha256": "54f8ee6beacff3f9e9774a2fe0cf76d6c870de3d7f3cd51f62502a59a7214409",
+            "bytes": 1834
           },
           {
             "path": "icons/eyes.webp",
@@ -3241,9 +3220,34 @@
             "bytes": 822
           },
           {
+            "path": "icons/midlayer_legs.webp",
+            "sha256": "549c87da174d8edea1b552ecdde92b4405e12b45be290f063313e9b41e8fa1c3",
+            "bytes": 1360
+          },
+          {
+            "path": "icons/midlayer_torso.webp",
+            "sha256": "bcc2327091aaf34a071cb6218c8a4d795db585bc6724abfa6b95be4a93a1e14b",
+            "bytes": 1250
+          },
+          {
             "path": "icons/neck.webp",
             "sha256": "bfbc19de3fb432c6b6eb045309daf8fcc42a5fc741aa77b189f5a93dcc600853",
             "bytes": 1592
+          },
+          {
+            "path": "icons/outerwear_legs.webp",
+            "sha256": "b3681825e6407ce785576dcd2221c231c063437b0f744ddbd34eede280a39a57",
+            "bytes": 2672
+          },
+          {
+            "path": "icons/outerwear_torso.webp",
+            "sha256": "5754dad27bf23eccbdc79ff2eee4219b0e875f4120b8af957fd95493c8425ad8",
+            "bytes": 1478
+          },
+          {
+            "path": "icons/socks.webp",
+            "sha256": "b19dd2a31e53988aad93af103baad0dd5fd39081fd84e2591d40d92de7682f8c",
+            "bytes": 1172
           },
           {
             "path": "icons/underwear_bottom.webp",
@@ -3259,27 +3263,28 @@
             "path": "icons/weapon_left_hand.webp",
             "sha256": "9a9e629dd0b3d9e4005259f7aa6117d29158527ee3189d3926b3833ec879932f",
             "bytes": 482
-          },
-          {
-            "path": "locales/en.json",
-            "sha256": "c0b62c812f8ba64f0304378d2e24b8ff8c2cc0ca6aa099ebccc730eb2e84f508",
-            "bytes": 698
-          },
-          {
-            "path": "server.mjs",
-            "sha256": "a11b890e47422ff5ba7f4b6d10a0a18d1f7695b52b0dbaebda95d4717eb2f8e5",
-            "bytes": 129363
           }
-        ]
+        ],
+        "permissions": [
+          "agent-runtime",
+          "chat-read",
+          "chat-write",
+          "network",
+          "prompt-context",
+          "routes",
+          "storage",
+          "ui"
+        ],
+        "restartRequired": true
       },
       "category": "tracker",
-      "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/quartermaster.png",
+      "iconUrl": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artwork/agent-covers/quartermaster.png",
+      "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Agents/blob/main/packages/quartermaster/README.md",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/quartermaster-1.0.0.zip",
-        "sha256": "f5d4079f8561d2fb78e3ab1be253b85199678474f93fe6c5feaa00da1cb956bc",
-        "bytes": 162876
-      },
-      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#quartermaster"
+        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/quartermaster-0.1.28.zip",
+        "sha256": "6eb40478ea7339318e6582b66a308f11547d35100c8c766851ced50fb3679a4e",
+        "bytes": 482700
+      }
     },
     {
       "manifest": {
@@ -3975,11 +3980,11 @@
         "schemaVersion": 1,
         "id": "better-impersonate",
         "name": "Better Impersonate",
-        "version": "3.0.2",
+        "version": "3.0.3",
         "description": "Native Quick Actions for impersonation drafts, continuation and guidance recall.",
         "engine": {
           "min": "2.5.0",
-          "maxExclusive": "2.5.1"
+          "maxExclusive": "2.5.2"
         },
         "kind": [
           "agent"
@@ -4012,8 +4017,8 @@
       },
       "category": "misc",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.2.zip",
-        "sha256": "7ab82947034a3e96618af1418db44623b702b3d3272354487e8865185f49cd5f",
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.3.zip",
+        "sha256": "73654b10da4fe0584e90f502b9df43fe174d24eba8277dc17f13639649ea0d13",
         "bytes": 22590
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
