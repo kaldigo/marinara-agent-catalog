@@ -8,14 +8,17 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 const workspace = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const engine = path.join(workspace,"marinara-test-instance/engine");
+const upstream = process.argv.includes("--upstream");
+const packageRoot = path.join(workspace, upstream ? "references/marinara-agents/packages/quartermaster" : "packages/quartermaster");
+const engineVersion = JSON.parse(await fs.readFile(path.join(engine,"package.json"),"utf8")).version;
 const require = createRequire(path.join(engine,"package.json"));
 const { chromium } = require("@playwright/test");
 if (!process.env.HARNESS_LOCK_TOKEN) throw new Error("Acquire the shared harness lease and set HARNESS_LOCK_TOKEN before running this check.");
 const stamp = Date.now();
-const out = path.join(workspace,"marinara-test-instance/evidence/quartermaster-auth-"+stamp);
+const out = path.join(workspace,"marinara-test-instance/evidence/quartermaster-"+(upstream ? "upstream-" : "fork-")+stamp);
 const data = path.join(workspace,"marinara-test-instance/tmp/quartermaster-auth-"+stamp);
 await fs.mkdir(out,{recursive:true});
-const source = path.join(workspace,"packages/quartermaster/dist/package");
+const source = upstream ? packageRoot : path.join(packageRoot,"dist/package");
 const manifest = JSON.parse(await fs.readFile(path.join(source,"manifest.json"),"utf8"));
 const target = path.join(data,"capability-packages/versions/quartermaster",manifest.version);
 await fs.mkdir(target,{recursive:true});
@@ -58,7 +61,7 @@ try {
  const page=await browser.newPage();
  await page.goto(base);
  await page.evaluate(secret=>localStorage.setItem("marinara_admin_secret",secret),secret);
- const apiSource=await fs.readFile(path.join(workspace,"packages/quartermaster/src/00-api.js"),"utf8");
+ const apiSource=await fs.readFile(path.join(packageRoot,"src/00-api.js"),"utf8");
  await page.evaluate('(() => {'+apiSource+';window.testQM=QM;})()');
  const result=await page.evaluate(async({chatId,secret})=>{
   const q=window.testQM;
@@ -74,8 +77,11 @@ try {
   await q.uploadItemImage(chatId,"persona",id,canvas.toDataURL());
   async function checkImage(url){
    const img=document.createElement("img");document.body.appendChild(img);
-   await q.setImageSource(img,url);await img.decode();
-   if(!img.naturalWidth||!img.src.startsWith("data:image/"))throw new Error("Protected image did not load");img.remove();
+   await new Promise((resolve,reject)=>{
+    img.onload=resolve;img.onerror=()=>reject(new Error("Protected image failed to load"));
+    (q.setImageSource ?? q.setImageSrc)(img,url);
+   });
+   if(!img.naturalWidth||!(/^(data:image\/|blob:)/.test(img.src)))throw new Error("Protected image did not load");img.remove();
   }
   await checkImage(q.slotIconUrl("head"));
   await checkImage(q.itemImageUrl(chatId,"persona",id));
@@ -85,7 +91,7 @@ try {
   await checkImage(q.outfitPortraitUrl(chatId,"persona",outfitId));
   await q.listImageConnections();
   localStorage.setItem("marinara_admin_secret","wrong");
-  let rejected=false;try{await q.listItems(chatId,"persona");}catch(e){rejected=e.message.includes("Invalid or missing");}
+  let rejected=false;try{await q.listItems(chatId,"persona");}catch(e){rejected=/Invalid or missing|Admin Secret/.test(e.message);}
   if(!rejected)throw new Error("Wrong secret accepted");
   localStorage.setItem("marinara_admin_secret",secret);
   await q.listItems(chatId,"persona");
@@ -102,7 +108,7 @@ try {
   await q.deleteItem(chatId,"persona",id);
   if((await q.listItems(chatId,"persona")).items.length)throw new Error("Delete failed");
  },{chatId:chat.id,...result});
- await fs.writeFile(path.join(out,"result.json"),JSON.stringify({passed:true,checks:["native privileged rejection without secret","browser inventory create/edit/read/delete","reload persistence","authenticated slot/item/outfit images","image upload/delete","outfit create/delete","connection listing","wrong-secret rejection and recovery"]},null,2));
+ await fs.writeFile(path.join(out,"result.json"),JSON.stringify({passed:true,engine:engineVersion,source:upstream ? "upstream" : "fork",version:manifest.version,checks:["native privileged rejection without secret","browser inventory create/edit/read/delete","reload persistence","authenticated slot/item/outfit images","image upload/delete","outfit create/delete","connection listing","wrong-secret rejection and recovery"]},null,2));
  console.log("PASS: native Engine authentication and browser CRUD/image/reload checks. Evidence: "+out);
 } finally {
  await browser?.close();server.kill();

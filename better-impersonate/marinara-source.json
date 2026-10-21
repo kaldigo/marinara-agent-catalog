@@ -17,7 +17,7 @@
     "description": "Native Quick Actions for impersonation drafts, continuation and guidance recall.",
     "engine": {
       "min": "2.5.0",
-      "maxExclusive": "2.5.1"
+      "maxExclusive": "2.5.2"
     },
     "kind": [
       "agent"

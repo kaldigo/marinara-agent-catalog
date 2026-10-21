@@ -27,7 +27,7 @@ whitespace) are removed only at the beginning.
 
 ## Lifecycle and DOM boundary
 
-DOM integration was explicitly authorized for this rewrite. Verified Engine 2.5.0
+DOM integration was explicitly authorized for this rewrite. Verified Engine 2.5.0–2.5.1
 markers: textarea[data-chat-composer][data-chat-id], .mari-chat-input,
 .mari-chat-send-btn, and [data-chat-input-popup="quick-reply"] [role="menu"].
 
@@ -62,11 +62,11 @@ uninstall. Each new generation checks installation before changing the draft.
 
 npm run check builds a prepared client package and runs behavior/transport checks.
 npm run check:browser exercises the generated bundle in the maintained Engine
-2.5.0 testbench with isolated data and a deterministic model stub. Acquire the
+2.5.1 testbench with isolated data and a deterministic model stub. Acquire the
 testbench lease first. Desktop/mobile placement, generation, continuation, Stop,
 failure cleanup, native chat switching, recall persistence and teardown passed.
 
-Catalog publication is enabled for this verified 3.0.0 release.
+Catalog publication is enabled for this verified 3.0.3 release (Engine 2.5.0–2.5.1).
 The DOM markers and persisted UI settings format are undocumented integration
 dependencies. For a random connection in Roleplay, select an explicit impersonation
 preset in native settings. The endpoint does not report its selected preset, so

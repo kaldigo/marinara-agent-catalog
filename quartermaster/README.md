@@ -1,20 +1,36 @@
 # Quartermaster (Kaldigo)
 
+Retired from the custom catalog on 2026-10-21 (`includeInMain: false`). Official
+Quartermaster now includes the authentication fix; this source is retained for
+reference and regression comparison. Future catalog builds use the official
+upstream package instead of this fork.
+
 Quartermaster 1.0.0 is a modified version of upstream Quartermaster 0.1.23.
 It uses the admin secret saved in Marinara Settings → Advanced → Admin Access
 for inventory, wardrobe, connection and artwork requests.
 
 This is a replacement for the official `quartermaster` package, not a second
 inventory agent. The package ID, agent ID, routes and storage remain unchanged.
-Update through the Kaldigo catalog and restart Marinara; do not uninstall the
-old package to update it. Enable Quartermaster under Chat Settings → Agents →
+Preserve existing inventory data when replacing it with the official package.
+Enable Quartermaster under Chat Settings → Agents →
 Tracker Agents in a Roleplay chat. See UPSTREAM-README.md for feature details.
 
-The catalog workflow builds this source, hashes its files and publishes its
-artifact. Run `npm test` and `npm run build` locally; do not create release ZIPs
-or edit generated catalog output by hand.
+The catalog workflow excludes this source. Run `npm test` and `npm run build`
+locally for historical comparisons; do not create release ZIPs or edit generated
+catalog output by hand.
 
 ## Compatibility
+
+Upstream Quartermaster 0.1.24 added the Admin Secret and authenticated-image
+fixes this fork supplied; 0.1.25 added image caching and retry recovery. Current
+upstream is 0.1.28. The authentication fix no longer requires a separate fork.
+Use `npm run test:host -- --upstream` with the shared testbench lease to exercise
+the upstream reference package against the maintained Engine build. This check
+uses isolated data and does not replace an existing installation.
+
+Its 1.0.0 version sorts above upstream 0.1.28, so switching back needs an explicit
+package replacement; do not assume the normal update check will offer it. Keep
+the `quartermaster` identity and inventory data when switching.
 
 The fork retains upstream's capability API 1.14 and Engine compatibility range.
 Browser authentication follows Engine's `marinara_admin_secret` storage key and
@@ -36,6 +52,9 @@ admin secret on localhost and checks real CRUD, reload persistence, image
 upload/read/delete, outfits, connections, rejection and recovery. The script
 stops its browser/server in `finally`; release the lease afterward.
 
-These checks passed against the local Engine 2.5.0 build. This fork does not
+The fork checks passed against the local Engine 2.5.0 build. The same host check
+passed for official Quartermaster 0.1.28 on Engine 2.5.1 on 2026-10-21, including
+authenticated inventory, slot/item/outfit images, reload and wrong-secret recovery.
+The custom authentication fix is therefore no longer needed. This fork does not
 change or revalidate upstream model-generated wardrobe quality or every UI
 interaction. Inventory and image transport are the verified scope.

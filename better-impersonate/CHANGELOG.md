@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.3
+
+- Allow Engine 2.5.1 after verifying the native Quick Actions and dry-run paths.
+- Re-run desktop/mobile behavior, Stop, failure cleanup, chat switching, recall,
+  keyboard navigation and teardown against the maintained Engine 2.5.1 build.
+
 ## 3.0.2
 
 - Allow Impersonate with an empty composer, using the native dry run without

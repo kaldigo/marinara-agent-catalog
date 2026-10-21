@@ -18,11 +18,20 @@ Remaining packages:
 - world-map-background: native-backed package; browser-only if native APIs suffice.
 - mari-bridge: planning placeholder for a minimal registry and shared utilities.
 
-Better Impersonate 3.0.0 has been rewritten and verified against Engine 2.5.0.
+Better Impersonate 3.0.3 has been verified against Engine 2.5.1 (2026-10-21).
 The other folders retain temporary MIGRATION.md notes to delete after implementation
 and verification; their old implementations are not build-ready and remain excluded
 from publication. Better Impersonate has includeInMain: true. The maintained
-testbench installs only Better Impersonate 3.0.0. GitHub Actions regenerates the catalog.
+testbench installs only Better Impersonate 3.0.3. GitHub Actions regenerates the catalog.
+
+Quartermaster (Kaldigo) 1.0.0 was retired from the custom catalog on 2026-10-21
+(`includeInMain: false`); its source remains for reference. Official Quartermaster
+0.1.28 now covers its authentication fix: upstream added authenticated requests and
+images in 0.1.24 and image caching/retries in 0.1.25. The official package passed
+the authenticated inventory/image/reload host check on Engine 2.5.1. Generated
+catalog builds now use official Quartermaster. See quartermaster/README.md before
+switching an existing install, because the fork's 1.0.0 version sorts above the
+upstream release.
 
 ## Target architecture
 
