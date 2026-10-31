@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-31T02:31:31.458Z",
+  "generatedAt": "2026-10-31T09:49:21.656Z",
   "packages": [
     {
       "manifest": {
@@ -4019,7 +4019,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/better-impersonate.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.3.zip",
-        "sha256": "87daf44a78052fb7969070210f007eb3ee374c2306f43a2d8cc3255b00cbaf1f",
+        "sha256": "3fdced74d005eddce62d7c77c008c4971522f7ee5131e17ecf7cf2607d66da32",
         "bytes": 22590
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
