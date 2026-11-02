@@ -1,10 +1,10 @@
 # Changes
 
-## 1.6.0
+## 1.5.3
 
 - Publish as World Maps under the existing `hierarchical-maps` identity, replacing
   the official entry in this catalogue rather than adding a second listing.
-- Advance above upstream 1.5.2 so existing installations can update.
+- Retain upstream's 1.5 major/minor and bump its patch so existing 1.5.2 installations can update.
 - Install pinned build dependencies in the catalogue build command.
 
 ## 1.1.0

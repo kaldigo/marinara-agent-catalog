@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-02T21:46:37.468Z",
+  "generatedAt": "2026-11-02T21:49:24.041Z",
   "packages": [
     {
       "manifest": {
@@ -3867,7 +3867,7 @@
         },
         "id": "hierarchical-maps",
         "name": "World Maps",
-        "version": "1.6.0",
+        "version": "1.5.3",
         "description": "World Maps with optional known-location context, per-location lore exclusions and automatic location backgrounds.",
         "engine": {
           "min": "2.4.2",
@@ -3909,8 +3909,8 @@
         "files": [
           {
             "path": "CHANGELOG.md",
-            "sha256": "7712da4c114de7b9e9a82a1ea9f8279561c6ec72027ad9d97f83729dc90adc42",
-            "bytes": 1682
+            "sha256": "5796e4f8ce81dbe3aa21c67594756c29fd3fbc0c558e4da2009fe9a017b93300",
+            "bytes": 1712
           },
           {
             "path": "LICENSE",
@@ -3951,9 +3951,9 @@
       },
       "category": "tracker",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.6.0.zip",
-        "sha256": "8dc246bdf4b6b594f9f4dc7b410a409711e22ca4717375dc157f715fe3806b60",
-        "bytes": 162994
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.5.3.zip",
+        "sha256": "51773c87ae4ec228d41290e5b1b90a51820f440178ac98a09d26c03989cee87a",
+        "bytes": 163013
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#hierarchical-maps"
     },

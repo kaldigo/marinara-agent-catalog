@@ -5,7 +5,8 @@ Exploratory fork of Pasta-Devs World Maps 1.5.2. This replaces the official
 storage, routes, agent identity and UI slots are preserved. The initial 1.0.0
 build hit Engine's blocklist for an old official version; the prompt split was prepared
 locally as 1.0.1 and location effects were prepared as 1.1.0. The catalogue replacement
-is 1.6.0 so existing official 1.5.2 installations can update. `includeInMain: true`
+is 1.5.3, retaining upstream's major/minor and advancing its patch so existing
+official 1.5.2 installations can update. `includeInMain: true`
 enables the custom source to replace the official entry in our catalogue by its
 unchanged `hierarchical-maps` ID.
 
