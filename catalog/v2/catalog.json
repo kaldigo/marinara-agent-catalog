@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-02T17:15:02.098Z",
+  "generatedAt": "2026-11-02T21:46:37.466Z",
   "packages": [
     {
       "manifest": {
@@ -3867,8 +3867,8 @@
         },
         "id": "hierarchical-maps",
         "name": "World Maps",
-        "version": "1.5.2",
-        "description": "Adds world maps to Roleplay and Game, from whole regions down to single rooms, with art and travel between places. Add the Agent in Chat Settings → Agents → Tracker Agents for Roleplay and Game modes.",
+        "version": "1.6.0",
+        "description": "World Maps with optional known-location context, per-location lore exclusions and automatic location backgrounds.",
         "engine": {
           "min": "2.4.2",
           "maxExclusive": "4.0.0"
@@ -3895,23 +3895,6 @@
             "game-world-map"
           ]
         },
-        "files": [
-          {
-            "path": "agents.json",
-            "sha256": "e1fe79c35ba5ed840ca60444db2e19760cd094cd7224ab90579d9b2abec20414",
-            "bytes": 524
-          },
-          {
-            "path": "server.mjs",
-            "sha256": "8876dc74e0a94dd8e0bef4ba6265fea0afc66f96bce8cdbf584f05ea94341704",
-            "bytes": 135497
-          },
-          {
-            "path": "client.js",
-            "sha256": "16d5a1c9fba4bf47ba220805a731a3523bceedc860f942c7f9a7dad6abf3d1bf",
-            "bytes": 436959
-          }
-        ],
         "permissions": [
           "agent-runtime",
           "chat-read",
@@ -3922,16 +3905,57 @@
           "storage",
           "ui"
         ],
-        "restartRequired": true
+        "restartRequired": true,
+        "files": [
+          {
+            "path": "CHANGELOG.md",
+            "sha256": "7712da4c114de7b9e9a82a1ea9f8279561c6ec72027ad9d97f83729dc90adc42",
+            "bytes": 1682
+          },
+          {
+            "path": "LICENSE",
+            "sha256": "6142a08dcee50c978f552701c345788d2618548bc80b85ea58999bec94d3bdc4",
+            "bytes": 34467
+          },
+          {
+            "path": "THIRD-PARTY.md",
+            "sha256": "fc5d300feccf540b35090f6cc1b60ac219d49468b94726d978803d14ee562480",
+            "bytes": 613
+          },
+          {
+            "path": "agents.json",
+            "sha256": "e1fe79c35ba5ed840ca60444db2e19760cd094cd7224ab90579d9b2abec20414",
+            "bytes": 524
+          },
+          {
+            "path": "client.js",
+            "sha256": "bc358a8ebc4ced50c796a1c3816ae0c133128b4e5cf892f2b53385655c142c1e",
+            "bytes": 441810
+          },
+          {
+            "path": "locales/en.json",
+            "sha256": "a4741082b9585b6fa0dba7ee51f08001edae9fc24ec2cea58898ff641b5ebee9",
+            "bytes": 620
+          },
+          {
+            "path": "locales/ko.json",
+            "sha256": "0d6d6a54a5935484e2d705955a9cd0237c3183c939a01db328593551a659d4a7",
+            "bytes": 1034
+          },
+          {
+            "path": "server.mjs",
+            "sha256": "9db64237d3d8c6258a17ecd314506bb38a2d5604174947abd28422ab3d3da8f0",
+            "bytes": 141722
+          }
+        ]
       },
       "category": "tracker",
-      "iconUrl": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artwork/agent-covers/hierarchical-maps.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/Pasta-Devs/Marinara-Agents/main/artifacts/hierarchical-maps-1.5.2.zip",
-        "sha256": "29d39e66b5bab79381def6c0e23b460618dbbbf6c2a7a1e7107f458487b8c78d",
-        "bytes": 574972
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.6.0.zip",
+        "sha256": "8dc246bdf4b6b594f9f4dc7b410a409711e22ca4717375dc157f715fe3806b60",
+        "bytes": 162994
       },
-      "documentationUrl": "https://github.com/Pasta-Devs/Marinara-Engine/blob/main/docs/agents/hierarchical-maps.md"
+      "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#hierarchical-maps"
     },
     {
       "manifest": {
@@ -4019,7 +4043,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/better-impersonate.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.3.zip",
-        "sha256": "7497256b2bad302fc10bc0ddc2b23e924ce037abafdff26b098b2b5dcbdb11a7",
+        "sha256": "2e213d9fda33a51902cf794182a3a0a659dc9c5114038f5438a06198e4ad4246",
         "bytes": 22590
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"

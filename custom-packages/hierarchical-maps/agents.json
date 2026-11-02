@@ -1,0 +1,20 @@
+[
+  {
+    "id": "hierarchical-maps",
+    "name": "World Maps",
+    "description": "Adds world maps to Roleplay and Game, from whole regions down to single rooms, with art and travel between places.",
+    "author": "Pasta Devs",
+    "phase": "pre_generation",
+    "enabledByDefault": false,
+    "category": "tracker",
+    "runtimeDisabled": true,
+    "modeAllowlist": [
+      "roleplay",
+      "game"
+    ],
+    "defaultTools": [],
+    "defaultSettings": {},
+    "defaultPromptTemplate": "",
+    "execution": "feature"
+  }
+]
