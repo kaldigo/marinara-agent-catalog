@@ -45,6 +45,20 @@ and unrelated fields are preserved. Suppression applies before ordinary and
 linked-location activation. Explicitly copying lore text into prompts or history
 is outside this activation filter.
 
+## Maps → World State
+
+While Maps is enabled, map changes update the native World State location with
+the full hierarchy joined by comma and space: `Home, Upstairs, Bedroom`.
+There is no reverse sync: tracker edits and tracker-agent location guesses never
+move the map. This includes the generic Away node if it is selected; the full
+map path is used without special treatment.
+
+Only location is written through the native tracker API. Existing weather,
+date/time, temperature and other tracker fields are preserved. If no World State
+exists yet, the native API creates its initial state. A locked location field
+pauses the Roleplay sync; unlocking resumes it. Selected swipes use their own
+resolved map location. World State keeps the last location when Maps is disabled.
+
 ## Integration and lifecycle
 
 No Engine changes or retired bridge are used. The package uses the trusted
@@ -52,7 +66,9 @@ server's native Fastify lifecycle hooks, native movement validation and scoped
 chat-lock/transaction APIs. Before `/api/generate` reads metadata, a validated
 pending move prepares the destination's effects; native Engine still owns the
 movement and generation. A rejected request reconciles back to the actual state.
-Commit hooks also cover narrated movement. Mutation-response hooks cover saved
+Commit hooks also cover narrated movement. World State writes run after Maps'
+transaction releases its chat lock, and streaming completion reconciles any late
+tracker-agent output. Mutation-response hooks cover saved
 map edits, selected swipes and chat settings. Preview/dry-run reads do not write
 location effects. Startup reconciliation runs after listening, so native gallery
 requests cannot deadlock activation. Deactivation restores managed state.
@@ -68,11 +84,12 @@ still has the value it wrote, preserving distinguishable intervening edits.
 required authority, nearby destinations, saved-template normalization and map
 immutability, plus restoration, overlapping exclusions and intervening edits.
 The isolated harness script
-`marinara-test-instance/scripts/verify-maps-fork.mjs` exercises browser
+`scripts/verify-host.mjs` exercises browser
 edit/save/reload/restore, background rendering, exclusion controls, ordinary and
 linked lore, actual move-and-reply prompts, narrated moves, selected swipes,
-rejected moves, disabling Maps and another chat's isolation. Acquire the shared
-harness lease before running it.
+rejected moves, disabling Maps, another chat's isolation, and the official World
+State agent. Acquire the shared harness lease before running it. It defaults to
+this workspace layout; set `MARINARA_WORKSPACE_ROOT` if the source is elsewhere.
 
 ## Build
 
