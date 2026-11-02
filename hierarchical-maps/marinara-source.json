@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "type": "capability-package",
+  "includeInMain": true,
+  "processing": {
+    "kind": "package-build",
+    "buildCommand": [
+      "npm",
+      "run",
+      "catalog:build"
+    ],
+    "outputDir": "dist/package"
+  },
+  "package": {
+    "id": "hierarchical-maps",
+    "name": "World Maps",
+    "description": "World Maps with optional known-location context, per-location lore exclusions and automatic location backgrounds.",
+    "engine": {
+      "min": "2.4.2",
+      "maxExclusive": "4.0.0"
+    },
+    "kind": [
+      "agent",
+      "maps"
+    ],
+    "permissions": [
+      "agent-runtime",
+      "chat-read",
+      "chat-write",
+      "network",
+      "prompt-context",
+      "routes",
+      "storage",
+      "ui"
+    ],
+    "restartRequired": true
+  }
+}

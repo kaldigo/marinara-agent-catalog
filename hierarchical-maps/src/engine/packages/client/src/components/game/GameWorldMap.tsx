@@ -1,0 +1,664 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  CornerDownRight,
+  List,
+  LocateFixed,
+  Map as MapIcon,
+  PencilLine,
+  Route,
+  Footprints,
+  Zap,
+  X,
+} from "lucide-react";
+import {
+  compareSpatialLocations,
+  resolveSpatialBreadcrumb,
+  spatialRadialPlacement,
+  type SpatialLocation,
+} from "@marinara-engine/shared";
+import { cn, generateClientId } from "../../features/spatial-context/package-utils";
+import { SpatialLocationIcon } from "../../features/spatial-context/components/SpatialLocationIcon";
+import {
+  resolveSpatialArtworkImage,
+  useSpatialGalleryImages,
+  useSpatialGlobalGalleryImages,
+} from "../../features/spatial-context/use-spatial-resources";
+import { findSpatialRoute } from "../../features/spatial-context/spatial-route-plans";
+import {
+  clearPendingSpatialTransition,
+  setPendingSpatialTransition,
+  usePendingSpatialTransition,
+} from "../../features/spatial-context/pending-spatial-transitions";
+import { useMapConfirmation } from "../../features/spatial-context/components/use-map-confirmation";
+import {
+  hierarchyTypeForLocation,
+  resolveSpatialLinkPresentation,
+  spatialLinkPresentationKey,
+  spatialLinkStrokeDasharray,
+  type MapsSpatialContextResponse,
+} from "../../../../maps-shared/src/maps-model";
+
+interface GameWorldMapProps {
+  chatId: string;
+  spatial: MapsSpatialContextResponse;
+  disabled?: boolean;
+  compact?: boolean;
+  useParentScroll?: boolean;
+  onDestinationQueued?: () => void;
+  onOpenEditor?: () => void;
+}
+
+function sortLocations(locations: SpatialLocation[]): SpatialLocation[] {
+  return [...locations].sort(compareSpatialLocations);
+}
+
+function defaultViewLocationId(spatial: MapsSpatialContextResponse): string | null {
+  const definition = spatial.definition;
+  if (!definition) return null;
+  const current = definition.locations.find(
+    (location) => location.id === spatial.currentLocationId && location.status === "active",
+  );
+  if (!current) {
+    return (
+      sortLocations(
+        definition.locations.filter((location) => location.status === "active" && location.parentId === null),
+      )[0]?.id ?? null
+    );
+  }
+  const hasActiveChildren = definition.locations.some(
+    (location) => location.status === "active" && location.parentId === current.id,
+  );
+  return hasActiveChildren ? current.id : (current.parentId ?? current.id);
+}
+
+export function GameWorldMap({
+  chatId,
+  spatial,
+  disabled = false,
+  compact = false,
+  useParentScroll = false,
+  onDestinationQueued,
+  onOpenEditor,
+}: GameWorldMapProps) {
+  const definition = spatial.definition;
+  const centeredViewLocationId = defaultViewLocationId(spatial);
+  const [viewLocationId, setViewLocationId] = useState<string | null>(() => centeredViewLocationId);
+  const [selectedId, setSelectedId] = useState<string | null>(spatial.currentLocationId);
+  const [showListView, setShowListView] = useState(false);
+  const pending = usePendingSpatialTransition(chatId);
+  const { confirmAction, confirmationDialog } = useMapConfirmation();
+  useEffect(() => {
+    setViewLocationId(centeredViewLocationId);
+    setSelectedId(spatial.currentLocationId);
+  }, [centeredViewLocationId, definition?.revision, spatial.currentLocationId]);
+
+  const activeLocations = useMemo(
+    () => definition?.locations.filter((location) => location.status === "active") ?? [],
+    [definition?.locations],
+  );
+  const galleryImages = useSpatialGalleryImages(
+    chatId,
+    definition?.enabled === true && activeLocations.some((location) => Boolean(location.mapBackgroundImageId)),
+  );
+  const globalGalleryImages = useSpatialGlobalGalleryImages(
+    definition?.enabled === true && activeLocations.some((location) => Boolean(location.mapBackgroundImageId)),
+  );
+  const locationById = useMemo(
+    () => new Map(activeLocations.map((location) => [location.id, location])),
+    [activeLocations],
+  );
+  const viewLocation = viewLocationId ? (locationById.get(viewLocationId) ?? null) : null;
+  const mapBackgroundImageUrl = viewLocation?.mapBackgroundImageId
+    ? resolveSpatialArtworkImage(viewLocation.mapBackgroundImageId, galleryImages.data, globalGalleryImages.data)?.url
+    : undefined;
+  const mapBackgroundPosition = viewLocation?.mapBackgroundPosition ?? {
+    x: 50,
+    y: 50,
+  };
+  const visibleLocations = useMemo(
+    () =>
+      sortLocations(
+        activeLocations.filter((location) =>
+          viewLocation ? location.parentId === viewLocation.id : location.parentId === null,
+        ),
+      ),
+    [activeLocations, viewLocation],
+  );
+  const visibleLocationIds = useMemo(
+    () => new Set(visibleLocations.map((location) => location.id)),
+    [visibleLocations],
+  );
+  const placementById = useMemo(
+    () =>
+      new Map(
+        visibleLocations.map((location, index) => [
+          location.id,
+          location.placement ?? spatialRadialPlacement(index, visibleLocations.length, 34),
+        ]),
+      ),
+    [visibleLocations],
+  );
+  const visibleLinks = useMemo(() => {
+    const seen = new Set<string>();
+    return visibleLocations.flatMap((location) =>
+      location.links.flatMap((link) => {
+        if (link.state !== "available" || !visibleLocationIds.has(link.targetId)) return [];
+        const key = spatialLinkPresentationKey(location.id, link.targetId);
+        if (seen.has(key)) return [];
+        seen.add(key);
+        return [{ key, from: location.id, to: link.targetId }];
+      }),
+    );
+  }, [visibleLocationIds, visibleLocations]);
+  const selected = selectedId ? (locationById.get(selectedId) ?? null) : null;
+  const selectedLinkedPlaces = useMemo(() => {
+    if (!selected) return [];
+    const linked = new Map<string, { location: SpatialLocation; label: string | null }>();
+    for (const link of selected.links) {
+      if (link.state !== "available") continue;
+      const location = locationById.get(link.targetId);
+      if (location)
+        linked.set(location.id, {
+          location,
+          label: link.label?.trim() || null,
+        });
+    }
+    for (const location of activeLocations) {
+      if (location.id === selected.id) continue;
+      const reverse = location.links.find(
+        (link) => link.targetId === selected.id && link.bidirectional && link.state === "available",
+      );
+      if (reverse && !linked.has(location.id)) {
+        linked.set(location.id, {
+          location,
+          label: reverse.label?.trim() || null,
+        });
+      }
+    }
+    return [...linked.values()].sort((left, right) => compareSpatialLocations(left.location, right.location));
+  }, [activeLocations, locationById, selected]);
+  const selectedDestination = spatial.destinations.find((destination) => destination.id === selected?.id);
+  const selectedRoute = useMemo(
+    () => (definition && selected ? findSpatialRoute(definition, spatial.currentLocationId, selected.id) : null),
+    [definition, selected, spatial.currentLocationId],
+  );
+  const selectedTravelTarget =
+    selectedDestination ??
+    (selected && selectedRoute
+      ? {
+          id: selected.id,
+          name: selected.name,
+          kind: selected.kind,
+          relation: "link" as const,
+          sortOrder: selected.sortOrder,
+          ...(selectedRoute.steps.at(-1)?.label ? { label: selectedRoute.steps.at(-1)!.label } : {}),
+        }
+      : null);
+  const selectedHasChildren = selected ? activeLocations.some((location) => location.parentId === selected.id) : false;
+  const viewBreadcrumb = definition ? resolveSpatialBreadcrumb(definition, viewLocation?.id ?? null) : [];
+  const currentBreadcrumb = spatial.breadcrumb.map((crumb) => crumb.name).join(" › ");
+  const presentation = viewLocation?.childPresentation ?? "map";
+  const canBrowseUp = viewLocation !== null;
+
+  const browseTo = (locationId: string | null) => {
+    setViewLocationId(locationId);
+    setSelectedId(locationId);
+  };
+
+  const revealLocation = (location: SpatialLocation) => {
+    setViewLocationId(location.parentId);
+    setSelectedId(location.id);
+  };
+
+  const centerCurrent = () => {
+    setViewLocationId(centeredViewLocationId);
+    setSelectedId(spatial.currentLocationId);
+  };
+
+  const queueDestination = async (travelMode: "step_by_step" | "travel_now"): Promise<void> => {
+    if (!definition || !spatial.currentLocationId || !selectedTravelTarget || disabled) return;
+    if (pending && pending.transition.destinationId !== selectedTravelTarget.id) {
+      const confirmed = await confirmAction({
+        title: "Replace pending move?",
+        message: `Replace the pending move to ${pending.destinationName}?`,
+        confirmLabel: "Replace move",
+      });
+      if (!confirmed) return;
+    }
+    setPendingSpatialTransition(chatId, {
+      transition: {
+        destinationId: selectedTravelTarget.id,
+        travelMode,
+        expectedDefinitionRevision: definition.revision,
+        expectedCurrentLocationId: spatial.currentLocationId,
+        commandId: generateClientId(),
+      },
+      destinationName: selectedTravelTarget.name,
+      relation: selectedTravelTarget.relation,
+      ...(selectedTravelTarget.label ? { label: selectedTravelTarget.label } : {}),
+      status: "ready",
+    });
+    onDestinationQueued?.();
+  };
+
+  const renderLocationRow = (location: SpatialLocation, layer = false) => {
+    const isCurrent = location.id === spatial.currentLocationId;
+    const isPending = location.id === pending?.transition.destinationId;
+    const isSelected = location.id === selectedId;
+    const hasChildren = activeLocations.some((candidate) => candidate.parentId === location.id);
+    return (
+      <button
+        key={location.id}
+        type="button"
+        onClick={() => setSelectedId(location.id)}
+        className={cn(
+          "flex min-h-11 w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]",
+          isSelected
+            ? "border-[var(--marinara-chat-chrome-button-border-active)] bg-[var(--marinara-chat-chrome-highlight-bg)]"
+            : "border-[var(--marinara-chat-chrome-panel-border)] bg-[var(--marinara-chat-chrome-panel-bg)] hover:bg-[var(--marinara-chat-chrome-highlight-bg-hover)]",
+        )}
+        aria-label={`Inspect ${location.name}${isCurrent ? ", current story location" : ""}${isPending ? ", pending destination" : ""}`}
+      >
+        <SpatialLocationIcon
+          icon={location.icon}
+          className="flex h-8 w-8 max-w-8 items-center justify-center rounded-lg bg-[var(--marinara-chat-chrome-highlight-bg)] text-lg"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold text-[var(--marinara-chat-chrome-panel-title)]">
+            {location.name}
+          </span>
+          <span className="block truncate text-[0.625rem] capitalize text-[var(--marinara-chat-chrome-panel-muted)]">
+            {layer
+              ? `Layer ${location.layerOrder ?? 0}`
+              : hierarchyTypeForLocation(spatial.hierarchyProfile, location).label}
+            {isCurrent ? " · You are here" : isPending ? " · Pending" : ""}
+          </span>
+        </span>
+        {hasChildren && (
+          <ChevronRight size="0.875rem" className="shrink-0 text-[var(--marinara-chat-chrome-panel-muted)]" />
+        )}
+      </button>
+    );
+  };
+
+  if (!definition || !definition.enabled || activeLocations.length === 0) return null;
+
+  return (
+    <section aria-label="Hierarchical world map" className="min-w-0">
+      {confirmationDialog}
+      <div className="border-b border-[var(--marinara-chat-chrome-panel-divider)] px-1 pb-2">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => browseTo(viewLocation?.parentId ?? null)}
+            disabled={!canBrowseUp}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[var(--marinara-chat-chrome-button-text)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)] disabled:opacity-30"
+            aria-label="Browse up one location"
+          >
+            <ChevronLeft size="1rem" />
+          </button>
+          <div className="min-w-0 flex-1 text-center">
+            <p className="truncate text-xs font-bold text-[var(--marinara-chat-chrome-panel-title)]">
+              <SpatialLocationIcon icon={viewLocation?.icon} fallback="🌍" className="mr-1 max-w-[2.5em]" />
+              {viewLocation?.name || "World"}
+            </p>
+            <p
+              className="truncate text-[0.625rem] text-[var(--marinara-chat-chrome-panel-muted)]"
+              title={currentBreadcrumb}
+            >
+              Story location: {currentBreadcrumb || "Unavailable"}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center">
+            <button
+              type="button"
+              onClick={centerCurrent}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[var(--marinara-chat-chrome-button-text)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+              aria-label="Center current story location"
+              title="Center current story location"
+            >
+              <LocateFixed size="1rem" />
+            </button>
+            {onOpenEditor && (
+              <button
+                type="button"
+                onClick={onOpenEditor}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[var(--marinara-chat-chrome-button-text)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+                aria-label="Edit world map"
+                title="Edit world map"
+              >
+                <PencilLine size="1rem" />
+              </button>
+            )}
+          </div>
+        </div>
+        {viewBreadcrumb.length > 0 && (
+          <div
+            className="flex min-w-0 items-center justify-center gap-0.5 overflow-hidden"
+            aria-label="Viewed location breadcrumb"
+          >
+            {viewBreadcrumb.map((crumb, index) => (
+              <span key={crumb.id} className="flex min-w-0 items-center">
+                {index > 0 && <ChevronRight size="0.625rem" className="shrink-0 opacity-50" />}
+                <button
+                  type="button"
+                  onClick={() => browseTo(crumb.id)}
+                  className="max-w-24 truncate rounded px-1 py-0.5 text-[0.625rem] text-[var(--marinara-chat-chrome-panel-muted)] hover:text-[var(--marinara-chat-chrome-panel-title)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+                  title={crumb.name}
+                >
+                  {crumb.name}
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {presentation === "map" && visibleLocations.length > 0 && (
+          <div className="mt-1 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setShowListView((value) => !value)}
+              aria-pressed={showListView}
+              className="flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[0.6875rem] font-semibold text-[var(--marinara-chat-chrome-button-text)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+            >
+              {showListView ? <MapIcon size="0.8125rem" /> : <List size="0.8125rem" />}
+              {showListView ? "Show places on map" : "Show places as list"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {pending && (
+        <div
+          className={cn(
+            "mx-1 mt-2 flex min-h-11 items-center gap-2 rounded-lg border px-2 text-[0.6875rem]",
+            pending.status === "needs_review"
+              ? "border-amber-500/35 bg-amber-500/10 text-amber-700 dark:text-amber-200"
+              : "border-[var(--marinara-chat-chrome-button-border-active)] bg-[var(--marinara-chat-chrome-highlight-bg)]",
+          )}
+          role="status"
+        >
+          {pending.status === "needs_review" ? <AlertTriangle size="0.8125rem" /> : <Route size="0.8125rem" />}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-semibold">Travel to {pending.destinationName}</span>
+            <span className="block truncate text-[0.625rem] opacity-75">
+              {pending.status === "needs_review"
+                ? "Needs review"
+                : pending.transition.travelMode === "step_by_step"
+                  ? "Step by step · one hop per turn"
+                  : pending.transition.travelMode === "travel_now"
+                    ? "Travel now · full route this turn"
+                    : "Moves with your next turn"}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => clearPendingSpatialTransition(chatId, pending.transition.commandId)}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+            aria-label={`Cancel move to ${pending.destinationName}`}
+          >
+            <X size="0.75rem" />
+          </button>
+        </div>
+      )}
+
+      <div
+        data-marinara-maps-world-scroll={useParentScroll ? "parent" : "self"}
+        className={cn(
+          "min-h-0 py-2",
+          useParentScroll
+            ? "max-h-none overflow-visible"
+            : cn("overflow-auto overscroll-contain", compact ? "max-h-[40dvh]" : "max-h-80"),
+        )}
+      >
+        {visibleLocations.length === 0 ? (
+          <div className="flex min-h-36 flex-col items-center justify-center px-5 text-center">
+            <SpatialLocationIcon icon={viewLocation?.icon} fallback="📍" className="text-2xl" />
+            <p className="mt-2 text-xs font-semibold text-[var(--marinara-chat-chrome-panel-title)]">
+              No places inside this location
+            </p>
+            <p className="mt-1 text-[0.6875rem] text-[var(--marinara-chat-chrome-panel-muted)]">
+              Browse up to see nearby places.
+            </p>
+          </div>
+        ) : presentation === "map" && !showListView ? (
+          <div
+            data-marinara-maps-world-canvas
+            data-compact={compact ? "true" : "false"}
+            className="relative aspect-square w-full overflow-hidden rounded-lg border border-[var(--marinara-chat-chrome-panel-border)] bg-[var(--background)]"
+          >
+            {mapBackgroundImageUrl && (
+              <img
+                src={mapBackgroundImageUrl}
+                alt=""
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                style={{
+                  objectPosition: `${mapBackgroundPosition.x}% ${mapBackgroundPosition.y}%`,
+                }}
+              />
+            )}
+            <div
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none absolute inset-0",
+                mapBackgroundImageUrl ? "opacity-15" : "opacity-25",
+              )}
+              style={{
+                backgroundImage:
+                  "linear-gradient(to right, var(--marinara-chat-chrome-panel-divider) 1px, transparent 1px), linear-gradient(to bottom, var(--marinara-chat-chrome-panel-divider) 1px, transparent 1px)",
+                backgroundSize: "1.5rem 1.5rem",
+              }}
+            />
+            {spatial.hierarchyProfile.showConnections && (
+              <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full">
+                {visibleLinks.map((link) => {
+                  const from = placementById.get(link.from);
+                  const to = placementById.get(link.to);
+                  if (!from || !to) return null;
+                  const linkIsSelected = selectedId === link.from || selectedId === link.to;
+                  const linkPresentation = resolveSpatialLinkPresentation(spatial.hierarchyProfile, link.from, link.to);
+                  return (
+                    <line
+                      key={link.key}
+                      data-marinara-map-connection={link.key}
+                      data-line-style={linkPresentation.lineStyle}
+                      x1={`${from.x}%`}
+                      y1={`${from.y}%`}
+                      x2={`${to.x}%`}
+                      y2={`${to.y}%`}
+                      stroke={linkPresentation.color ?? "var(--marinara-chat-chrome-accent)"}
+                      strokeWidth={linkIsSelected ? "3" : "2.25"}
+                      strokeDasharray={spatialLinkStrokeDasharray(linkPresentation.lineStyle)}
+                      strokeLinecap="round"
+                      opacity={linkIsSelected ? "1" : "0.85"}
+                      vectorEffect="non-scaling-stroke"
+                      style={{
+                        filter: "drop-shadow(0 0 1.5px var(--marinara-chat-chrome-panel-bg))",
+                      }}
+                    />
+                  );
+                })}
+              </svg>
+            )}
+            {visibleLocations.map((location) => {
+              const placement = placementById.get(location.id) ?? {
+                x: 50,
+                y: 50,
+              };
+              const isCurrent = location.id === spatial.currentLocationId;
+              const isPending = location.id === pending?.transition.destinationId;
+              const isSelected = location.id === selectedId;
+              return (
+                <button
+                  key={location.id}
+                  type="button"
+                  onClick={() => setSelectedId(location.id)}
+                  className="absolute z-10 flex w-24 -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-lg p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+                  style={{ left: `${placement.x}%`, top: `${placement.y}%` }}
+                  aria-label={`Inspect ${location.name}${isCurrent ? ", current story location" : ""}${isPending ? ", pending destination" : ""}`}
+                  aria-pressed={isSelected}
+                >
+                  <span
+                    className={cn(
+                      "relative flex h-11 w-11 items-center justify-center rounded-full border bg-[var(--marinara-chat-chrome-panel-bg)] text-xl shadow-md transition-[border-color,transform,background-color] duration-200",
+                      isSelected
+                        ? "scale-105 border-[var(--marinara-chat-chrome-button-border-active)] bg-[var(--background)]"
+                        : "border-[var(--marinara-chat-chrome-panel-border)] hover:border-[var(--marinara-chat-chrome-button-border-hover)]",
+                      isCurrent &&
+                        "ring-2 ring-[var(--marinara-chat-chrome-focus-ring)] ring-offset-1 ring-offset-[var(--background)]",
+                    )}
+                    data-marinara-map-selected-location={isSelected ? "true" : undefined}
+                    aria-hidden="true"
+                  >
+                    <SpatialLocationIcon icon={location.icon} className="max-w-9" />
+                    {isPending && (
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)]">
+                        <Route size="0.5625rem" />
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-1 block w-full truncate rounded bg-[var(--marinara-chat-chrome-panel-bg)]/90 px-1 text-center text-[0.625rem] font-semibold text-[var(--marinara-chat-chrome-panel-title)]">
+                    {location.name}
+                  </span>
+                  {isCurrent && (
+                    <span className="text-[0.5625rem] font-semibold text-[var(--marinara-chat-chrome-accent)]">
+                      You are here
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div
+            className="grid gap-1.5"
+            role="list"
+            aria-label={presentation === "layers" ? "Location layers" : "Locations"}
+          >
+            {(presentation === "layers"
+              ? [...visibleLocations].sort((left, right) => (right.layerOrder ?? 0) - (left.layerOrder ?? 0))
+              : visibleLocations
+            ).map((location) => (
+              <div key={location.id} role="listitem">
+                {renderLocationRow(location, presentation === "layers")}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <div className="border-t border-[var(--marinara-chat-chrome-panel-divider)] px-1 pt-2">
+          <div className="rounded-lg bg-[var(--marinara-chat-chrome-highlight-bg)] p-2.5">
+            <div className="flex items-start gap-2">
+              <SpatialLocationIcon icon={selected.icon} fallback="📍" className="text-lg" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold text-[var(--marinara-chat-chrome-panel-title)]">
+                  {selected.name}
+                </p>
+                <p className="line-clamp-2 text-[0.6875rem] leading-4 text-[var(--marinara-chat-chrome-panel-muted)]">
+                  {selected.description ||
+                    `A ${hierarchyTypeForLocation(spatial.hierarchyProfile, selected).label} in this world.`}
+                </p>
+              </div>
+            </div>
+            {selectedLinkedPlaces.length > 0 && (
+              <div className="mt-2">
+                <p className="px-1 text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[var(--marinara-chat-chrome-panel-muted)]">
+                  Linked places
+                </p>
+                <div
+                  className="mt-1 flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1"
+                  aria-label={`Linked places from ${selected.name}`}
+                >
+                  {selectedLinkedPlaces.map(({ location, label }) => (
+                    <button
+                      key={location.id}
+                      type="button"
+                      onClick={() => revealLocation(location)}
+                      className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--marinara-chat-chrome-button-border)] bg-[var(--marinara-chat-chrome-button-bg)] px-2.5 text-left text-[0.6875rem] text-[var(--marinara-chat-chrome-button-text)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+                      aria-label={`Show linked place ${location.name}`}
+                    >
+                      <SpatialLocationIcon icon={location.icon} fallback="⌖" className="text-sm" />
+                      <span>
+                        <span className="block max-w-32 truncate font-semibold">{location.name}</span>
+                        {label && <span className="block max-w-32 truncate text-[0.5625rem] opacity-70">{label}</span>}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {selectedRoute && selectedRoute.steps.length > 1 && (
+              <div className="mt-2 rounded-lg border border-[var(--marinara-chat-chrome-panel-border)] bg-[var(--background)]/40 p-2">
+                <p className="text-[0.625rem] font-semibold uppercase tracking-[0.1em] text-[var(--marinara-chat-chrome-panel-muted)]">
+                  Shortest route · {selectedRoute.steps.length} hops
+                </p>
+                <ol className="mt-1 space-y-1 text-[0.625rem] text-[var(--marinara-chat-chrome-panel-muted)]">
+                  {selectedRoute.steps.map((step, index) => (
+                    <li key={`${step.locationId}-${index}`} className="flex items-center gap-1.5">
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--marinara-chat-chrome-highlight-bg)] text-[0.5625rem] font-semibold">
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{step.locationName}</span>
+                      {step.label && <span className="max-w-28 truncate opacity-70">{step.label}</span>}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+              {selectedHasChildren && selected.id !== viewLocation?.id && (
+                <button
+                  type="button"
+                  onClick={() => browseTo(selected.id)}
+                  className="flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--marinara-chat-chrome-button-border)] bg-[var(--marinara-chat-chrome-button-bg)] px-3 text-[0.6875rem] font-semibold text-[var(--marinara-chat-chrome-button-text-hover)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)]"
+                >
+                  <CornerDownRight size="0.75rem" /> Explore inside
+                </button>
+              )}
+              {selected.id === spatial.currentLocationId ? (
+                <span className="flex min-h-11 items-center px-2 text-[0.6875rem] font-semibold text-[var(--marinara-chat-chrome-accent)]">
+                  You are here
+                </span>
+              ) : selected.id === pending?.transition.destinationId ? (
+                <span className="flex min-h-11 items-center gap-1.5 px-2 text-[0.6875rem] font-semibold text-[var(--marinara-chat-chrome-accent)]">
+                  <Route size="0.75rem" />{" "}
+                  {pending.transition.travelMode === "step_by_step" ? "Step-by-step queued" : "Travel queued"}
+                </span>
+              ) : selectedTravelTarget ? (
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void queueDestination("step_by_step")}
+                    disabled={disabled}
+                    className="flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--marinara-chat-chrome-button-border)] bg-[var(--marinara-chat-chrome-button-bg)] px-3 text-[0.6875rem] font-semibold text-[var(--marinara-chat-chrome-button-text-hover)] hover:bg-[var(--marinara-chat-chrome-button-bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={`Step by step to ${selected.name}`}
+                  >
+                    <Footprints size="0.75rem" /> Step by step
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void queueDestination("travel_now")}
+                    disabled={disabled}
+                    className="flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 text-[0.6875rem] font-bold text-[var(--primary-foreground)] shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--marinara-chat-chrome-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={`Travel now to ${selected.name}`}
+                  >
+                    <Zap size="0.75rem" /> Travel now
+                  </button>
+                </div>
+              ) : (
+                <span className="flex min-h-11 items-center px-2 text-[0.625rem] text-[var(--marinara-chat-chrome-panel-muted)]">
+                  No available route from here
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 2,
+  "capabilityApi": {
+    "major": 1,
+    "minor": 341
+  },
+  "builtAgainst": {
+    "engineVersion": "2.5.0",
+    "engineCommit": "25f8df7b0a388fe36f657d69c6fcaa9f27e066ed"
+  },
+  "id": "hierarchical-maps",
+  "name": "World Maps",
+  "version": "1.6.0",
+  "description": "World Maps with optional known-location context, per-location lore exclusions and automatic location backgrounds.",
+  "engine": {
+    "min": "2.4.2",
+    "maxExclusive": "4.0.0"
+  },
+  "kind": [
+    "agent",
+    "maps"
+  ],
+  "entrypoints": {
+    "agents": "agents.json",
+    "server": "server.mjs",
+    "client": "client.js"
+  },
+  "contributions": {
+    "agentDetail": {
+      "agentIds": [
+        "hierarchical-maps"
+      ]
+    },
+    "slots": [
+      "chat-settings",
+      "spatial-workspace",
+      "chat-runtime",
+      "game-world-map"
+    ]
+  },
+  "permissions": [
+    "agent-runtime",
+    "chat-read",
+    "chat-write",
+    "network",
+    "prompt-context",
+    "routes",
+    "storage",
+    "ui"
+  ],
+  "restartRequired": true
+}

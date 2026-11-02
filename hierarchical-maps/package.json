@@ -1,0 +1,16 @@
+{
+  "name": "kaldigo-world-maps",
+  "private": true,
+  "type": "module",
+  "version": "1.6.0",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/check.mjs",
+    "catalog:build": "npm ci --ignore-scripts && npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "lucide-react": "0.513.0",
+    "zod": "3.25.76"
+  }
+}
