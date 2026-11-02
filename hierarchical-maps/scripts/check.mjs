@@ -12,10 +12,12 @@ const shared=path.join(root,'src/shared/index.js');
 const runtime=path.join(root,'src/engine/packages/maps-shared/src/runtime-prompt.ts');
 const model=path.join(root,'src/engine/packages/maps-shared/src/maps-model.ts');
 const effects=path.join(root,'src/engine/packages/maps-shared/src/location-effects.ts');
-const result=await tools('esbuild').build({stdin:{contents:`export * from ${JSON.stringify(runtime)}; export * from ${JSON.stringify(model)}; export * from ${JSON.stringify(effects)};`,resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',alias:{'@marinara-engine/shared':shared},nodePaths:engine?['packages/server/node_modules','packages/client/node_modules','packages/shared/node_modules','node_modules'].map(p=>path.join(path.resolve(engine),p)):[path.join(root,'node_modules')],plugins:[sharedTreeShakingPlugin({roots:[path.dirname(shared)]})]});
+const worldLocation=path.join(root,'src/engine/packages/maps-shared/src/world-state-location.ts');
+const result=await tools('esbuild').build({stdin:{contents:`export * from ${JSON.stringify(runtime)}; export * from ${JSON.stringify(model)}; export * from ${JSON.stringify(effects)}; export * from ${JSON.stringify(worldLocation)};`,resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',alias:{'@marinara-engine/shared':shared},nodePaths:engine?['packages/server/node_modules','packages/client/node_modules','packages/shared/node_modules','node_modules'].map(p=>path.join(path.resolve(engine),p)):[path.join(root,'node_modules')],plugins:[sharedTreeShakingPlugin({roots:[path.dirname(shared)]})]});
 const module={exports:{}};
 new Function('module','exports','require',result.outputFiles[0].text)(module,module.exports,require);
 const api=module.exports;
+assert.equal(api.formatWorldStateLocation([{name:'Home'},{name:'Upstairs'},{name:'Bedroom'}]),'Home, Upstairs, Bedroom');
 let count=0;
 for(const mode of ['roleplay','game']) {
  const templates=api.defaultSpatialTurnPromptTemplates();

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LorebookEntry } from "@marinara-engine/shared";
+import { isTrackerFieldLocked, parseTrackerFieldLocks, worldTrackerLockKey } from "@marinara-engine/shared";
 import { packageApi } from "./package-api";
 import { useSpatialContext } from "../../hooks/use-spatial-context";
 import { chatBackgroundMetadataToUrl } from "../../lib/backgrounds";
 import { record } from "../../../../maps-shared/src/location-effects";
+import { formatWorldStateLocation } from "../../../../maps-shared/src/world-state-location";
 
 type Effects = { mode: string; backgroundEnabled: boolean; excludedEntriesByLocation: Record<string, string[]> };
 const key = (chatId: string) => ["world-maps-kaldigo-effects", chatId] as const;
@@ -68,5 +70,25 @@ export function LocationBackgroundSync({chatId}:{chatId:string}) {
     }
     previouslyManaged.current=managed;
   },[chatId,chat.data]);
+  useEffect(()=>{
+    const host=globalThis.__MARINARA_HOST__;
+    const metadata=record(chat.data?.metadata);
+    if (!host || !spatial.data?.definition?.enabled || metadata.enableAgents!==true || !Array.isArray(metadata.activeAgentIds) || !metadata.activeAgentIds.includes("hierarchical-maps")) return;
+    const location=formatWorldStateLocation(spatial.data.breadcrumb ?? []);
+    if (!location) return;
+    const store=host.stores.gameState;
+    const apply=()=>{
+      const current=store.getState().current;
+      if(host.stores.chat.getState().activeChatId!==chatId || current?.chatId!==chatId || current.location===location || isTrackerFieldLocked(parseTrackerFieldLocks(current.fieldLocks),worldTrackerLockKey("location"))) return;
+      store.getState().setGameState({...current,location});
+    };
+    const unsubscribe=store.subscribe(apply);
+    apply();
+    let cancelled=false;
+    void packageApi.get<any>(`/chats/${encodeURIComponent(chatId)}/game-state`).then(state=>{
+      if(!cancelled && state && host.stores.chat.getState().activeChatId===chatId) store.getState().setGameState(state);
+    }).catch(()=>{});
+    return ()=>{cancelled=true;unsubscribe();};
+  },[chatId,spatial.dataUpdatedAt,chat.data]);
   return null;
 }

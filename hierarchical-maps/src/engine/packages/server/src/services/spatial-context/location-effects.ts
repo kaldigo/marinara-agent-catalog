@@ -2,6 +2,7 @@ import type { CapabilityPersistenceSession, SpatialContextDefinition } from "@ma
 import { applyLocationEffects, LOCATION_EFFECTS_KEY, record } from "../../../../maps-shared/src/location-effects.js";
 import { resolveEffectiveSpatialState } from "./state-resolution.js";
 import { getPackagePersistence, now } from "./package-runtime.js";
+import { synchronizeWorldStateLocation } from "./world-state-location.js";
 
 let resolveImage: ((chatId: string, referenceId: string) => Promise<string | null | undefined>) | null = null;
 export function configureLocationImageResolver(resolver: NonNullable<typeof resolveImage>) {
@@ -38,5 +39,7 @@ export async function synchronizeLocationEffectsInSession(session: CapabilityPer
 
 export async function synchronizeLocationEffects(chatId: string, options: Parameters<typeof synchronizeLocationEffectsInSession>[2] = {}) {
   const host = getPackagePersistence();
-  return host.withChatLock(chatId, () => host.transaction(session => synchronizeLocationEffectsInSession(session, chatId, options)));
+  const result = await host.withChatLock(chatId, () => host.transaction(session => synchronizeLocationEffectsInSession(session, chatId, options)));
+  if (!options.release && options.definition === undefined) await synchronizeWorldStateLocation(chatId);
+  return result;
 }

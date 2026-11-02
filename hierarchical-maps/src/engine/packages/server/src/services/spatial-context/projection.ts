@@ -3,7 +3,6 @@ import { resolveEffectiveSpatialState, type ResolveSpatialStateOptions } from ".
 import { getPackageAgentSettings, logger } from "./package-runtime.js";
 import {
   buildOwnerSpatialProjection,
-  formatOwnerSpatialBreadcrumb,
   formatOwnerSpatialPrompt,
 } from "../../../../maps-shared/src/runtime-prompt.js";
 import {
@@ -12,7 +11,13 @@ import {
   SPATIAL_TURN_PROMPT_TEMPLATES_SETTINGS_KEY,
 } from "../../../../maps-shared/src/maps-model.js";
 
-export { buildOwnerSpatialProjection, formatOwnerSpatialBreadcrumb, formatOwnerSpatialPrompt };
+import { formatWorldStateLocation } from "../../../../maps-shared/src/world-state-location.js";
+export { buildOwnerSpatialProjection, formatOwnerSpatialPrompt };
+
+/** Engine uses this service formatter for its authoritative World State location. */
+export function formatOwnerSpatialBreadcrumb(projection: ResolvedOwnerSpatialProjection): string {
+  return formatWorldStateLocation(projection.breadcrumb);
+}
 
 const OWNER_SPATIAL_BLOCK_PATTERN =
   /<spatial_context mode="(?:roleplay|game)" authority="application">[\s\S]*?<\/spatial_context>/;

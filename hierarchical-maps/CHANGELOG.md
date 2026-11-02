@@ -1,5 +1,14 @@
 # Changes
 
+## 1.5.4
+
+- Sync Maps to native World State location in one direction using the complete
+  hierarchy joined with `, `.
+- Keep tracker location edits/output from moving the map, including Game tracker guidance.
+- Preserve other tracker fields and honor Roleplay location locks.
+- Reconcile moves, narrated moves, selected swipes, startup and late tracker output.
+- Verify against the official World State agent, including conflicting location output.
+
 ## 1.5.3
 
 - Publish as World Maps under the existing `hierarchical-maps` identity, replacing

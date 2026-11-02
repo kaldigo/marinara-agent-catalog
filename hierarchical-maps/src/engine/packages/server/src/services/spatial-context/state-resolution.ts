@@ -1,4 +1,5 @@
 import { synchronizeLocationEffectsInSession } from "./location-effects.js";
+import { synchronizeWorldStateLocation } from "./world-state-location.js";
 import {
   resolveSpatialBreadcrumb,
   resolveSpatialDestinations,
@@ -83,11 +84,6 @@ function knownLocationMatches(definition: SpatialContextDefinition, guidance: st
         (location) => location.status === "active" && numberedLayerIdentity(location.name) === layerIdentity,
       )
     : [];
-}
-
-function exactGuidanceDestination(definition: SpatialContextDefinition, guidance: string): string | null {
-  const matches = knownLocationMatches(definition, guidance);
-  return matches.length === 1 ? matches[0]!.id : null;
 }
 
 function addAvailableLink(
@@ -321,7 +317,7 @@ export async function materializeAssistantSpatialState(input: {
   locationGuidance?: string | null;
 }): Promise<SpatialContextSnapshot | null> {
   const persistence = getPackagePersistence();
-  return persistence.withChatLock(input.chatId, async () =>
+  const snapshot = await persistence.withChatLock(input.chatId, async () =>
     persistence.transaction(async (transaction) => {
       const existingAtAnchor = await transaction.spatialSnapshots.getByAnchor(
         input.chatId,
@@ -362,18 +358,8 @@ export async function materializeAssistantSpatialState(input: {
           transitionApplied =
             destinationId !== state.currentLocationId || definition.revision !== state.definition.revision;
         }
-      } else if (input.locationGuidance) {
-        const guidedDestinationId = exactGuidanceDestination(definition, input.locationGuidance);
-        if (guidedDestinationId && guidedDestinationId !== state.currentLocationId) {
-          const reachable = new Set(
-            resolveSpatialDestinations(definition, state.currentLocationId).map((destination) => destination.id),
-          );
-          if (reachable.has(guidedDestinationId)) {
-            destinationId = guidedDestinationId;
-            transitionApplied = true;
-          }
-        }
       }
+      // World State is a consumer of map location. Tracker guidance never moves the map.
 
       const chat = await transaction.getChat(input.chatId);
       if (!chat) return null;
@@ -432,4 +418,6 @@ export async function materializeAssistantSpatialState(input: {
       return snapshot;
     }),
   );
+  await synchronizeWorldStateLocation(input.chatId);
+  return snapshot;
 }

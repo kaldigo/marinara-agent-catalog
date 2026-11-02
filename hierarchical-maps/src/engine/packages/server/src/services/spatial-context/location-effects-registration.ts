@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { pendingSpatialTransitionSchema, validateSpatialTransition } from "@marinara-engine/shared";
+import { isTrackerFieldLocked, parseTrackerFieldLocks, pendingSpatialTransitionSchema, validateSpatialTransition, worldTrackerLockKey } from "@marinara-engine/shared";
 import { LOCATION_EFFECTS_KEY, record } from "../../../../maps-shared/src/location-effects.js";
 import { configureLocationImageResolver, synchronizeLocationEffects, synchronizeLocationEffectsInSession } from "./location-effects.js";
 import { getPackagePersistence, logger } from "./package-runtime.js";
 import { resolveEffectiveSpatialState } from "./state-resolution.js";
+import { configureWorldStateLocationWriter, synchronizeWorldStateLocation } from "./world-state-location.js";
 
 const updateSchema = z.object({
   backgroundEnabled: z.boolean().optional(),
@@ -14,6 +15,19 @@ const updateSchema = z.object({
 /** Fastify lifecycle hooks run before native handlers read chat metadata and before mutation replies are sent. */
 export async function registerLocationEffects(app: any) {
   let active = true;
+  const worldStateHeader = "x-marinara-map-location-sync";
+  const unbindWorldState = configureWorldStateLocationWriter(async (chatId, location) => {
+    const chat = await getPackagePersistence().getChat(chatId);
+    // Game already projects the canonical map location through the native service below.
+    if (!chat || chat.mode !== "roleplay") return;
+    const url = `/api/chats/${encodeURIComponent(chatId)}/game-state`;
+    const response = await app.inject({ method: "GET", url });
+    if (response.statusCode !== 200) throw new Error(`Could not read World State (${response.statusCode})`);
+    const state = response.json();
+    if (state?.location === location || isTrackerFieldLocked(parseTrackerFieldLocks(state?.fieldLocks), worldTrackerLockKey("location"))) return;
+    const saved = await app.inject({ method: "PATCH", url, headers: { "x-marinara-csrf": "1", [worldStateHeader]: "1" }, payload: { location, manual: state === null } });
+    if (saved.statusCode !== 200) throw new Error(`Could not sync World State location (${saved.statusCode})`);
+  });
   const unbind = configureLocationImageResolver(async (chatId, referenceId) => {
     const globalPrefix = "global-gallery:";
     const isGlobal = referenceId.startsWith(globalPrefix);
@@ -61,6 +75,8 @@ export async function registerLocationEffects(app: any) {
     await synchronizeLocationEffects(chatId);
   });
   app.addHook("onSend", async (request: any, reply: any, payload: any) => {
+    // Internal writes already have a sync in progress. Do not recurse through it.
+    if (request.headers[worldStateHeader] === "1" && pathOf(request).endsWith("/game-state")) return payload;
     if (!active || !["POST", "PATCH", "PUT", "DELETE"].includes(request.method)) return payload;
     if (/^\/api\/generate\/?$/.test(pathOf(request)) && typeof request.body?.chatId === "string") {
       // A rejected or failed request may not have committed its proposed movement.
@@ -113,6 +129,12 @@ export async function registerLocationEffects(app: any) {
       await synchronizeLocationEffects(request.body.chatId);
     }
   });
+  app.addHook("onResponse", async (request: any) => {
+    // Streaming generation may save a tracker result after its map movement event.
+    if (active && /^\/api\/generate\/?$/.test(pathOf(request)) && typeof request.body?.chatId === "string") {
+      await synchronizeWorldStateLocation(request.body.chatId);
+    }
+  });
   // Native gallery requests cannot run during capability activation: app.inject would
   // wait for app.ready while app.ready is waiting for us. Reconcile after listening.
   app.addHook("onListen", async () => {
@@ -120,6 +142,7 @@ export async function registerLocationEffects(app: any) {
     for (const chat of await getPackagePersistence().listChats()) {
       const settings = record(record(chat.metadata)[LOCATION_EFFECTS_KEY]);
       if (settings.disabledEntries || settings.backgroundEnabled) await synchronizeLocationEffects(chat.id);
+      else await synchronizeWorldStateLocation(chat.id);
     }
   });
   return async () => {
@@ -129,6 +152,6 @@ export async function registerLocationEffects(app: any) {
         const settings = record(record(chat.metadata)[LOCATION_EFFECTS_KEY]);
         if (settings.disabledEntries || settings.background) await synchronizeLocationEffects(chat.id, { release: true });
       }
-    } finally { unbind(); }
+    } finally { unbindWorldState(); unbind(); }
   };
 }

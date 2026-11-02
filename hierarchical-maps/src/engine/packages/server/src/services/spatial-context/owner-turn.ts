@@ -16,6 +16,7 @@ import { resolveEffectiveSpatialState } from "./state-resolution.js";
 import { selectBoundGameMapForLocation } from "./game-map-binding.js";
 import { parseSpatialMetadata } from "./metadata.js";
 import { synchronizeLocationEffectsInSession } from "./location-effects.js";
+import { synchronizeWorldStateLocation } from "./world-state-location.js";
 
 export type SpatialOwnerTurnErrorCode =
   | SpatialTransitionErrorCode
@@ -134,7 +135,7 @@ export async function commitSpatialOwnerTurn(input: CommitSpatialOwnerTurnInput)
   travel?: ResolvedSpatialTravel;
 }> {
   const persistence = getPackagePersistence();
-  return persistence.withChatLock(input.chatId, async () =>
+  const committed = await persistence.withChatLock(input.chatId, async () =>
     persistence.transaction(async (transaction: CapabilityPersistenceSession) => {
       const chat = await transaction.getChat(input.chatId);
       if (!chat) throw new SpatialOwnerTurnError("chat_not_found", "Chat not found.", 404);
@@ -244,4 +245,6 @@ export async function commitSpatialOwnerTurn(input: CommitSpatialOwnerTurnInput)
       };
     }),
   );
+  await synchronizeWorldStateLocation(input.chatId);
+  return committed;
 }
