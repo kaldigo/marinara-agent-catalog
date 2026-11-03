@@ -1,5 +1,9 @@
 # Changes
 
+## 1.5.11
+
+- Individual locations can be hidden from Available destinations independently of map visibility. Location-type exclusions still apply.
+
 ## 1.5.10
 
 - Hide individual locations on maps independently of displaying their children or listing available destinations.
