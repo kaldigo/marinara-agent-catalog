@@ -213,6 +213,7 @@ try {
  let passageState=await state();
  const passageProfile=structuredClone(passageState.hierarchyProfile);
  passageProfile.types.push({id:'type_hallway',label:'Hallway',baseKind:'room'});
+ passageProfile.types.find(type=>type.id===passageProfile.locationTypeIds.upstairs).showChildrenOnParentMap=true; // Imported 1.5.8 profile
  passageProfile.locationTypeIds.hall='type_hallway';
  await api(`/chats/${chat.id}/spatial-context`,{expectedRevision:passageState.definition.revision,expectedCurrentLocationId:passageState.currentLocationId,definition:passageState.definition,hierarchyProfile:passageProfile},'PUT');
  assert(!(await state()).destinations.some(d=>d.id==='bedroom'));
@@ -221,7 +222,7 @@ try {
  await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
  await panel.getByRole('checkbox',{name:'Hallway passageway',exact:true}).check();
  await panel.getByRole('checkbox',{name:'Floor hide from available destinations',exact:true}).check();
- await panel.getByRole('checkbox',{name:'Floor show children on parent map',exact:true}).check();
+ assert((await state()).hierarchyProfile.showChildrenOnParentMapIds.includes('upstairs'));
  await panel.getByRole('button',{name:'Save location types',exact:true}).click();
  await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
  passageState=await state();assert(passageState.destinations.some(d=>d.id==='bedroom'));assert(!passageState.destinations.some(d=>d.id==='away'),'Ordinary bedroom stops expansion');
@@ -256,8 +257,7 @@ try {
  await panel.getByRole('button',{name:'Save location types',exact:true}).click();
  await expect.poll(async()=>(await state()).destinations.some(item=>item.id==='upstairs')).toBe(true);
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
- const overviewSetting=panel.getByRole('checkbox',{name:'Floor show children on parent map',exact:true});
- await expect(overviewSetting).toBeChecked();
+ await expect(panel.getByRole('checkbox',{name:/show children on parent map/i})).toHaveCount(0);
  async function openHouseMap(){
    await panel.getByRole('button',{name:'Open map',exact:true}).click();
    await panel.evaluate(element=>{element.style.cssText='display:contents';});
@@ -270,10 +270,17 @@ try {
  await bedroomPin.click();
  assert.equal((await state()).breadcrumb.map(item=>item.name).join(' > '),'Home > Upstairs > Bedroom');
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
- await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
+ await workspaceView();
+ const hierarchy=page.getByRole('region',{name:'Location hierarchy'}).filter({visible:true}).first();
+ const expandHome=hierarchy.getByRole('button',{name:'Expand Home',exact:true});
+ if(await expandHome.isVisible())await expandHome.click();
+ await hierarchy.getByRole('button',{name:'Enter Upstairs',exact:true}).click();
+ const overviewSetting=page.getByRole('checkbox',{name:'Show children on parent map',exact:true}).filter({visible:true}).first();
+ await expect(overviewSetting).toBeChecked();
  await overviewSetting.uncheck();
- await panel.getByRole('button',{name:'Save location types',exact:true}).click();
- await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
+ await page.locator('[data-marinara-map-header-save]:visible').first().click();
+ await expect.poll(async()=>(await state()).hierarchyProfile.showChildrenOnParentMapIds.includes('upstairs')).toBe(false);
+ await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
  await openHouseMap();
  await expect(page.getByRole('button',{name:'Inspect Upstairs',exact:true})).toBeVisible();
  await expect(bedroomPin).toHaveCount(0);

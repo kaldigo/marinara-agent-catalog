@@ -1,5 +1,9 @@
 # Changes
 
+## 1.5.9
+
+- Move Show children on parent map to the individual location editor. Existing enabled types are converted to selections on their current locations.
+
 ## 1.5.8
 
 - Show a location type’s immediate children alongside it on its parent’s map canvas. Pins use the room’s map coordinates and retain its original hierarchy.

@@ -117,3 +117,13 @@ assert(!throughHidden.some(destination => destination.id === 'short'));
 assert.equal(throughHidden.find(destination => destination.id === 'bedroom')?.label, 'via short');
 hiddenPassages.types.find(type => type.id === 'passage').passageway = false;
 assert(!resolveSpatialDestinations(house, 'kitchen', hiddenPassages).some(destination => destination.id === 'bedroom'));
+
+const floors = [loc('first', [], 'home'), loc('second', [], 'home')].map(room => ({ ...room, kind: 'floor' }));
+const building = {locations: [...floors, loc('office', [], 'first'), loc('bed', [], 'second')]};
+const oldProfile = api.defaultHierarchyProfile(building);
+oldProfile.types.find(type => type.baseKind === 'floor').showChildrenOnParentMap = true;
+const converted = api.normalizeHierarchyProfile(oldProfile, building);
+assert.deepEqual(converted.showChildrenOnParentMapIds, ['first', 'second']);
+converted.showChildrenOnParentMapIds = ['second'];
+const saved = api.normalizeHierarchyProfile(JSON.parse(JSON.stringify(converted)), building);
+assert.deepEqual(api.locationsOnParentMap(floors, building.locations, saved).map(pin => pin.id), ['first', 'second', 'bed']);

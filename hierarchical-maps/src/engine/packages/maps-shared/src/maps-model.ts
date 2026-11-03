@@ -248,6 +248,7 @@ export interface SpatialHierarchyType {
   baseKind: SpatialLocationKind;
   passageway?: boolean;
   hideFromDestinations?: boolean;
+  /** Legacy 1.5.8 field, consumed when normalizing a saved map. */
   showChildrenOnParentMap?: boolean;
   description?: string;
 }
@@ -258,6 +259,7 @@ export interface SpatialHierarchyProfile {
   name: string;
   types: SpatialHierarchyType[];
   locationTypeIds: Record<string, string>;
+  showChildrenOnParentMapIds?: string[];
   showConnections: boolean;
   linkPresentations: Record<string, SpatialLinkPresentation>;
 }
@@ -409,6 +411,7 @@ const spatialHierarchyProfileBaseSchema = z
     mode: z.enum(["auto", "template", "custom"]),
     name: z.string().trim().min(1).max(120),
     types: z.array(spatialHierarchyTypeSchema).min(1).max(40),
+    showChildrenOnParentMapIds: z.array(z.string()).optional(),
     locationTypeIds: z.record(z.string(), hierarchyIdSchema).default({}),
     showConnections: z.boolean().default(true),
     linkPresentations: z.record(z.string(), spatialLinkPresentationSchema).default({}),
@@ -982,7 +985,19 @@ export function normalizeHierarchyProfile(
   const linkPresentations = Object.fromEntries(
     Object.entries(parsed.data.linkPresentations).filter(([key]) => !linkKeys || linkKeys.has(key)),
   );
-  return { ...parsed.data, locationTypeIds, linkPresentations };
+  const profile = { ...parsed.data, locationTypeIds, linkPresentations };
+  if (!definition) return profile;
+  // Freeze the old type-wide choice onto existing nodes once. New nodes start unchecked.
+  const legacyTypes = new Set(profile.types.filter(type => type.showChildrenOnParentMap).map(type => type.id));
+  const selectedIds = new Set(profile.showChildrenOnParentMapIds);
+  for (const location of definition.locations) {
+    if (legacyTypes.has(locationTypeIds[location.id]!)) selectedIds.add(location.id);
+  }
+  return {
+    ...profile,
+    types: profile.types.map(({ showChildrenOnParentMap: _legacy, ...type }) => type),
+    showChildrenOnParentMapIds: [...selectedIds].filter(id => locationIds.has(id)),
+  };
 }
 
 export function createSpatialMapTemplateData(
@@ -1081,7 +1096,8 @@ export function locationsOnParentMap(
   locations: SpatialLocation[],
   profile: SpatialHierarchyProfile,
 ): SpatialLocation[] {
-  const groups = directChildren.filter(location => hierarchyTypeForLocation(profile, location).showChildrenOnParentMap);
+  const selectedIds = new Set(profile.showChildrenOnParentMapIds);
+  const groups = directChildren.filter(location => selectedIds.has(location.id));
   if (!groups.length) return directChildren;
   const groupIds = new Set(groups.map(location => location.id));
   const rooms = locations.filter(location => location.parentId !== null && groupIds.has(location.parentId));

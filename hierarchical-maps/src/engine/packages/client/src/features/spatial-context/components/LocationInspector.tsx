@@ -568,6 +568,20 @@ export function LocationInspector({
           </div>
         )}
 
+        <label className="flex min-h-11 items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={hierarchyProfile.showChildrenOnParentMapIds?.includes(location.id) ?? false}
+            onChange={(event) => {
+              const ids = new Set(hierarchyProfile.showChildrenOnParentMapIds);
+              if (event.target.checked) ids.add(location.id);
+              else ids.delete(location.id);
+              onHierarchyProfileChange({ ...hierarchyProfile, showChildrenOnParentMapIds: [...ids] });
+            }}
+          />
+          Show children on parent map
+        </label>
+
         <Field label="Name" error={issueFor("name")}>
           <input
             className={INPUT_CLASS}

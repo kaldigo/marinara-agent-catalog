@@ -148,22 +148,6 @@ export function SpatialHierarchyProfileFields({
               />
               Hide from available destinations
             </label>
-            <label className="col-span-2 flex min-h-11 items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                aria-label={`${type.label || `Location type ${index + 1}`} show children on parent map`}
-                checked={type.showChildrenOnParentMap === true}
-                disabled={!editable || disabled}
-                onChange={(event) => applyProfile({
-                  ...profile,
-                  mode: "custom",
-                  types: profile.types.map((candidate) =>
-                    candidate.id === type.id ? { ...candidate, showChildrenOnParentMap: event.target.checked } : candidate,
-                  ),
-                })}
-              />
-              Show children on parent map
-            </label>
             {editable && (
               <div
                 className="col-span-2 flex items-center justify-end gap-1"
@@ -241,6 +225,7 @@ export function SpatialHierarchyProfileFields({
               const defaults = defaultHierarchyProfile(definition);
               applyProfile({
                 ...defaults,
+                showChildrenOnParentMapIds: profile.showChildrenOnParentMapIds,
                 showConnections: profile.showConnections,
                 linkPresentations: profile.linkPresentations,
               });
