@@ -225,7 +225,7 @@ function destinationFromLocation(location, relation, label) {
         sortOrder: location.sortOrder,
     };
 }
-export function resolveSpatialDestinations(definition, currentLocationId) {
+function resolveDirectSpatialDestinations(definition, currentLocationId) {
     if (!definition.enabled || currentLocationId === null)
         return [];
     const byId = buildSpatialLocationIndex(definition);
@@ -258,6 +258,30 @@ export function resolveSpatialDestinations(definition, currentLocationId) {
         }
     }
     return Array.from(destinations.values()).sort(compareDestinations);
+}
+/** Expand in layers only through passageway types. First discovery wins. */
+export function resolveSpatialDestinations(definition, currentLocationId, hierarchyProfile) {
+    const byId = buildSpatialLocationIndex(definition);
+    const passagewayTypes = new Set((hierarchyProfile?.types ?? []).filter(type => type.passageway).map(type => type.id));
+    const visited = new Set([currentLocationId]);
+    const destinations = [];
+    const queue = [{ id: currentLocationId, via: [] }];
+    for (let index = 0; index < queue.length; index++) {
+        const current = queue[index];
+        for (const destination of resolveDirectSpatialDestinations(definition, current.id)) {
+            if (visited.has(destination.id)) continue;
+            visited.add(destination.id);
+            destinations.push(current.via.length ? {
+                ...destination,
+                relation: "link",
+                label: `via ${current.via.map(id => byId.get(id).name).join(", ")}`,
+            } : destination);
+            if (passagewayTypes.has(hierarchyProfile?.locationTypeIds?.[destination.id])) {
+                queue.push({ id: destination.id, via: [...current.via, destination.id] });
+            }
+        }
+    }
+    return destinations;
 }
 /**
  * Resolve the shortest directed route using the same one-hop authority as
@@ -363,7 +387,7 @@ export function validateSpatialArchive(definition, locationId, options) {
     }
     return { ok: true };
 }
-export function validateSpatialTransition(definition, currentLocationId, request) {
+export function validateSpatialTransition(definition, currentLocationId, request, hierarchyProfile) {
     if (!validateSpatialContextDefinition(definition).valid) {
         return {
             ok: false,
@@ -407,7 +431,7 @@ export function validateSpatialTransition(definition, currentLocationId, request
             message: "The selected destination is no longer available.",
         };
     }
-    const destinations = resolveSpatialDestinations(definition, currentLocationId);
+    const destinations = resolveSpatialDestinations(definition, currentLocationId, hierarchyProfile);
     if (request.travelMode) {
         const routeLocationIds = resolveSpatialRoute(definition, currentLocationId, request.destinationId);
         if (!routeLocationIds) {

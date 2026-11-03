@@ -120,7 +120,7 @@ function buildResponse(
     definition,
     currentLocationId: effectiveCurrentId,
     breadcrumb: resolveSpatialBreadcrumb(definition, effectiveCurrentId).map(({ id, name }) => ({ id, name })),
-    destinations: resolveSpatialDestinations(definition, effectiveCurrentId),
+    destinations: resolveSpatialDestinations(definition, effectiveCurrentId, hierarchyProfile),
     warnings: referenceWarnings,
     hasCommittedSpatialHistory,
     hierarchyProfile,

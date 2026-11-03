@@ -63,7 +63,7 @@ export async function registerLocationEffects(app: any) {
     if (pending.success) {
       const state = await resolveEffectiveSpatialState(chatId);
       if (state.definition) {
-        const validation = validateSpatialTransition(state.definition, state.currentLocationId, pending.data);
+        const validation = validateSpatialTransition(state.definition, state.currentLocationId, pending.data, state.hierarchyProfile);
         if (validation.ok) {
           // Engine snapshots chat metadata before committing a pending move. Prepare its
           // validated destination now; the native owner-turn still owns the movement.

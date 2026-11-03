@@ -182,7 +182,7 @@ export async function commitSpatialOwnerTurn(input: CommitSpatialOwnerTurnInput)
           400,
         );
       }
-      const validation = validateSpatialTransition(definition, state.currentLocationId, input.transition);
+      const validation = validateSpatialTransition(definition, state.currentLocationId, input.transition, state.hierarchyProfile);
       if (!validation.ok) {
         const stale =
           validation.code === "spatial_transition_stale_definition" ||

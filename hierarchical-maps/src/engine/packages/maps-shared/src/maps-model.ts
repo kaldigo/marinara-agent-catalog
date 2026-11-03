@@ -244,6 +244,7 @@ export interface SpatialHierarchyType {
   id: string;
   label: string;
   baseKind: SpatialLocationKind;
+  passageway?: boolean;
   description?: string;
 }
 
@@ -381,6 +382,7 @@ export const spatialHierarchyTypeSchema = z
     id: hierarchyIdSchema,
     label: z.string().trim().min(1).max(80),
     baseKind: z.enum(SPATIAL_LOCATION_KINDS),
+    passageway: z.boolean().optional(),
     description: z.string().trim().max(240).optional(),
   })
   .strict();

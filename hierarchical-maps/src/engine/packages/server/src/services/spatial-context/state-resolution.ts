@@ -12,7 +12,7 @@ import {
 } from "@marinara-engine/shared";
 import { getPackagePersistence, logger, newId, newTimeSortableId, now } from "./package-runtime.js";
 import { parseSpatialMetadata } from "./metadata.js";
-import { SPATIAL_MAP_LOCATION_LIMIT, spatialMapDefinitionSchema } from "../../../../maps-shared/src/maps-model.js";
+import { SPATIAL_MAP_LOCATION_LIMIT, spatialMapDefinitionSchema, type SpatialHierarchyProfile } from "../../../../maps-shared/src/maps-model.js";
 import {
   readSpatialSharedWorldLink,
   resolveSpatialWorldSource,
@@ -36,6 +36,7 @@ export interface SpatialMessageAnchor {
 }
 
 export interface EffectiveSpatialState {
+  hierarchyProfile?: SpatialHierarchyProfile;
   definition: SpatialContextDefinition | null;
   snapshot: SpatialContextSnapshot | null;
   currentLocationId: string | null;
@@ -155,11 +156,12 @@ function discoverLocation(
   definition: SpatialContextDefinition,
   currentLocationId: string,
   directive: Extract<AssistantSpatialDirective, { type: "discover" }>,
+  hierarchyProfile?: SpatialHierarchyProfile,
 ): { definition: SpatialContextDefinition; destinationId: string } | null {
   const nameKey = normalizedLocationName(directive.name);
   if (!nameKey) return null;
   const matching = knownLocationMatches(definition, directive.name);
-  const reachableIds = new Set(resolveSpatialDestinations(definition, currentLocationId).map((entry) => entry.id));
+  const reachableIds = new Set(resolveSpatialDestinations(definition, currentLocationId, hierarchyProfile).map((entry) => entry.id));
   const reachableMatching = matching.filter((location) => reachableIds.has(location.id));
   if (reachableMatching.length === 1) {
     return { definition, destinationId: reachableMatching[0]!.id };
@@ -235,13 +237,16 @@ export async function resolveEffectiveSpatialState(
   persistence: CapabilityPersistenceSession = getPackagePersistence(),
 ): Promise<EffectiveSpatialState> {
   const chat = await persistence.getChat(chatId);
-  const definition = chat ? (await resolveSpatialWorldSource(chat, persistence)).definition : null;
+  const source = chat ? await resolveSpatialWorldSource(chat, persistence) : null;
+  const definition = source?.definition ?? null;
+  const hierarchyProfile = source?.hierarchyProfile;
   const storage = persistence.spatialSnapshots;
 
   if (options.exactAnchor) {
     const snapshot = await storage.getByAnchor(chatId, options.exactAnchor.messageId, options.exactAnchor.swipeIndex);
     return {
       definition,
+      hierarchyProfile,
       snapshot,
       currentLocationId: snapshot?.currentLocationId ?? null,
       definitionRevision: snapshot?.definitionRevision ?? definition?.revision ?? 0,
@@ -276,6 +281,7 @@ export async function resolveEffectiveSpatialState(
     if (!snapshot) continue;
     return {
       definition,
+      hierarchyProfile,
       snapshot,
       currentLocationId: snapshot.currentLocationId,
       definitionRevision: snapshot.definitionRevision,
@@ -288,6 +294,7 @@ export async function resolveEffectiveSpatialState(
   if (bootstrap) {
     return {
       definition,
+      hierarchyProfile,
       snapshot: bootstrap,
       currentLocationId: bootstrap.currentLocationId,
       definitionRevision: bootstrap.definitionRevision,
@@ -299,6 +306,7 @@ export async function resolveEffectiveSpatialState(
   const startingLocationId = definition?.enabled ? definition.startingLocationId : null;
   return {
     definition,
+    hierarchyProfile,
     snapshot: null,
     currentLocationId: startingLocationId,
     definitionRevision: definition?.revision ?? 0,
@@ -341,7 +349,7 @@ export async function materializeAssistantSpatialState(input: {
       if (input.directive?.type === "move") {
         const requestedDestinationId = input.directive.destinationId;
         const reachable = new Set(
-          resolveSpatialDestinations(definition, state.currentLocationId).map((destination) => destination.id),
+          resolveSpatialDestinations(definition, state.currentLocationId, state.hierarchyProfile).map((destination) => destination.id),
         );
         const destination = definition.locations.find(
           (location) => location.id === requestedDestinationId && location.status === "active",
@@ -351,7 +359,7 @@ export async function materializeAssistantSpatialState(input: {
           transitionApplied = destinationId !== state.currentLocationId;
         }
       } else if (input.directive?.type === "discover") {
-        const discovered = discoverLocation(definition, state.currentLocationId, input.directive);
+        const discovered = discoverLocation(definition, state.currentLocationId, input.directive, state.hierarchyProfile);
         if (discovered) {
           definition = discovered.definition;
           destinationId = discovered.destinationId;

@@ -1,5 +1,10 @@
 # Changes
 
+## 1.5.5
+
+- Add Passageway to location types. Expand available destinations breadth-first through marked types, deduplicating on first discovery and retaining shortest routes.
+- Use the same expansion for prompt context, destination lists and movement validation.
+
 ## 1.5.4
 
 - Sync Maps to native World State location in one direction using the complete

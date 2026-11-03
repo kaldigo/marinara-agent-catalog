@@ -74,3 +74,25 @@ assert.equal(released.background,'chosen.jpg','Do not overwrite a manual backgro
 assert.deepEqual(released.entryStateOverrides.counter,{enabled:true,ephemeral:15},'Do not restore stale flags/counters over another edit');
 assert.equal(api.applyLocationEffects(manual,['counter'],undefined,'kitchen').background,'chosen.jpg','Transient image lookup failure preserves background');
 console.log('Passed location-effect restoration, overlapping exclusions, manual edits, counters, image-failure and immutability checks.');
+
+const {resolveSpatialDestinations,validateSpatialTransition}=await import('../src/shared/utils/spatial-context.js');
+const loc=(id,links=[],parentId=null)=>({id,name:id,parentId,kind:'room',description:'',status:'active',sortOrder:0,childPresentation:'list',lorebookEntryIds:[],links:links.map(targetId=>({targetId,bidirectional:false,state:'available'}))});
+const house={schemaVersion:1,ownerMode:'roleplay',enabled:true,revision:1,startingLocationId:'kitchen',locations:[loc('home'),loc('kitchen',['hall','short'],'home'),loc('hall',['landing','kitchen','outside'],'home'),loc('landing',['bedroom'],'home'),loc('short',['bedroom'],'home'),loc('bedroom',[],'home'),loc('outside',['town']),loc('town'),loc('hidden'),loc('blocked'),{...loc('archived',['town']),status:'archived'},loc('incoming',['hall'])]};
+house.locations.find(l=>l.id==='hall').links.push({targetId:'hidden',state:'hidden',bidirectional:true},{targetId:'blocked',state:'blocked',bidirectional:true},{targetId:'archived',state:'available',bidirectional:true});
+const profile=api.defaultHierarchyProfile(house);
+profile.types.push({id:'passage',label:'Passage',baseKind:'room',passageway:true});
+for(const id of ['hall','landing','short'])profile.locationTypeIds[id]='passage';
+const normalized=api.normalizeHierarchyProfile(JSON.parse(JSON.stringify(profile)),house);
+assert.equal(normalized.types.find(t=>t.id==='passage').passageway,true,'Passageway survives schema normalization and JSON round trip');
+const expanded=resolveSpatialDestinations(house,'kitchen',normalized);
+assert.equal(expanded.find(d=>d.id==='bedroom').label,'via short','Breadth-first discovery retains shorter route');
+assert.equal(new Set(expanded.map(d=>d.id)).size,expanded.length,'Cycles and duplicate paths do not duplicate destinations');
+for(const id of ['town','hidden','blocked','archived','incoming','kitchen'])assert(!expanded.some(d=>d.id===id),id+' must not be exposed');
+assert(expanded.some(d=>d.id==='outside'),'An ordinary destination is visible but not expanded');
+assert(resolveSpatialDestinations(house,'home',normalized).some(d=>d.id==='bedroom'),'Container seeds its immediate children');
+assert(!resolveSpatialDestinations(house,'kitchen').some(d=>d.id==='bedroom'),'Unmarked maps preserve direct destinations');
+const request={destinationId:'bedroom',expectedDefinitionRevision:1,expectedCurrentLocationId:'kitchen',commandId:'passage-test'};
+assert.equal(validateSpatialTransition(house,'kitchen',request,normalized).ok,true,'Expanded destination is accepted for movement');
+assert.equal(validateSpatialTransition(house,'kitchen',{...request,destinationId:'town'},normalized).ok,false,'Unexposed town is not ordinary movement');
+for(const ownerMode of ['roleplay','game'])assert(api.buildOwnerSpatialProjection('test',{...house,ownerMode},'kitchen',null,normalized).destinations.some(d=>d.id==='bedroom'),'Prompt projection expands passages in '+ownerMode);
+console.log('Passed passageway breadth-first search, shortest route, cycle/deduplication, direction, visibility, container, schema and movement checks.');

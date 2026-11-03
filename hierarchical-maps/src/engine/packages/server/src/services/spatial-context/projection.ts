@@ -56,6 +56,7 @@ export async function resolveOwnerSpatialProjection(
     state.definition,
     state.currentLocationId,
     options.acceptedTravel,
+    state.hierarchyProfile,
   );
   if (!projection) return null;
   const settings: Record<string, unknown> = await getPackageAgentSettings("hierarchical-maps").catch((error) => {

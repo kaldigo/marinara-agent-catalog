@@ -8,7 +8,7 @@ import {
   type SpatialContextDefinition,
   type SpatialTravelPromptSummary,
 } from "@marinara-engine/shared";
-import { defaultSpatialTurnPromptTemplates, renderSpatialTurnPromptTemplate } from "./maps-model.js";
+import { type SpatialHierarchyProfile, defaultSpatialTurnPromptTemplates, renderSpatialTurnPromptTemplate } from "./maps-model.js";
 
 const MAX_PROMPT_BREADCRUMB_NODES = 20;
 const MAX_PROMPT_KNOWN_LOCATIONS = 50;
@@ -30,13 +30,14 @@ export function buildOwnerSpatialProjection(
   definition: SpatialContextDefinition | null,
   currentLocationId: string | null,
   acceptedTravel?: ResolvedSpatialTravel | null,
+  hierarchyProfile?: SpatialHierarchyProfile,
 ): ResolvedOwnerSpatialProjectionWithKnownLocationLimit | null {
   if (!definition?.enabled || !currentLocationId) return null;
 
   const current = buildSpatialLocationIndex(definition).get(currentLocationId);
   if (!current) return null;
 
-  const allDestinations = resolveSpatialDestinations(definition, currentLocationId);
+  const allDestinations = resolveSpatialDestinations(definition, currentLocationId, hierarchyProfile);
   const destinations = allDestinations.slice(0, SPATIAL_CONTEXT_LIMITS.maxPromptDestinations);
   const allKnownLocations = definition.locations.filter((location) => location.status === "active");
   const knownLocations = allKnownLocations.slice(0, MAX_PROMPT_KNOWN_LOCATIONS).map((location) => ({

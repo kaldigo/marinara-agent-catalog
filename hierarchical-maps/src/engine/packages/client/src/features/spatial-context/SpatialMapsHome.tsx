@@ -301,9 +301,9 @@ export function SpatialMapsHome({
   const liveTurnPromptProjection = useMemo(
     () =>
       chatId && definition?.ownerMode === turnPromptMode
-        ? buildOwnerSpatialProjection(chatId, definition, spatial.data?.currentLocationId ?? null)
+        ? buildOwnerSpatialProjection(chatId, definition, spatial.data?.currentLocationId ?? null, null, spatial.data?.hierarchyProfile)
         : null,
-    [chatId, definition, spatial.data?.currentLocationId, turnPromptMode],
+    [chatId, definition, spatial.data?.currentLocationId, spatial.data?.hierarchyProfile, turnPromptMode],
   );
   const turnPromptPreview = useMemo(() => {
     try {

@@ -42,14 +42,14 @@ async function api(route,body,method=body===undefined?'GET':'POST') {
  const raw=await response.text();assert(response.ok,route+' '+response.status+' '+raw);return JSON.parse(raw);
 }
 const log=await fs.open(path.join(out,'engine.log'),'w');
-let server,browser;
+let server,browser,page;
 const modelRequests=[];
 let modelText='We settle into the room.';
 const model=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;if(req.method==='GET'){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({data:[{id:'fixture',object:'model'}]}));return;}const body=JSON.parse(raw||'{}');modelRequests.push(body);const content=JSON.stringify(body.messages).includes('WORLD_STATE_SYNC_FIXTURE')?JSON.stringify({location:'Incorrect tracker location',weather:'Rain',time:'Evening',temperature:'12'}):modelText;res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({choices:[{message:{role:'assistant',content},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:8}}));});
 try {
  await new Promise((resolve,reject)=>{model.once('error',reject);model.listen(9864,'127.0.0.1',resolve);});
  try {await fetch(base+'/api/health',{signal:AbortSignal.timeout(2000)});throw new Error('Port already occupied');}catch(e){if(e.message==='Port already occupied')throw e;}
- server=spawn(process.execPath,['packages/server/dist/index.js'],{cwd:engine,windowsHide:true,stdio:['ignore',log.fd,log.fd],env:{...process.env,DATA_DIR:data,FILE_STORAGE_DIR:path.join(data,'storage'),PORT:'7861',NODE_OPTIONS:'',PROVIDER_LOCAL_URLS_ENABLED:'true',MARINARA_ENV_WATCH:'0',NODE_ENV:'production'}});
+ server=spawn(process.execPath,['packages/server/dist/index.js'],{cwd:engine,windowsHide:true,stdio:['ignore',log.fd,log.fd],env:{...process.env,DATA_DIR:data,FILE_STORAGE_DIR:path.join(data,'storage'),PORT:'7861',NODE_OPTIONS:'',PROVIDER_LOCAL_URLS_ENABLED:'true',MARINARA_ENV_WATCH:'0',MARINARA_E2E_DISABLE_RATE_LIMIT:'true',NODE_ENV:'production'}});
  let ready=false;
  for(let i=0;i<80;i++) {assert.equal(server.exitCode,null);try {if((await fetch(base+'/api/health',{signal:AbortSignal.timeout(1000)})).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,500));}
  assert(ready,'Server started');
@@ -75,7 +75,7 @@ try {
  const baseline=await compiled();assert(baseline.text.includes('Known map locations'));assert(baseline.text.includes('Away from home'));
  await fs.writeFile(path.join(out,'baseline.json'),JSON.stringify(baseline.result,null,2));
  browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
- const page=await browser.newPage({viewport:{width:1440,height:1100}});
+ page=await browser.newPage({viewport:{width:1440,height:1100}});
  await page.addInitScript(({chatId})=>{localStorage.setItem('marinara-active-chat-id',chatId);localStorage.setItem('marinara:whats-new:seen-version','2.5.1');localStorage.setItem('marinara-engine-ui',JSON.stringify({state:{hasCompletedOnboarding:true},version:101}));},{chatId:chat.id});
  await page.goto(base);
  await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'),{},{timeout:30000});
@@ -157,7 +157,7 @@ try {
  assert.equal((await state()).currentLocationId,'kitchen');assert.equal((await metadata()).entryStateOverrides[kitchenLore.id].enabled,false);
  assert.equal((await worldState()).location,'Home, Kitchen');
  // Configure exclusions through the existing location inspector, including remove/add and reload.
- async function workspaceView(){await page.evaluate(()=>{const el=document.getElementById('maps-fixture');el.style.cssText='display:contents';el.setAttribute('view','workspace');el.dispatchEvent(new CustomEvent('marinara-capability-props'));});}
+ async function workspaceView(){await page.evaluate(()=>{const old=document.getElementById('maps-fixture');const el=document.createElement('marinara-capability-hierarchical-maps');el.id=old.id;el.style.cssText='display:contents';el.setAttribute('view','workspace');el.capabilityProps=old.capabilityProps;old.remove();document.body.append(el);});}
  await workspaceView();
  let exclusions=page.locator('[data-location-lore-exclusions]');
  await exclusions.locator('summary').click();
@@ -206,8 +206,45 @@ try {
  await api(`/chats/${chat.id}/metadata`,{enableAgents:false},'PATCH');
  meta=await metadata();assert(!meta.entryStateOverrides[hallLore.id]);assert(!Object.hasOwn(meta.entryStateOverrides[kitchenLore.id],'enabled'));assert.equal(meta.background,'Black.jpg');assert.equal(meta.entryStateOverrides[disabledLore.id].enabled,false);assert.equal(meta.unrelatedFixture,'preserve-me');
  await fs.writeFile(path.join(out,'effects-metadata.json'),JSON.stringify(meta,null,2));
- const result={passed:true,engineVersion:'2.5.1',packageVersion:manifest.version,checks:['fork server activation and native spatial routes','template edit/save/reload/restore','excluded entry blocked from ordinary and linked lore','room changes restore and apply per-chat flags','preexisting disabled entries and counters preserved','background checkbox sets native renderer and persisted background','room without image and checkbox off restore previous background','actual move-and-reply uses destination exclusions in same prompt','narrated movement and switching swipes reconcile location effects','stale move rejected without changed exclusions or model call','exclusion checkbox remove/add and reload persistence','background setting reload persistence','another chat remains unaffected','disabling Maps restores backgrounds and overrides and preserves unrelated metadata','map-only configuration creates native World State location','one-way comma-separated World State hierarchy including three levels','weather/time/temperature survive map location writes','World State edits do not move Maps','native location lock pauses sync and unlock resumes it','swipes and browser reload show the mapped location in native tracker store','native World State agent conflicting location is corrected after processing without moving Maps','native Game location projection uses comma-space without reverse movement'],evidence:out};
+
+ // Passageway settings persist through the native editor and drive real movement.
+ await api(`/chats/${chat.id}/metadata`,{enableAgents:true,activeAgentIds:['hierarchical-maps']},'PATCH');
+ await setLocation('kitchen',d=>{d.locations.find(l=>l.id==='hall').links=[{targetId:'bedroom',state:'available',bidirectional:true}];d.locations.find(l=>l.id==='bedroom').links=[{targetId:'away',state:'available',bidirectional:true}];});
+ let passageState=await state();
+ const passageProfile=structuredClone(passageState.hierarchyProfile);
+ passageProfile.types.push({id:'type_hallway',label:'Hallway',baseKind:'room'});
+ passageProfile.locationTypeIds.hall='type_hallway';
+ await api(`/chats/${chat.id}/spatial-context`,{expectedRevision:passageState.definition.revision,expectedCurrentLocationId:passageState.currentLocationId,definition:passageState.definition,hierarchyProfile:passageProfile},'PUT');
+ assert(!(await state()).destinations.some(d=>d.id==='bedroom'));
+ await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
+ panel=page.locator('#maps-fixture');
+ await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
+ await panel.getByRole('checkbox',{name:'Hallway passageway',exact:true}).check();
+ await panel.getByRole('button',{name:'Save location types',exact:true}).click();
+ await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
+ passageState=await state();assert(passageState.destinations.some(d=>d.id==='bedroom'));assert(!passageState.destinations.some(d=>d.id==='away'),'Ordinary bedroom stops expansion');
+ assert((await compiled()).text.includes('Bedroom [bedroom]'),'Compiled generation prompt includes recursive destination');
+ await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();panel=page.locator('#maps-fixture');
+ await expect(panel.getByRole('checkbox',{name:'Hallway passageway',exact:true})).toBeChecked();
+ await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
+ await panel.getByRole('checkbox',{name:'Hallway passageway',exact:true}).uncheck();
+ await panel.getByRole('button',{name:'Save location types',exact:true}).click();
+ await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
+ assert(!(await state()).destinations.some(d=>d.id==='bedroom'),'Unchecking restores direct destinations');
+ await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
+ await panel.getByRole('checkbox',{name:'Hallway passageway',exact:true}).check();
+ await panel.getByRole('button',{name:'Save location types',exact:true}).click();
+ await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
+ await page.screenshot({path:path.join(out,'passageway-types.png'),fullPage:true});
+ passageState=await state();modelText='We settle into the bedroom.';
+ const passageMove=await fetch(base+'/api/generate',{method:'POST',headers:{'content-type':'application/json','x-marinara-csrf':'1'},body:JSON.stringify({chatId:chat.id,presetId:preset.id,userMessage:'Go to the bedroom through the hall.',streaming:false,pendingSpatialTransition:{destinationId:'bedroom',expectedDefinitionRevision:passageState.definition.revision,expectedCurrentLocationId:'kitchen',commandId:'passageway-move'}}),signal:AbortSignal.timeout(30000)});
+ const passageReply=await passageMove.text();assert(passageMove.ok,passageReply);assert.equal((await state()).currentLocationId,'bedroom');assert.equal((await worldState()).location,'Home, Upstairs, Bedroom');
+ assert(!(await metadata()).entryStateOverrides[hallLore.id],'Passing through hall does not apply hall exclusions');
+ const result={passed:true,engineVersion:'2.5.1',packageVersion:manifest.version,checks:['passageway checkbox enable/disable/save/reload, prompt destinations and real move-and-reply','fork server activation and native spatial routes','template edit/save/reload/restore','excluded entry blocked from ordinary and linked lore','room changes restore and apply per-chat flags','preexisting disabled entries and counters preserved','background checkbox sets native renderer and persisted background','room without image and checkbox off restore previous background','actual move-and-reply uses destination exclusions in same prompt','narrated movement and switching swipes reconcile location effects','stale move rejected without changed exclusions or model call','exclusion checkbox remove/add and reload persistence','background setting reload persistence','another chat remains unaffected','disabling Maps restores backgrounds and overrides and preserves unrelated metadata','map-only configuration creates native World State location','one-way comma-separated World State hierarchy including three levels','weather/time/temperature survive map location writes','World State edits do not move Maps','native location lock pauses sync and unlock resumes it','swipes and browser reload show the mapped location in native tracker store','native World State agent conflicting location is corrected after processing without moving Maps','native Game location projection uses comma-space without reverse movement'],evidence:out};
  await fs.writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
+} catch(error) {
+ if(page){await fs.writeFile(path.join(out,'failure-page.html'),await page.content());await page.screenshot({path:path.join(out,'failure.png')});}
+ throw error;
 } finally {
  await browser?.close();
  if(server&&server.exitCode===null){const done=new Promise(r=>server.once('exit',r));server.kill();await done;}
