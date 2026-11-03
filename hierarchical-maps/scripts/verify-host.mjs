@@ -258,22 +258,26 @@ try {
  await expect.poll(async()=>(await state()).destinations.some(item=>item.id==='upstairs')).toBe(true);
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
  await expect(panel.getByRole('checkbox',{name:/show children on parent map/i})).toHaveCount(0);
- async function openHouseMap(){
+ async function openChatMap(expectedView){
    await panel.getByRole('button',{name:'Open map',exact:true}).click();
    await panel.evaluate(element=>{element.style.cssText='display:contents';});
-   await page.locator('[aria-label="Viewed location breadcrumb"]').getByRole('button',{name:'Home',exact:true}).click();
+   await expect(page.locator('[aria-label="Viewed location breadcrumb"] button').last()).toHaveText(expectedView);
  }
- await openHouseMap();
+ await openChatMap('Home');
  await expect(page.getByRole('button',{name:'Inspect Upstairs',exact:true})).toBeVisible();
  const bedroomPin=page.getByRole('button',{name:'Inspect Bedroom, current story location',exact:true});
  await expect(bedroomPin).toBeVisible();
+ await page.getByRole('button',{name:'Inspect Upstairs',exact:true}).click();
+ await page.getByRole('button',{name:'Explore inside',exact:true}).click();
+ await expect(page.locator('[aria-label="Viewed location breadcrumb"] button').last()).toHaveText('Upstairs');
+ await page.getByRole('button',{name:'Center current story location',exact:true}).click();
+ await expect(page.locator('[aria-label="Viewed location breadcrumb"] button').last()).toHaveText('Home');
+ await expect(bedroomPin).toHaveAttribute('aria-pressed','true');
  await bedroomPin.click();
  assert.equal((await state()).breadcrumb.map(item=>item.name).join(' > '),'Home > Upstairs > Bedroom');
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
  await workspaceView();
  const hierarchy=page.getByRole('region',{name:'Location hierarchy'}).filter({visible:true}).first();
- const expandHome=hierarchy.getByRole('button',{name:'Expand Home',exact:true});
- if(await expandHome.isVisible())await expandHome.click();
  await hierarchy.getByRole('button',{name:'Enter Upstairs',exact:true}).click();
  const overviewSetting=page.getByRole('checkbox',{name:'Show children on parent map',exact:true}).filter({visible:true}).first();
  await expect(overviewSetting).toBeChecked();
@@ -282,14 +286,13 @@ try {
  await page.locator('[data-marinara-map-header-save]:visible').first().click();
  await expect.poll(async()=>(await state()).hierarchyProfile.hiddenMapLocationIds.includes('upstairs')).toBe(true);
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
- await openHouseMap();
+ await openChatMap('Home');
  await expect(bedroomPin).toBeVisible();
  await expect(page.getByRole('button',{name:'Inspect Upstairs',exact:true})).toHaveCount(0);
  const hiddenState=await state();
  assert(hiddenState.destinations.some(item=>item.id==='upstairs'));
  assert.equal(hiddenState.breadcrumb.map(item=>item.name).join(' > '),'Home > Upstairs > Bedroom');
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();await workspaceView();
- if(await expandHome.isVisible())await expandHome.click();
  await hierarchy.getByRole('button',{name:'Enter Upstairs',exact:true}).click();
  await expect(hideNode).toBeChecked();
  await hideNode.uncheck();
@@ -299,13 +302,11 @@ try {
  await page.locator('[data-marinara-map-header-save]:visible').first().click();
  await expect.poll(async()=>(await state()).hierarchyProfile.showChildrenOnParentMapIds.includes('upstairs')).toBe(false);
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
- await openHouseMap();
- await expect(page.getByRole('button',{name:'Inspect Upstairs',exact:true})).toBeVisible();
- await expect(bedroomPin).toHaveCount(0);
+ await openChatMap('Upstairs');
+ await expect(bedroomPin).toBeVisible();
  assert(!(await state()).destinations.some(item=>item.id==='upstairs'));
  assert(!(await compiled()).text.includes('- Upstairs [upstairs]'));
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();await workspaceView();
- if(await expandHome.isVisible())await expandHome.click();
  await hierarchy.getByRole('button',{name:'Enter Upstairs',exact:true}).click();
  await expect(hideDestination).toBeChecked();
  await hideDestination.uncheck();

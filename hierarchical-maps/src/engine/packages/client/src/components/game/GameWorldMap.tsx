@@ -70,6 +70,14 @@ function defaultViewLocationId(spatial: MapsSpatialContextResponse): string | nu
       )[0]?.id ?? null
     );
   }
+  if (current.parentId && spatial.hierarchyProfile.showChildrenOnParentMapIds?.includes(current.parentId)) {
+    const parent = definition.locations.find(location => location.id === current.parentId && location.status === "active");
+    if (parent) {
+      if (parent.parentId === null) return null; // The top-level canvas hosts these pins.
+      const overview = definition.locations.find(location => location.id === parent.parentId && location.status === "active");
+      if (overview?.childPresentation === "map") return overview.id;
+    }
+  }
   const hasActiveChildren = definition.locations.some(
     (location) => location.status === "active" && location.parentId === current.id,
   );
