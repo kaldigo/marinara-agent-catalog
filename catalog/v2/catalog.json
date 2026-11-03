@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-03T12:26:35.450Z",
+  "generatedAt": "2026-11-03T12:32:48.682Z",
   "packages": [
     {
       "manifest": {
@@ -3867,7 +3867,7 @@
         },
         "id": "hierarchical-maps",
         "name": "World Maps",
-        "version": "1.5.8",
+        "version": "1.5.9",
         "description": "World Maps with optional known-location context, per-location lore exclusions and automatic location backgrounds.",
         "engine": {
           "min": "2.4.2",
@@ -3909,8 +3909,8 @@
         "files": [
           {
             "path": "CHANGELOG.md",
-            "sha256": "09dae8a9850235b9ed72fa93a35a4ad03a22ec13431b2d27900361d24af1a9c1",
-            "bytes": 2866
+            "sha256": "7229bdff54505a289a2675acbe5d8ebba5a73673a1efd23e4fe5664786d51bfd",
+            "bytes": 3026
           },
           {
             "path": "LICENSE",
@@ -3929,8 +3929,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "5520e720ab5df156d9b123448500b587e222e076efd1f4467ce414cd9d1e36ed",
-            "bytes": 445277
+            "sha256": "97e8dd2f5c9b27a9797227caca7a72a5bc77f2b476e230c8f349d64d934e5a63",
+            "bytes": 445652
           },
           {
             "path": "locales/en.json",
@@ -3944,17 +3944,17 @@
           },
           {
             "path": "server.mjs",
-            "sha256": "4412aa23f5b4be10f1409aebe8e9ac46111c23fd695628fd38131198ad78c620",
-            "bytes": 144535
+            "sha256": "510657183848a60851504160770e119ca505d3783417085dc478b95458c119d7",
+            "bytes": 144894
           }
         ]
       },
       "category": "tracker",
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/hierarchical-maps.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.5.8.zip",
-        "sha256": "a5492887c263680764ace835f027a887206f9ca93f885296a52b3e9ed2405825",
-        "bytes": 165332
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.5.9.zip",
+        "sha256": "e9b51c1ee49eb9fb016a4f4bb520170d06f829974bd6e1e0137dfe0c6e8b2c9b",
+        "bytes": 165618
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#hierarchical-maps"
     },
@@ -4044,7 +4044,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/better-impersonate.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.3.zip",
-        "sha256": "1c9a121b4e333995636a62d58d92830ce9e84a68993a0c81d2d2bfa1dc4d9244",
+        "sha256": "a57743ad1314733acd2588f8e18d3dc038567d229ea945a1b15eff3fca4a87a8",
         "bytes": 22590
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
