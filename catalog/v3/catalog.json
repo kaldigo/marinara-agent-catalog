@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-03T07:00:08.460Z",
+  "generatedAt": "2026-11-03T11:41:21.490Z",
   "packages": [
     {
       "manifest": {
@@ -3867,7 +3867,7 @@
         },
         "id": "hierarchical-maps",
         "name": "World Maps",
-        "version": "1.5.5",
+        "version": "1.5.6",
         "description": "World Maps with optional known-location context, per-location lore exclusions and automatic location backgrounds.",
         "engine": {
           "min": "2.4.2",
@@ -3909,8 +3909,8 @@
         "files": [
           {
             "path": "CHANGELOG.md",
-            "sha256": "8bdf02655e6bdb9c68d3dfdd9029b235f676596807694d9a214c73ec94a57960",
-            "bytes": 2428
+            "sha256": "c614f28adcba9f85efb26f4ad08f89d24995de61e52c697cc2604a76a8982307",
+            "bytes": 2532
           },
           {
             "path": "LICENSE",
@@ -3929,8 +3929,8 @@
           },
           {
             "path": "client.js",
-            "sha256": "bad52014db3c172bbb95e146f0d73a1e56d08c3c9b7ce8373d9d2934621e513b",
-            "bytes": 443743
+            "sha256": "e03677b726be344e0d5eeb18c5649a288de5d40a2da105ad321acb280ba93a97",
+            "bytes": 443985
           },
           {
             "path": "locales/en.json",
@@ -3944,17 +3944,17 @@
           },
           {
             "path": "server.mjs",
-            "sha256": "fef5c20158655ada6e222830dde9bb68506fb6b8985dcfa90708864a23b6575b",
-            "bytes": 144215
+            "sha256": "5e400c8cef0a390921c5cc7d787032b27a9cd5f2243bf6dea6f1c0815111b82c",
+            "bytes": 144410
           }
         ]
       },
       "category": "tracker",
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/hierarchical-maps.png",
       "artifact": {
-        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.5.5.zip",
-        "sha256": "c48e9ddbf207a73a3730b76440b3c7e0094aa9967311a0db2f4cfe3cf7c34477",
-        "bytes": 164706
+        "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.5.6.zip",
+        "sha256": "959994f06d4364b629af7192c0941e30d8c92c2a416799e05f972a90c39a8b5a",
+        "bytes": 164898
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#hierarchical-maps"
     },
