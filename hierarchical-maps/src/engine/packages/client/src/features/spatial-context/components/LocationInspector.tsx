@@ -594,6 +594,19 @@ export function LocationInspector({
           />
           Hide this location on maps
         </label>
+        <label className="flex min-h-11 items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={hierarchyProfile.hiddenDestinationIds?.includes(location.id) ?? false}
+            onChange={(event) => {
+              const ids = new Set(hierarchyProfile.hiddenDestinationIds);
+              if (event.target.checked) ids.add(location.id);
+              else ids.delete(location.id);
+              onHierarchyProfileChange({ ...hierarchyProfile, hiddenDestinationIds: [...ids] });
+            }}
+          />
+          Hide from available destinations
+        </label>
 
         <Field label="Name" error={issueFor("name")}>
           <input

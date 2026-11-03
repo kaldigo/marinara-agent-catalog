@@ -293,6 +293,8 @@ try {
  await hierarchy.getByRole('button',{name:'Enter Upstairs',exact:true}).click();
  await expect(hideNode).toBeChecked();
  await hideNode.uncheck();
+ const hideDestination=page.getByRole('checkbox',{name:'Hide from available destinations',exact:true}).filter({visible:true}).first();
+ await hideDestination.check();
  await overviewSetting.uncheck();
  await page.locator('[data-marinara-map-header-save]:visible').first().click();
  await expect.poll(async()=>(await state()).hierarchyProfile.showChildrenOnParentMapIds.includes('upstairs')).toBe(false);
@@ -300,6 +302,15 @@ try {
  await openHouseMap();
  await expect(page.getByRole('button',{name:'Inspect Upstairs',exact:true})).toBeVisible();
  await expect(bedroomPin).toHaveCount(0);
+ assert(!(await state()).destinations.some(item=>item.id==='upstairs'));
+ assert(!(await compiled()).text.includes('- Upstairs [upstairs]'));
+ await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();await workspaceView();
+ if(await expandHome.isVisible())await expandHome.click();
+ await hierarchy.getByRole('button',{name:'Enter Upstairs',exact:true}).click();
+ await expect(hideDestination).toBeChecked();
+ await hideDestination.uncheck();
+ await page.locator('[data-marinara-map-header-save]:visible').first().click();
+ await expect.poll(async()=>(await state()).destinations.some(item=>item.id==='upstairs')).toBe(true);
  const result={passed:true,engineVersion:'2.5.1',packageVersion:manifest.version,checks:['passageway checkbox enable/disable/save/reload, prompt destinations and real move-and-reply','fork server activation and native spatial routes','template edit/save/reload/restore','excluded entry blocked from ordinary and linked lore','room changes restore and apply per-chat flags','preexisting disabled entries and counters preserved','background checkbox sets native renderer and persisted background','room without image and checkbox off restore previous background','actual move-and-reply uses destination exclusions in same prompt','narrated movement and switching swipes reconcile location effects','stale move rejected without changed exclusions or model call','exclusion checkbox remove/add and reload persistence','background setting reload persistence','another chat remains unaffected','disabling Maps restores backgrounds and overrides and preserves unrelated metadata','map-only configuration creates native World State location','one-way comma-separated World State hierarchy including three levels','weather/time/temperature survive map location writes','World State edits do not move Maps','native location lock pauses sync and unlock resumes it','swipes and browser reload show the mapped location in native tracker store','native World State agent conflicting location is corrected after processing without moving Maps','native Game location projection uses comma-space without reverse movement'],evidence:out};
  await fs.writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
 } catch(error) {

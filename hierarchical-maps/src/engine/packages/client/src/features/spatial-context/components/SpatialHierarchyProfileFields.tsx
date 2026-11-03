@@ -227,6 +227,7 @@ export function SpatialHierarchyProfileFields({
                 ...defaults,
                 showChildrenOnParentMapIds: profile.showChildrenOnParentMapIds,
                 hiddenMapLocationIds: profile.hiddenMapLocationIds,
+                hiddenDestinationIds: profile.hiddenDestinationIds,
                 showConnections: profile.showConnections,
                 linkPresentations: profile.linkPresentations,
               });

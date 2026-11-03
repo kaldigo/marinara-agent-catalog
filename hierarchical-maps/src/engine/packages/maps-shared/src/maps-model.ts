@@ -261,6 +261,7 @@ export interface SpatialHierarchyProfile {
   locationTypeIds: Record<string, string>;
   showChildrenOnParentMapIds?: string[];
   hiddenMapLocationIds?: string[];
+  hiddenDestinationIds?: string[];
   showConnections: boolean;
   linkPresentations: Record<string, SpatialLinkPresentation>;
 }
@@ -414,6 +415,7 @@ const spatialHierarchyProfileBaseSchema = z
     types: z.array(spatialHierarchyTypeSchema).min(1).max(40),
     showChildrenOnParentMapIds: z.array(z.string()).optional(),
     hiddenMapLocationIds: z.array(z.string()).optional(),
+    hiddenDestinationIds: z.array(z.string()).optional(),
     locationTypeIds: z.record(z.string(), hierarchyIdSchema).default({}),
     showConnections: z.boolean().default(true),
     linkPresentations: z.record(z.string(), spatialLinkPresentationSchema).default({}),
@@ -999,6 +1001,7 @@ export function normalizeHierarchyProfile(
     ...profile,
     types: profile.types.map(({ showChildrenOnParentMap: _legacy, ...type }) => type),
     hiddenMapLocationIds: [...new Set(profile.hiddenMapLocationIds)].filter(id => locationIds.has(id)),
+    hiddenDestinationIds: [...new Set(profile.hiddenDestinationIds)].filter(id => locationIds.has(id)),
     showChildrenOnParentMapIds: [...selectedIds].filter(id => locationIds.has(id)),
   };
 }

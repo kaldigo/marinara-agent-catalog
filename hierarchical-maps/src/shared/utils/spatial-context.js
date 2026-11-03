@@ -262,6 +262,7 @@ function resolveDirectSpatialDestinations(definition, currentLocationId) {
 /** Expand in layers only through passageway types. First discovery wins. */
 export function resolveSpatialDestinations(definition, currentLocationId, hierarchyProfile) {
     const byId = buildSpatialLocationIndex(definition);
+    const hiddenIds = new Set(hierarchyProfile?.hiddenDestinationIds);
     const typesById = new Map((hierarchyProfile?.types ?? []).map(type => [type.id, type]));
     const visited = new Set([currentLocationId]);
     const destinations = [];
@@ -272,7 +273,7 @@ export function resolveSpatialDestinations(definition, currentLocationId, hierar
             if (visited.has(destination.id)) continue;
             visited.add(destination.id);
             const type = typesById.get(hierarchyProfile?.locationTypeIds?.[destination.id]);
-            if (!type?.hideFromDestinations) {
+            if (!type?.hideFromDestinations && !hiddenIds.has(destination.id)) {
                 destinations.push(current.via.length ? {
                     ...destination,
                     relation: "link",

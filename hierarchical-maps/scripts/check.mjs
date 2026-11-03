@@ -131,3 +131,9 @@ assert.deepEqual(api.locationsOnParentMap(floors, building.locations, saved).map
 const hiddenFloor = {...saved, hiddenMapLocationIds: ['second']};
 assert.deepEqual(api.locationsOnParentMap(floors, building.locations, hiddenFloor).map(pin => pin.id), ['first', 'bed']);
 assert.deepEqual(api.locationsOnParentMap(floors, building.locations, {...hiddenFloor, hiddenMapLocationIds: ['bed']}).map(pin => pin.id), ['first', 'second']);
+
+const oneHiddenPassage = {...normalized, hiddenDestinationIds: ['short']};
+const choices = resolveSpatialDestinations(house, 'kitchen', oneHiddenPassage);
+assert(!choices.some(item => item.id === 'short'));
+assert(choices.some(item => item.id === 'hall'));
+assert.equal(choices.find(item => item.id === 'bedroom')?.label, 'via short');
