@@ -132,6 +132,22 @@ export function SpatialHierarchyProfileFields({
               />
               Passageway
             </label>
+            <label className="col-span-2 flex min-h-11 items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                aria-label={`${type.label || `Location type ${index + 1}`} hide from available destinations`}
+                checked={type.hideFromDestinations === true}
+                disabled={!editable || disabled}
+                onChange={(event) => applyProfile({
+                  ...profile,
+                  mode: "custom",
+                  types: profile.types.map((candidate) =>
+                    candidate.id === type.id ? { ...candidate, hideFromDestinations: event.target.checked } : candidate,
+                  ),
+                })}
+              />
+              Hide from available destinations
+            </label>
             {editable && (
               <div
                 className="col-span-2 flex items-center justify-end gap-1"

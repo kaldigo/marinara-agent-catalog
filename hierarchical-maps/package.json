@@ -2,7 +2,7 @@
   "name": "kaldigo-world-maps",
   "private": true,
   "type": "module",
-  "version": "1.5.6",
+  "version": "1.5.7",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node scripts/check.mjs",

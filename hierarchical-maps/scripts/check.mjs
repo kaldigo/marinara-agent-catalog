@@ -109,3 +109,11 @@ for (const ownerMode of ['roleplay', 'game']) {
   assert(prompt.includes('- home [home]\n'));
   assert(!prompt.includes('Unreachable town cue'));
 }
+
+const hiddenPassages = structuredClone(normalized);
+hiddenPassages.types.find(type => type.id === 'passage').hideFromDestinations = true;
+const throughHidden = resolveSpatialDestinations(house, 'kitchen', hiddenPassages);
+assert(!throughHidden.some(destination => destination.id === 'short'));
+assert.equal(throughHidden.find(destination => destination.id === 'bedroom')?.label, 'via short');
+hiddenPassages.types.find(type => type.id === 'passage').passageway = false;
+assert(!resolveSpatialDestinations(house, 'kitchen', hiddenPassages).some(destination => destination.id === 'bedroom'));

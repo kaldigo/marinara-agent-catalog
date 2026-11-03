@@ -220,6 +220,7 @@ try {
  panel=page.locator('#maps-fixture');
  await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
  await panel.getByRole('checkbox',{name:'Hallway passageway',exact:true}).check();
+ await panel.getByRole('checkbox',{name:'Floor hide from available destinations',exact:true}).check();
  await panel.getByRole('button',{name:'Save location types',exact:true}).click();
  await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
  passageState=await state();assert(passageState.destinations.some(d=>d.id==='bedroom'));assert(!passageState.destinations.some(d=>d.id==='away'),'Ordinary bedroom stops expansion');
@@ -240,6 +241,19 @@ try {
  const passageMove=await fetch(base+'/api/generate',{method:'POST',headers:{'content-type':'application/json','x-marinara-csrf':'1'},body:JSON.stringify({chatId:chat.id,presetId:preset.id,userMessage:'Go to the bedroom through the hall.',streaming:false,pendingSpatialTransition:{destinationId:'bedroom',expectedDefinitionRevision:passageState.definition.revision,expectedCurrentLocationId:'kitchen',commandId:'passageway-move'}}),signal:AbortSignal.timeout(30000)});
  const passageReply=await passageMove.text();assert(passageMove.ok,passageReply);assert.equal((await state()).currentLocationId,'bedroom');assert.equal((await worldState()).location,'Home, Upstairs, Bedroom');
  assert(!(await metadata()).entryStateOverrides[hallLore.id],'Passing through hall does not apply hall exclusions');
+ const bedroomState=await state();
+ assert.equal(bedroomState.breadcrumb.map(item=>item.name).join(' > '),'Home > Upstairs > Bedroom');
+ assert(!bedroomState.destinations.some(item=>item.id==='upstairs'));
+ const bedroomPrompt=(await compiled()).text;
+ assert(bedroomPrompt.includes('Current path: Home > Upstairs > Bedroom'));
+ assert(!bedroomPrompt.includes('- Upstairs [upstairs]'));
+ await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
+ await expect(panel.getByRole('checkbox',{name:'Floor hide from available destinations',exact:true})).toBeChecked();
+ await expect(panel.getByRole('checkbox',{name:'Floor passageway',exact:true})).not.toBeChecked();
+ await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
+ await panel.getByRole('checkbox',{name:'Floor hide from available destinations',exact:true}).uncheck();
+ await panel.getByRole('button',{name:'Save location types',exact:true}).click();
+ await expect.poll(async()=>(await state()).destinations.some(item=>item.id==='upstairs')).toBe(true);
  const result={passed:true,engineVersion:'2.5.1',packageVersion:manifest.version,checks:['passageway checkbox enable/disable/save/reload, prompt destinations and real move-and-reply','fork server activation and native spatial routes','template edit/save/reload/restore','excluded entry blocked from ordinary and linked lore','room changes restore and apply per-chat flags','preexisting disabled entries and counters preserved','background checkbox sets native renderer and persisted background','room without image and checkbox off restore previous background','actual move-and-reply uses destination exclusions in same prompt','narrated movement and switching swipes reconcile location effects','stale move rejected without changed exclusions or model call','exclusion checkbox remove/add and reload persistence','background setting reload persistence','another chat remains unaffected','disabling Maps restores backgrounds and overrides and preserves unrelated metadata','map-only configuration creates native World State location','one-way comma-separated World State hierarchy including three levels','weather/time/temperature survive map location writes','World State edits do not move Maps','native location lock pauses sync and unlock resumes it','swipes and browser reload show the mapped location in native tracker store','native World State agent conflicting location is corrected after processing without moving Maps','native Game location projection uses comma-space without reverse movement'],evidence:out};
  await fs.writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
 } catch(error) {
