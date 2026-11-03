@@ -97,3 +97,14 @@ Install package dependencies and run `npm run build` and `npm run check`.
 For local development, `MARINARA_ENGINE_ROOT` may point to an installed Engine
 checkout to supply build dependencies. Runtime does not read that checkout.
 Prepared output is `dist/package`; the catalogue workflow owns publication.
+
+## Passageway location types
+
+Under **Location types**, choose **Edit location types** and tick **Passageway**
+for hallway, landing or similar types. Available destinations expand breadth-first
+through those locations, stopping at ordinary types. First discovery wins, so each
+destination appears once with the shortest passageway route. Parent/child moves
+and available links retain their existing direction and visibility rules. A Home
+container starts with its immediate children; an ordinary exterior destination
+stops expansion into the town. Backgrounds, lore and World State change only for
+the destination actually reached. Existing types default to unchecked.
