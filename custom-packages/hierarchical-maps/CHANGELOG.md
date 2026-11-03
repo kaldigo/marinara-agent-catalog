@@ -1,5 +1,9 @@
 # Changes
 
+## 1.5.7
+
+- Location types can be hidden from Available destinations while keeping their place in the hierarchy. Passageway expansion is controlled separately.
+
 ## 1.5.6
 
 - Show a location’s awareness summary beside its name and route in Available destinations.
