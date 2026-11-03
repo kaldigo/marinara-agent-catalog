@@ -10,7 +10,7 @@
   },
   "id": "hierarchical-maps",
   "name": "World Maps",
-  "version": "1.5.7",
+  "version": "1.5.8",
   "description": "World Maps with optional known-location context, per-location lore exclusions and automatic location backgrounds.",
   "engine": {
     "min": "2.4.2",
@@ -52,8 +52,8 @@
   "files": [
     {
       "path": "CHANGELOG.md",
-      "sha256": "7049beb066e015f5b525eaa85118890641a6c55e3d61171f878d90f596b14894",
-      "bytes": 2693
+      "sha256": "09dae8a9850235b9ed72fa93a35a4ad03a22ec13431b2d27900361d24af1a9c1",
+      "bytes": 2866
     },
     {
       "path": "LICENSE",
@@ -72,8 +72,8 @@
     },
     {
       "path": "client.js",
-      "sha256": "8af90b8fbd62c3a22cbb423a85f630e7c76d7e10af5bcae8a0525defa77dbfb7",
-      "bytes": 444468
+      "sha256": "5520e720ab5df156d9b123448500b587e222e076efd1f4467ce414cd9d1e36ed",
+      "bytes": 445277
     },
     {
       "path": "locales/en.json",
@@ -87,8 +87,8 @@
     },
     {
       "path": "server.mjs",
-      "sha256": "5eb6584bae4cc9edaa62c04ed6a9c67454154b115a1f3d4a283fd1a65a00a287",
-      "bytes": 144488
+      "sha256": "4412aa23f5b4be10f1409aebe8e9ac46111c23fd695628fd38131198ad78c620",
+      "bytes": 144535
     }
   ]
 }
