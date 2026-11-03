@@ -1,5 +1,9 @@
 # Changes
 
+## 1.5.12
+
+- Opening or centering the chat map shows the parent map that displays the current room through its floor’s Show children on parent map setting.
+
 ## 1.5.11
 
 - Individual locations can be hidden from Available destinations independently of map visibility. Location-type exclusions still apply.
