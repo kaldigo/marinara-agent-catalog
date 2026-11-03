@@ -128,6 +128,7 @@ import {
   globalGallerySpatialReferenceId,
   hierarchyTypeForLocation,
   locationsOnParentMap,
+  visibleMapLocations,
   instantiateSpatialMapTemplate,
   isGlobalGallerySpatialReferenceId,
   normalizeHierarchyProfile,
@@ -2371,7 +2372,10 @@ export function SpatialMapWorkspace({
       : isFirstMapDraft
         ? "Enable and save map"
         : "Save";
-  const localChildren = sortedChildren(draft, enteredParentId);
+  const directChildren = sortedChildren(draft, enteredParentId);
+  const localChildren = localPresentation === "map"
+    ? locationsOnParentMap(directChildren, draft.locations, draftHierarchyProfile)
+    : visibleMapLocations(directChildren, draftHierarchyProfile);
   const localMapBackgroundPosition = currentContext?.mapBackgroundPosition ?? {
     x: 50,
     y: 50,
@@ -2490,7 +2494,7 @@ export function SpatialMapWorkspace({
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {localPresentation === "map" ? (
           <LocalMapCanvas
-            locations={locationsOnParentMap(localChildren, draft.locations, draftHierarchyProfile)}
+            locations={localChildren}
             selectedId={selectedId}
             onSelect={(locationId) => selectLocation(locationId, effectiveLayoutEditingMode === null)}
             onEnter={enterLocation}

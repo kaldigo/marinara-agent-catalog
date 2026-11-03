@@ -36,6 +36,7 @@ import { useMapConfirmation } from "../../features/spatial-context/components/us
 import {
   hierarchyTypeForLocation,
   locationsOnParentMap,
+  visibleMapLocations,
   resolveSpatialLinkPresentation,
   spatialLinkPresentationKey,
   spatialLinkStrokeDasharray,
@@ -124,7 +125,7 @@ export function GameWorldMap({
     const direct = sortLocations(activeLocations.filter(location => location.parentId === (viewLocation?.id ?? null)));
     return presentation === "map"
       ? locationsOnParentMap(direct, activeLocations, spatial.hierarchyProfile)
-      : direct;
+      : visibleMapLocations(direct, spatial.hierarchyProfile);
   }, [activeLocations, viewLocation, presentation, spatial.hierarchyProfile]);
   const visibleLocationIds = useMemo(
     () => new Set(visibleLocations.map((location) => location.id)),

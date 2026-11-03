@@ -260,6 +260,7 @@ export interface SpatialHierarchyProfile {
   types: SpatialHierarchyType[];
   locationTypeIds: Record<string, string>;
   showChildrenOnParentMapIds?: string[];
+  hiddenMapLocationIds?: string[];
   showConnections: boolean;
   linkPresentations: Record<string, SpatialLinkPresentation>;
 }
@@ -412,6 +413,7 @@ const spatialHierarchyProfileBaseSchema = z
     name: z.string().trim().min(1).max(120),
     types: z.array(spatialHierarchyTypeSchema).min(1).max(40),
     showChildrenOnParentMapIds: z.array(z.string()).optional(),
+    hiddenMapLocationIds: z.array(z.string()).optional(),
     locationTypeIds: z.record(z.string(), hierarchyIdSchema).default({}),
     showConnections: z.boolean().default(true),
     linkPresentations: z.record(z.string(), spatialLinkPresentationSchema).default({}),
@@ -996,6 +998,7 @@ export function normalizeHierarchyProfile(
   return {
     ...profile,
     types: profile.types.map(({ showChildrenOnParentMap: _legacy, ...type }) => type),
+    hiddenMapLocationIds: [...new Set(profile.hiddenMapLocationIds)].filter(id => locationIds.has(id)),
     showChildrenOnParentMapIds: [...selectedIds].filter(id => locationIds.has(id)),
   };
 }
@@ -1090,6 +1093,12 @@ export function instantiateSpatialMapTemplate(
   };
 }
 
+export function visibleMapLocations(locations: SpatialLocation[], profile: SpatialHierarchyProfile): SpatialLocation[] {
+  if (!profile.hiddenMapLocationIds?.length) return locations;
+  const hidden = new Set(profile.hiddenMapLocationIds);
+  return locations.filter(location => !hidden.has(location.id));
+}
+
 /** Add one level of room pins to this canvas without changing their hierarchy. */
 export function locationsOnParentMap(
   directChildren: SpatialLocation[],
@@ -1098,10 +1107,10 @@ export function locationsOnParentMap(
 ): SpatialLocation[] {
   const selectedIds = new Set(profile.showChildrenOnParentMapIds);
   const groups = directChildren.filter(location => selectedIds.has(location.id));
-  if (!groups.length) return directChildren;
+  if (!groups.length) return visibleMapLocations(directChildren, profile);
   const groupIds = new Set(groups.map(location => location.id));
   const rooms = locations.filter(location => location.parentId !== null && groupIds.has(location.parentId));
-  const pins = [...directChildren, ...rooms.sort(compareSpatialLocations)];
+  const pins = visibleMapLocations([...directChildren, ...rooms.sort(compareSpatialLocations)], profile);
   return pins.map((location, index) => location.placement ? location : {
     ...location,
     placement: spatialRadialPlacement(index, pins.length, 34),

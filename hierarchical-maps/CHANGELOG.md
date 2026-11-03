@@ -1,5 +1,9 @@
 # Changes
 
+## 1.5.10
+
+- Hide individual locations on maps independently of displaying their children or listing available destinations.
+
 ## 1.5.9
 
 - Move Show children on parent map to the individual location editor. Existing enabled types are converted to selections on their current locations.

@@ -127,3 +127,7 @@ assert.deepEqual(converted.showChildrenOnParentMapIds, ['first', 'second']);
 converted.showChildrenOnParentMapIds = ['second'];
 const saved = api.normalizeHierarchyProfile(JSON.parse(JSON.stringify(converted)), building);
 assert.deepEqual(api.locationsOnParentMap(floors, building.locations, saved).map(pin => pin.id), ['first', 'second', 'bed']);
+
+const hiddenFloor = {...saved, hiddenMapLocationIds: ['second']};
+assert.deepEqual(api.locationsOnParentMap(floors, building.locations, hiddenFloor).map(pin => pin.id), ['first', 'bed']);
+assert.deepEqual(api.locationsOnParentMap(floors, building.locations, {...hiddenFloor, hiddenMapLocationIds: ['bed']}).map(pin => pin.id), ['first', 'second']);
