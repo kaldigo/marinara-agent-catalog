@@ -127,6 +127,7 @@ import {
   defaultHierarchyProfile,
   globalGallerySpatialReferenceId,
   hierarchyTypeForLocation,
+  locationsOnParentMap,
   instantiateSpatialMapTemplate,
   isGlobalGallerySpatialReferenceId,
   normalizeHierarchyProfile,
@@ -2489,7 +2490,7 @@ export function SpatialMapWorkspace({
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {localPresentation === "map" ? (
           <LocalMapCanvas
-            locations={localChildren}
+            locations={locationsOnParentMap(localChildren, draft.locations, draftHierarchyProfile)}
             selectedId={selectedId}
             onSelect={(locationId) => selectLocation(locationId, effectiveLayoutEditingMode === null)}
             onEnter={enterLocation}

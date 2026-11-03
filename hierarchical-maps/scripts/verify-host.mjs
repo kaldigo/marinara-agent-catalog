@@ -209,7 +209,7 @@ try {
 
  // Passageway settings persist through the native editor and drive real movement.
  await api(`/chats/${chat.id}/metadata`,{enableAgents:true,activeAgentIds:['hierarchical-maps']},'PATCH');
- await setLocation('kitchen',d=>{d.locations.find(l=>l.id==='hall').links=[{targetId:'bedroom',state:'available',bidirectional:true}];d.locations.find(l=>l.id==='bedroom').awarenessSummary='A quiet upstairs retreat.';d.locations.find(l=>l.id==='bedroom').links=[{targetId:'away',state:'available',bidirectional:true}];});
+ await setLocation('kitchen',d=>{d.locations.find(l=>l.id==='hall').links=[{targetId:'bedroom',state:'available',bidirectional:true}];d.locations.find(l=>l.id==='home').childPresentation='map';d.locations.find(l=>l.id==='bedroom').awarenessSummary='A quiet upstairs retreat.';d.locations.find(l=>l.id==='bedroom').links=[{targetId:'away',state:'available',bidirectional:true}];});
  let passageState=await state();
  const passageProfile=structuredClone(passageState.hierarchyProfile);
  passageProfile.types.push({id:'type_hallway',label:'Hallway',baseKind:'room'});
@@ -221,6 +221,7 @@ try {
  await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
  await panel.getByRole('checkbox',{name:'Hallway passageway',exact:true}).check();
  await panel.getByRole('checkbox',{name:'Floor hide from available destinations',exact:true}).check();
+ await panel.getByRole('checkbox',{name:'Floor show children on parent map',exact:true}).check();
  await panel.getByRole('button',{name:'Save location types',exact:true}).click();
  await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
  passageState=await state();assert(passageState.destinations.some(d=>d.id==='bedroom'));assert(!passageState.destinations.some(d=>d.id==='away'),'Ordinary bedroom stops expansion');
@@ -254,6 +255,28 @@ try {
  await panel.getByRole('checkbox',{name:'Floor hide from available destinations',exact:true}).uncheck();
  await panel.getByRole('button',{name:'Save location types',exact:true}).click();
  await expect.poll(async()=>(await state()).destinations.some(item=>item.id==='upstairs')).toBe(true);
+ await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
+ const overviewSetting=panel.getByRole('checkbox',{name:'Floor show children on parent map',exact:true});
+ await expect(overviewSetting).toBeChecked();
+ async function openHouseMap(){
+   await panel.getByRole('button',{name:'Open map',exact:true}).click();
+   await panel.evaluate(element=>{element.style.cssText='display:contents';});
+   await page.locator('[aria-label="Viewed location breadcrumb"]').getByRole('button',{name:'Home',exact:true}).click();
+ }
+ await openHouseMap();
+ await expect(page.getByRole('button',{name:'Inspect Upstairs',exact:true})).toBeVisible();
+ const bedroomPin=page.getByRole('button',{name:'Inspect Bedroom, current story location',exact:true});
+ await expect(bedroomPin).toBeVisible();
+ await bedroomPin.click();
+ assert.equal((await state()).breadcrumb.map(item=>item.name).join(' > '),'Home > Upstairs > Bedroom');
+ await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();
+ await panel.getByRole('button',{name:'Edit location types',exact:true}).click();
+ await overviewSetting.uncheck();
+ await panel.getByRole('button',{name:'Save location types',exact:true}).click();
+ await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
+ await openHouseMap();
+ await expect(page.getByRole('button',{name:'Inspect Upstairs',exact:true})).toBeVisible();
+ await expect(bedroomPin).toHaveCount(0);
  const result={passed:true,engineVersion:'2.5.1',packageVersion:manifest.version,checks:['passageway checkbox enable/disable/save/reload, prompt destinations and real move-and-reply','fork server activation and native spatial routes','template edit/save/reload/restore','excluded entry blocked from ordinary and linked lore','room changes restore and apply per-chat flags','preexisting disabled entries and counters preserved','background checkbox sets native renderer and persisted background','room without image and checkbox off restore previous background','actual move-and-reply uses destination exclusions in same prompt','narrated movement and switching swipes reconcile location effects','stale move rejected without changed exclusions or model call','exclusion checkbox remove/add and reload persistence','background setting reload persistence','another chat remains unaffected','disabling Maps restores backgrounds and overrides and preserves unrelated metadata','map-only configuration creates native World State location','one-way comma-separated World State hierarchy including three levels','weather/time/temperature survive map location writes','World State edits do not move Maps','native location lock pauses sync and unlock resumes it','swipes and browser reload show the mapped location in native tracker store','native World State agent conflicting location is corrected after processing without moving Maps','native Game location projection uses comma-space without reverse movement'],evidence:out};
  await fs.writeFile(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
 } catch(error) {

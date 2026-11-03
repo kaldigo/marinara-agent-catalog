@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   spatialContextDefinitionSchema,
   spatialLocationSchema,
+  compareSpatialLocations,
+  spatialRadialPlacement,
   updateSpatialContextRequestSchema,
   validateSpatialContextDefinition,
   type SpatialContextDefinition,
@@ -246,6 +248,7 @@ export interface SpatialHierarchyType {
   baseKind: SpatialLocationKind;
   passageway?: boolean;
   hideFromDestinations?: boolean;
+  showChildrenOnParentMap?: boolean;
   description?: string;
 }
 
@@ -385,6 +388,7 @@ export const spatialHierarchyTypeSchema = z
     baseKind: z.enum(SPATIAL_LOCATION_KINDS),
     passageway: z.boolean().optional(),
     hideFromDestinations: z.boolean().optional(),
+    showChildrenOnParentMap: z.boolean().optional(),
     description: z.string().trim().max(240).optional(),
   })
   .strict();
@@ -1069,6 +1073,23 @@ export function instantiateSpatialMapTemplate(
     definition,
     hierarchyProfile: normalizeHierarchyProfile(template.hierarchyProfile, definition),
   };
+}
+
+/** Add one level of room pins to this canvas without changing their hierarchy. */
+export function locationsOnParentMap(
+  directChildren: SpatialLocation[],
+  locations: SpatialLocation[],
+  profile: SpatialHierarchyProfile,
+): SpatialLocation[] {
+  const groups = directChildren.filter(location => hierarchyTypeForLocation(profile, location).showChildrenOnParentMap);
+  if (!groups.length) return directChildren;
+  const groupIds = new Set(groups.map(location => location.id));
+  const rooms = locations.filter(location => location.parentId !== null && groupIds.has(location.parentId));
+  const pins = [...directChildren, ...rooms.sort(compareSpatialLocations)];
+  return pins.map((location, index) => location.placement ? location : {
+    ...location,
+    placement: spatialRadialPlacement(index, pins.length, 34),
+  });
 }
 
 export function hierarchyTypeForLocation(

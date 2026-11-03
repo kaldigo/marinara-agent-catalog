@@ -35,6 +35,7 @@ import {
 import { useMapConfirmation } from "../../features/spatial-context/components/use-map-confirmation";
 import {
   hierarchyTypeForLocation,
+  locationsOnParentMap,
   resolveSpatialLinkPresentation,
   spatialLinkPresentationKey,
   spatialLinkStrokeDasharray,
@@ -118,15 +119,13 @@ export function GameWorldMap({
     x: 50,
     y: 50,
   };
-  const visibleLocations = useMemo(
-    () =>
-      sortLocations(
-        activeLocations.filter((location) =>
-          viewLocation ? location.parentId === viewLocation.id : location.parentId === null,
-        ),
-      ),
-    [activeLocations, viewLocation],
-  );
+  const presentation = viewLocation?.childPresentation ?? "map";
+  const visibleLocations = useMemo(() => {
+    const direct = sortLocations(activeLocations.filter(location => location.parentId === (viewLocation?.id ?? null)));
+    return presentation === "map"
+      ? locationsOnParentMap(direct, activeLocations, spatial.hierarchyProfile)
+      : direct;
+  }, [activeLocations, viewLocation, presentation, spatial.hierarchyProfile]);
   const visibleLocationIds = useMemo(
     () => new Set(visibleLocations.map((location) => location.id)),
     [visibleLocations],
@@ -200,7 +199,6 @@ export function GameWorldMap({
   const selectedHasChildren = selected ? activeLocations.some((location) => location.parentId === selected.id) : false;
   const viewBreadcrumb = definition ? resolveSpatialBreadcrumb(definition, viewLocation?.id ?? null) : [];
   const currentBreadcrumb = spatial.breadcrumb.map((crumb) => crumb.name).join(" › ");
-  const presentation = viewLocation?.childPresentation ?? "map";
   const canBrowseUp = viewLocation !== null;
 
   const browseTo = (locationId: string | null) => {

@@ -1,5 +1,9 @@
 # Changes
 
+## 1.5.8
+
+- Show a location type’s immediate children alongside it on its parent’s map canvas. Pins use the room’s map coordinates and retain its original hierarchy.
+
 ## 1.5.7
 
 - Location types can be hidden from Available destinations while keeping their place in the hierarchy. Passageway expansion is controlled separately.
