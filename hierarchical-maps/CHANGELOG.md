@@ -1,5 +1,9 @@
 # Changes
 
+## 1.5.6
+
+- Show a location’s awareness summary beside its name and route in Available destinations.
+
 ## 1.5.5
 
 - Add Passageway to location types. Expand available destinations breadth-first through marked types, deduplicating on first discovery and retaining shortest routes.

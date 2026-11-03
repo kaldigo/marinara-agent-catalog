@@ -13,7 +13,8 @@ import { type SpatialHierarchyProfile, defaultSpatialTurnPromptTemplates, render
 const MAX_PROMPT_BREADCRUMB_NODES = 20;
 const MAX_PROMPT_KNOWN_LOCATIONS = 50;
 
-type ResolvedOwnerSpatialProjectionWithKnownLocationLimit = ResolvedOwnerSpatialProjection & {
+type MapsPromptProjection = Omit<ResolvedOwnerSpatialProjection, "destinations"> & {
+  destinations: Array<ResolvedOwnerSpatialProjection["destinations"][number] & { awarenessSummary?: string }>;
   omittedKnownLocationCount?: number;
 };
 
@@ -31,14 +32,18 @@ export function buildOwnerSpatialProjection(
   currentLocationId: string | null,
   acceptedTravel?: ResolvedSpatialTravel | null,
   hierarchyProfile?: SpatialHierarchyProfile,
-): ResolvedOwnerSpatialProjectionWithKnownLocationLimit | null {
+): MapsPromptProjection | null {
   if (!definition?.enabled || !currentLocationId) return null;
 
-  const current = buildSpatialLocationIndex(definition).get(currentLocationId);
+  const byId = buildSpatialLocationIndex(definition);
+  const current = byId.get(currentLocationId);
   if (!current) return null;
 
   const allDestinations = resolveSpatialDestinations(definition, currentLocationId, hierarchyProfile);
-  const destinations = allDestinations.slice(0, SPATIAL_CONTEXT_LIMITS.maxPromptDestinations);
+  const destinations = allDestinations.slice(0, SPATIAL_CONTEXT_LIMITS.maxPromptDestinations).map((destination) => {
+    const cue = boundedText(byId.get(destination.id)?.awarenessSummary, SPATIAL_CONTEXT_LIMITS.maxAwarenessSummaryLength);
+    return cue ? { ...destination, awarenessSummary: cue.replace(/\s+/gu, " ") } : destination;
+  });
   const allKnownLocations = definition.locations.filter((location) => location.status === "active");
   const knownLocations = allKnownLocations.slice(0, MAX_PROMPT_KNOWN_LOCATIONS).map((location) => ({
     id: location.id,
@@ -49,7 +54,6 @@ export function buildOwnerSpatialProjection(
   }));
   const travelSummary: SpatialTravelPromptSummary | undefined = acceptedTravel
     ? (() => {
-        const byId = buildSpatialLocationIndex(definition);
         const nameFor = (locationId: string): string =>
           boundedText(byId.get(locationId)?.name ?? locationId, SPATIAL_CONTEXT_LIMITS.maxNameLength);
         return {
@@ -106,7 +110,7 @@ type ResolvedOwnerSpatialProjectionWithTemplate = ResolvedOwnerSpatialProjection
   turnPromptTemplate?: string;
 };
 
-export function formatOwnerSpatialPrompt(projection: ResolvedOwnerSpatialProjection, template?: string): string {
+export function formatOwnerSpatialPrompt(projection: MapsPromptProjection, template?: string): string {
   const breadcrumb = escapeXmlText(formatOwnerSpatialBreadcrumb(projection));
   const description = projection.description
     ? escapeXmlText(projection.description)
@@ -114,7 +118,8 @@ export function formatOwnerSpatialPrompt(projection: ResolvedOwnerSpatialProject
   const destinationLines = projection.destinations.length
     ? projection.destinations.map((destination) => {
         const label = destination.label ? ` — ${escapeXmlText(destination.label)}` : "";
-        return `- ${escapeXmlText(destination.name)} [${escapeXmlText(destination.id)}]${label}`;
+        const cue = destination.awarenessSummary ? ` — ${escapeXmlText(destination.awarenessSummary)}` : "";
+        return `- ${escapeXmlText(destination.name)} [${escapeXmlText(destination.id)}]${label}${cue}`;
       })
     : ["- None"];
   if (projection.omittedDestinationCount > 0) {
@@ -124,7 +129,7 @@ export function formatOwnerSpatialPrompt(projection: ResolvedOwnerSpatialProject
     ? projection.knownLocations.map(({ id, path }) => `- ${escapeXmlText(path)} [${escapeXmlText(id)}]`)
     : ["- None"];
   const omittedKnownLocationCount =
-    (projection as ResolvedOwnerSpatialProjectionWithKnownLocationLimit).omittedKnownLocationCount ?? 0;
+    projection.omittedKnownLocationCount ?? 0;
   if (omittedKnownLocationCount > 0) {
     knownLocationLines.push(`- ${omittedKnownLocationCount} additional known locations omitted.`);
   }

@@ -630,7 +630,7 @@ export function LocationInspector({
           />
         </Field>
 
-        <Field label="Awareness summary" hint="Short orientation cue" error={issueFor("awarenessSummary")}>
+        <Field label="Awareness summary" hint="Shown in Available destinations when this location can be reached." error={issueFor("awarenessSummary")}>
           <textarea
             className={`${INPUT_CLASS} min-h-20 resize-y`}
             value={location.awarenessSummary ?? ""}

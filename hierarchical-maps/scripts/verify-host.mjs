@@ -209,7 +209,7 @@ try {
 
  // Passageway settings persist through the native editor and drive real movement.
  await api(`/chats/${chat.id}/metadata`,{enableAgents:true,activeAgentIds:['hierarchical-maps']},'PATCH');
- await setLocation('kitchen',d=>{d.locations.find(l=>l.id==='hall').links=[{targetId:'bedroom',state:'available',bidirectional:true}];d.locations.find(l=>l.id==='bedroom').links=[{targetId:'away',state:'available',bidirectional:true}];});
+ await setLocation('kitchen',d=>{d.locations.find(l=>l.id==='hall').links=[{targetId:'bedroom',state:'available',bidirectional:true}];d.locations.find(l=>l.id==='bedroom').awarenessSummary='A quiet upstairs retreat.';d.locations.find(l=>l.id==='bedroom').links=[{targetId:'away',state:'available',bidirectional:true}];});
  let passageState=await state();
  const passageProfile=structuredClone(passageState.hierarchyProfile);
  passageProfile.types.push({id:'type_hallway',label:'Hallway',baseKind:'room'});
@@ -223,7 +223,7 @@ try {
  await panel.getByRole('button',{name:'Save location types',exact:true}).click();
  await expect(panel.getByRole('button',{name:'Edit location types',exact:true})).toBeVisible();
  passageState=await state();assert(passageState.destinations.some(d=>d.id==='bedroom'));assert(!passageState.destinations.some(d=>d.id==='away'),'Ordinary bedroom stops expansion');
- assert((await compiled()).text.includes('Bedroom [bedroom]'),'Compiled generation prompt includes recursive destination');
+ assert((await compiled()).text.includes('Bedroom [bedroom] — via Hall — A quiet upstairs retreat.'),'Compiled generation prompt includes passageway route and destination cue');
  await page.reload();await page.waitForFunction(()=>!!customElements.get('marinara-capability-hierarchical-maps'));await mount();panel=page.locator('#maps-fixture');
  await expect(panel.getByRole('checkbox',{name:'Hallway passageway',exact:true})).toBeChecked();
  await panel.getByRole('button',{name:'Edit location types',exact:true}).click();

@@ -96,3 +96,16 @@ assert.equal(validateSpatialTransition(house,'kitchen',request,normalized).ok,tr
 assert.equal(validateSpatialTransition(house,'kitchen',{...request,destinationId:'town'},normalized).ok,false,'Unexposed town is not ordinary movement');
 for(const ownerMode of ['roleplay','game'])assert(api.buildOwnerSpatialProjection('test',{...house,ownerMode},'kitchen',null,normalized).destinations.some(d=>d.id==='bedroom'),'Prompt projection expands passages in '+ownerMode);
 console.log('Passed passageway breadth-first search, shortest route, cycle/deduplication, direction, visibility, container, schema and movement checks.');
+
+house.locations.find(location => location.id === 'hall').awarenessSummary = ' Front & rear exits. ';
+house.locations.find(location => location.id === 'bedroom').awarenessSummary = ' Quiet\n  <upstairs> room. ';
+house.locations.find(location => location.id === 'home').awarenessSummary = '   ';
+house.locations.find(location => location.id === 'town').awarenessSummary = 'Unreachable town cue';
+for (const ownerMode of ['roleplay', 'game']) {
+  const projection = api.buildOwnerSpatialProjection('test', {...house, ownerMode}, 'kitchen', null, normalized);
+  const prompt = api.formatOwnerSpatialPrompt(projection);
+  assert(prompt.includes('- hall [hall] — Front &amp; rear exits.\n'));
+  assert(prompt.includes('- bedroom [bedroom] — via short — Quiet &lt;upstairs> room.\n'));
+  assert(prompt.includes('- home [home]\n'));
+  assert(!prompt.includes('Unreachable town cue'));
+}
