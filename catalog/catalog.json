@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-06T19:34:18.393Z",
+  "generatedAt": "2026-11-07T00:11:43.884Z",
   "packages": [
     {
       "manifest": {
@@ -4646,7 +4646,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/hierarchical-maps.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.5.12.zip",
-        "sha256": "5a4448616ead7cda8f4f52cd4380aae35413ba96f5e7a31c849032a3c9a0b859",
+        "sha256": "a3ff32b28a82b6b1e3cd44886645ea4bb482a42dc473de68f326a467cc724fe9",
         "bytes": 166087
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#hierarchical-maps"
@@ -4737,7 +4737,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/better-impersonate.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/better-impersonate-3.0.3.zip",
-        "sha256": "a496030b43eeba40f6e6143d134fcaa60fa8ecef0f31424ca4ee481c7ff80181",
+        "sha256": "47124048ef280af47fd3fb899cf15c925b2eacf7c9477acb0f34c52edb551085",
         "bytes": 22590
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#better-impersonate"
