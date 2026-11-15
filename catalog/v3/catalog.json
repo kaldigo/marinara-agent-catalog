@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-15T14:53:00.719Z",
+  "generatedAt": "2026-11-15T20:29:24.043Z",
   "packages": [
     {
       "manifest": {
@@ -4646,7 +4646,7 @@
       "iconUrl": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artwork/agent-covers/hierarchical-maps.png",
       "artifact": {
         "url": "https://raw.githubusercontent.com/kaldigo/marinara-agent-catalog/main/artifacts/hierarchical-maps-1.5.12.zip",
-        "sha256": "415e984a21854fa7ae019ec646c72cfa238cccee64ad50ac6f97bf1fce6eb691",
+        "sha256": "06ae83101bcaa3ed9203228a886d921f589a107c35d2e09d19dda67e1d24bd59",
         "bytes": 166087
       },
       "documentationUrl": "https://github.com/kaldigo/marinara-agent-catalog#hierarchical-maps"
